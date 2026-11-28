@@ -1,8 +1,12 @@
 //! Frames
 
+use crate::docx::origin::FloatOrigin;
+use crate::docx::origin::ParagraphOrigin;
 use std::rc::Rc;
 
-use super::model::{Block, Compat, Document, Float, Inline, Paragraph, TextBox};
+use super::model::{
+    Block, Compat, Document, Float, FloatWrap, HorizontalAlign, HorizontalRelation, Inline, Paragraph, TextBox, VerticalAlign, VerticalRelation,
+};
 
 pub fn convert(doc: &mut Document) {
     let legacy = doc.settings.compat() == Compat::Legacy;
@@ -78,9 +82,9 @@ fn anchor_before(out: &mut Vec<Block>, groups: Vec<Vec<Paragraph>>, legacy: bool
 /// The float of a frame's paragraphs, placed by the first's `w:framePr`.
 pub(crate) fn float(group: Vec<Paragraph>, legacy: bool) -> Float {
     let fr = group[0].style.frame.clone().unwrap();
-    let start = group.first().and_then(|p| p.src.as_ref()).and_then(|s| s.ranges.first()).map(|r| r.start);
-    let end = group.last().and_then(|p| p.src.as_ref()).and_then(|s| s.ranges.last()).map(|r| r.end);
-    let frame_src = start.zip(end).map(|(a, b)| a..b);
+    let start = group.first().and_then(|p| p.src()).and_then(|s| s.ranges.first()).map(|r| r.start);
+    let end = group.last().and_then(|p| p.src()).and_then(|s| s.ranges.last()).map(|r| r.end);
+    let origin = Float::origin_at(None, start.zip(end).map(|(a, b)| a..b));
     let apart = group.iter().any(|p| p.style.suppress_overlap);
     let flow = group[0].style.text_flow;
     let blocks = group
@@ -103,14 +107,14 @@ pub(crate) fn float(group: Vec<Paragraph>, legacy: bool) -> Float {
         alt: "".into(),
         lock_aspect: false,
         text_box: Some(TextBox { blocks, insets: [0.0; 4], outline: 0.0, auto_fit: true, v_anchor: 0, flow }),
-        h_relative: String::new(),
+        h_relative: HorizontalRelation::Column,
         h_align: None,
         h_offset: 0.0,
-        v_relative: String::new(),
+        v_relative: VerticalRelation::Paragraph,
         v_align: None,
         v_offset: 0.0,
-        wrap: String::new(),
-        wrap_text: "bothSides".into(),
+        wrap: FloatWrap::None,
+        wrap_text: crate::docx::WrapText::BothSides,
         dist: [0.0; 4],
         effect: [0.0; 4],
         poly: None,
@@ -120,9 +124,8 @@ pub(crate) fn float(group: Vec<Paragraph>, legacy: bool) -> Float {
         layout_in_cell: true,
         order: 0,
         z: 0,
-        src: None,
+        origin,
         locked: false,
-        frame_src,
         in_note: false,
         parts: Vec::new(),
         shape: None,
@@ -140,7 +143,9 @@ pub(crate) fn float(group: Vec<Paragraph>, legacy: bool) -> Float {
 pub fn bleed(blocks: &[Block]) -> [f64; 2] {
     let paras: Vec<&Paragraph> = blocks.iter().filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None }).collect();
     let reach = |b: &Option<super::props::Border>, indent: f64| {
-        b.as_ref().filter(|b| b.visible()).map(|b| (1.5 + b.width * if &*b.style == "double" { 3.0 } else { 1.0 } + b.space - indent).max(0.0))
+        b.as_ref()
+            .filter(|b| b.visible())
+            .map(|b| (1.5 + b.width * if b.style == super::props::BorderStyle::Double { 3.0 } else { 1.0 } + b.space - indent).max(0.0))
     };
     let side = |left: bool| {
         let first = paras.first().map(|p| if left { &p.style.border_left } else { &p.style.border_right });
@@ -171,11 +176,6 @@ fn in_line(fr: &super::props::FramePr) -> bool {
 /// `legacy`: the document is in compat ≤ 14.
 pub fn place(f: &mut Float, fr: &super::props::FramePr, sides: [f64; 2], legacy: bool) {
     let margin_cap = fr.drop_cap.as_deref() == Some("margin");
-    let anchor = |a: Option<&str>, text: &str, missing: &str| match a {
-        Some(a @ ("margin" | "page")) => a.to_string(),
-        Some(_) => text.to_string(),
-        None => missing.to_string(),
-    };
     // A frame without vAnchor is margin-relative; a drop cap sits in its paragraph whatever it says.
     let drop_cap = fr.drop_cap.as_deref().is_some_and(|d| d != "none");
     f.w = fr.w.unwrap_or(0.0);
@@ -185,49 +185,59 @@ pub fn place(f: &mut Float, fr: &super::props::FramePr, sides: [f64; 2], legacy:
     if let Some(tb) = &mut f.text_box {
         tb.auto_fit = fr.h_rule.as_deref() != Some("exact");
     }
-    f.h_relative = if margin_cap { "leftMargin".into() } else { anchor(fr.h_anchor.as_deref(), "column", "column") };
+    f.h_relative = match fr.h_anchor.as_deref() {
+        _ if margin_cap => HorizontalRelation::LeftMargin,
+        Some("margin") => HorizontalRelation::Margin,
+        Some("page") => HorizontalRelation::Page,
+        _ => HorizontalRelation::Column,
+    };
     // An explicit `w:x` / `w:y` beats the alignment. It holds the position plus one twip; 0 and a few negative values
     // are alignment codes.
     let (x_code, x_at) = fr.x.map_or((None, None), |x| match (x * 20.0).round() as i64 {
         0 => (None, None),
-        -4 => (Some("center"), None),
-        -8 => (Some("right"), None),
-        -12 => (Some("inside"), None),
-        -16 => (Some("outside"), None),
+        -4 => (Some(HorizontalAlign::Center), None),
+        -8 => (Some(HorizontalAlign::Right), None),
+        -12 => (Some(HorizontalAlign::Inside), None),
+        -16 => (Some(HorizontalAlign::Outside), None),
         _ => (None, Some(x - 0.05)),
     });
     // From the text, `w:y` is the position itself.
     let text_y = fr.v_anchor.as_deref().is_some_and(|a| a != "margin" && a != "page");
     let (y_code, y_at) = fr.y.map_or((None, None), |y| match (y * 20.0).round() as i64 {
         0 => (None, Some(0.0)),
-        -4 => (Some("top"), None),
-        -8 => (Some("center"), None),
-        -12 => (Some("bottom"), None),
-        -16 => (Some("inside"), None),
-        -20 => (Some("outside"), None),
+        -4 => (Some(VerticalAlign::Top), None),
+        -8 => (Some(VerticalAlign::Center), None),
+        -12 => (Some(VerticalAlign::Bottom), None),
+        -16 => (Some(VerticalAlign::Inside), None),
+        -20 => (Some(VerticalAlign::Outside), None),
         _ if text_y => (None, Some(y)),
         _ => (None, Some(y - 0.05)),
     });
     f.h_align = if margin_cap {
-        Some("right".into())
+        Some(HorizontalAlign::Right)
     } else if fr.x.is_some() {
-        x_code.map(str::to_string)
+        x_code
     } else {
-        fr.x_align.clone()
+        fr.x_align.as_deref().map(super::anchor::h_align)
     };
     f.h_offset = x_at.unwrap_or(0.0);
-    f.v_relative = anchor(fr.v_anchor.as_deref(), "paragraph", if drop_cap { "paragraph" } else { "margin" });
+    f.v_relative = match fr.v_anchor.as_deref() {
+        Some("margin") => VerticalRelation::Margin,
+        Some("page") => VerticalRelation::Page,
+        Some(_) => VerticalRelation::Paragraph,
+        None if drop_cap => VerticalRelation::Paragraph,
+        None => VerticalRelation::Margin,
+    };
     // Compat ≤ 14: a frame without a vertical position stays in the flow, from the page or the margin too.
     if legacy && in_line(fr) {
-        f.v_relative = "paragraph".into();
+        f.v_relative = VerticalRelation::Paragraph;
     }
-    f.v_align = if fr.y.is_some() { y_code.map(str::to_string) } else { fr.y_align.clone().filter(|a| a != "inline") };
+    f.v_align = if fr.y.is_some() { y_code } else { fr.y_align.as_deref().filter(|a| *a != "inline").map(super::anchor::v_align) };
     f.v_offset = y_at.unwrap_or(0.0);
     f.wrap = match fr.wrap.as_deref() {
-        Some("notBeside") => "topAndBottom",
-        Some("none") => "none",
-        _ => "square",
-    }
-    .into();
+        Some("notBeside") => FloatWrap::TopAndBottom,
+        Some("none") => FloatWrap::None,
+        _ => FloatWrap::Square,
+    };
     f.dist = [fr.v_space, fr.v_space, fr.h_space + sides[0], fr.h_space + sides[1]];
 }

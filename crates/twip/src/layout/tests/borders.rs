@@ -6,7 +6,7 @@ use crate::layout::fragment::Item;
 /// A page's stroked border paths: their rects.
 fn strokes(body: &str, page: usize) -> Vec<[f64; 4]> {
     let doc = crate::docx::read(&bytes(body).expect("a package")).expect("reads");
-    let snap = crate::layout::layout(&doc, &super::fonts());
+    let snap = crate::layout::tests::layout(&doc, &super::fonts());
     crate::layout::traverse::paint_items(&snap.pages()[page])
         .into_iter()
         .filter_map(|i| match i {
@@ -18,7 +18,7 @@ fn strokes(body: &str, page: usize) -> Vec<[f64; 4]> {
 
 fn rects(body: &str) -> Vec<([f64; 4], u32)> {
     let doc = crate::docx::read(&bytes(body).expect("a package")).expect("reads");
-    let snap = crate::layout::layout(&doc, &super::fonts());
+    let snap = crate::layout::tests::layout(&doc, &super::fonts());
     crate::layout::traverse::paint_items(&snap.pages()[0])
         .into_iter()
         .filter_map(|i| match i {
@@ -82,7 +82,7 @@ fn paragraph_borders_draw_their_style() {
     assert_eq!(count("triple"), 3);
     assert_eq!(count("thinThickSmallGap"), 2);
     let doc = crate::docx::read(&bytes(&para("dotted")).expect("a package")).expect("reads");
-    let items = crate::layout::traverse::paint_items(&crate::layout::layout(&doc, &super::fonts()).pages()[0]);
+    let items = crate::layout::traverse::paint_items(&crate::layout::tests::layout(&doc, &super::fonts()).pages()[0]);
     let dotted = items.iter().filter(|i| matches!(i, Item::Rect { dash: crate::layout::fragment::Dash::Dotted, .. })).count();
     assert_eq!(dotted, 1, "one dotted rect, its dots drawn on device pixels");
     assert_eq!(count("wave"), 0, "a wave is a stroked path, not rects");
@@ -104,7 +104,7 @@ fn page_rects(sect: &str, paras: usize) -> Vec<Vec<([f64; 4], u32)>> {
         &super::package_bytes(&[("[Content_Types].xml", ct), ("_rels/.rels", rels), ("word/document.xml", &document)]).expect("a package"),
     )
     .expect("reads");
-    let snap = crate::layout::layout(&doc, &super::fonts());
+    let snap = crate::layout::tests::layout(&doc, &super::fonts());
     snap.pages()
         .iter()
         .map(|p| {
@@ -209,7 +209,7 @@ fn a_wave_bordered_table_split_across_pages_draws_each_edge_once() {
         wave(24)
     );
     let doc = crate::docx::read(&bytes(&body).expect("a package")).expect("reads");
-    let snap = crate::layout::layout(&doc, &super::fonts());
+    let snap = crate::layout::tests::layout(&doc, &super::fonts());
     assert!(snap.pages().len() > 1, "the table splits");
     for (n, page) in snap.pages().iter().enumerate() {
         let wide: Vec<[f64; 4]> = crate::layout::traverse::paint_items(page)
@@ -276,7 +276,7 @@ fn a_wave_border_runs_on_from_line_to_line() {
         r#"<w:p><w:pPr><w:pBdr><w:left {wave}/><w:right {wave}/></w:pBdr></w:pPr><w:r><w:t>one</w:t><w:br/><w:t>two</w:t><w:br/><w:t>three</w:t><w:br/><w:t>four</w:t></w:r></w:p>"#
     );
     let doc = crate::docx::read(&bytes(&body).expect("a package")).expect("reads");
-    let snap = crate::layout::layout(&doc, &super::fonts());
+    let snap = crate::layout::tests::layout(&doc, &super::fonts());
     let mut sides: Vec<std::rc::Rc<crate::layout::fragment::ShapeItem>> = crate::layout::traverse::paint_items(&snap.pages()[0])
         .into_iter()
         .filter_map(|i| match i {
@@ -300,7 +300,7 @@ fn a_dashed_border_runs_on_from_line_to_line() {
         r#"<w:p><w:pPr><w:pBdr><w:left {dashed}/></w:pBdr></w:pPr><w:r><w:t>one</w:t><w:br/><w:t>two</w:t><w:br/><w:t>three</w:t></w:r></w:p>"#
     );
     let doc = crate::docx::read(&bytes(&body).expect("a package")).expect("reads");
-    let snap = crate::layout::layout(&doc, &super::fonts());
+    let snap = crate::layout::tests::layout(&doc, &super::fonts());
     let mut sides: Vec<([f64; 4], f32)> = crate::layout::traverse::paint_items(&snap.pages()[0])
         .into_iter()
         .filter_map(|i| match i {
@@ -323,7 +323,7 @@ fn a_float_in_an_exact_row_is_clipped_to_the_cell() {
         r#"<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="5000"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="200" w:hRule="exact"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="5000" w:type="dxa"/></w:tcPr><w:p>{float}</w:p></w:tc></w:tr></w:tbl><w:p/>"#
     );
     let doc = crate::docx::read(&bytes(&body).expect("a package")).expect("reads");
-    let snap = crate::layout::layout(&doc, &super::fonts());
+    let snap = crate::layout::tests::layout(&doc, &super::fonts());
     let mut inked = Vec::new();
     crate::layout::traverse::paint(&snap.pages()[0], &mut |p| {
         if p.float.is_some() && matches!(p.item, Item::Shape(_)) {
@@ -345,7 +345,7 @@ fn reflected_text_keeps_the_clip_of_its_exact_row() {
         r#"<w:p><w:r><w:drawing><wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="1" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1"><wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="column"><wp:posOffset>0</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx="1905000" cy="1270000"/><wp:wrapNone/><wp:docPr id="1" name="Box"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:wsp xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><wps:spPr><a:prstGeom prst="rect"/><a:effectLst><a:reflection blurRad="0" stA="50000" endA="0" endPos="100000" dir="5400000" sy="-100000" algn="bl" rotWithShape="0"/></a:effectLst></wps:spPr><wps:txbx><w:txbxContent>{row}</w:txbxContent></wps:txbx><wps:bodyPr lIns="0" tIns="0" rIns="0" bIns="0"/></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r></w:p>"#
     );
     let doc = crate::docx::read(&bytes(&float).expect("a package")).expect("reads");
-    let snap = crate::layout::layout(&doc, &super::fonts());
+    let snap = crate::layout::tests::layout(&doc, &super::fonts());
     let items = crate::layout::traverse::paint_items(&snap.pages()[0]);
     let text: Vec<_> = items
         .iter()

@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::rc::Rc;
 
 use crate::api::command::CommandId;
-use crate::docx::write::props::Props;
+use crate::docx::para_props::ParaXml;
 use crate::docx::{Block, ControlId, Inline, Paragraph};
 use crate::font::Fonts;
 use crate::layout::{ParaId, Unit};
@@ -111,8 +111,8 @@ fn failed(out: &Outcome) -> bool {
 }
 
 /// Whether `p` has a direct outline level.
-fn direct_level(p: &Paragraph, cx: &crate::docx::write::props::Cx) -> bool {
-    Props::parse(p.style.direct.0.as_deref(), "pPr", cx).get("outlineLvl").is_some()
+fn direct_level(p: &crate::format::ParaProps) -> bool {
+    p.outline_level.is_some() || super::lists::written(p, "outlineLvl")
 }
 
 /// Every paragraph in `blocks` in order (tables' cells too) until `f` answers false; false then.
@@ -429,7 +429,7 @@ impl Editor {
         if targets.is_empty() {
             return Outcome::Unchanged("nothing to change");
         }
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let cx = self.cx();
         // What each paragraph's level goes in
         let mut plan: Vec<(ParaId, Target)> = Vec::with_capacity(targets.len());
@@ -441,7 +441,7 @@ impl Editor {
                 self.events.push(super::input::Notice::Refused { sub_template: None, element: None });
                 return Outcome::Unchanged("locked");
             }
-            plan.push((para, if let Target::Level(n) = t { if direct_level(p, &cx) { t } else { Target::Heading(n) } } else { t }));
+            plan.push((para, if let Target::Level(n) = t { if direct_level(p.style.direct.get()) { t } else { Target::Heading(n) } } else { t }));
         }
         let mut wanted: Vec<u32> = plan.iter().filter_map(|&(_, t)| if let Target::Heading(n) = t { Some(n) } else { None }).collect();
         wanted.sort_unstable();
@@ -450,7 +450,7 @@ impl Editor {
         let mut styles: [Option<String>; 9] = Default::default();
         for n in wanted {
             let id = format!("Heading{n}");
-            let found = |e: &Editor| e.doc.resolver.as_ref().and_then(|r| super::list_defs::linkable(&r.styles, &id));
+            let found = |e: &Editor| e.doc.definitions.as_ref().and_then(|r| super::list_defs::linkable(&r.cascade().styles, &id));
             if found(self).is_none()
                 && let Some(b) = crate::services::styles::builtin::built_in(&id)
             {
@@ -462,31 +462,32 @@ impl Editor {
                 return Outcome::Unchanged("the heading style couldn't be added");
             }
         }
-        let res = self.doc.resolver.clone().unwrap_or(res);
-        let body = res.styles.default_paragraph.clone();
+        let res = self.doc.definitions.clone().unwrap_or(res);
+        let body = res.cascade().styles.default_paragraph.as_deref().map(str::to_string);
         let mut tx = self.begin(label);
         for (para, t) in plan {
             let Some(p) = self.index.para(&self.doc, para) else { continue };
-            let mut pr = Props::parse(p.style.direct.0.as_deref(), "pPr", &cx);
-            let w = &cx.w;
+            let mut e = crate::format::ParaEdit::new((**p.style.direct.get()).clone());
             let style = match t {
                 Target::Level(n) => {
-                    pr.set("outlineLvl", format!("<{w}outlineLvl {w}val=\"{}\"/>", n - 1));
+                    e.outline_level = Some(i64::from(n) - 1);
                     None
                 }
-                Target::Heading(n) => styles[n as usize - 1].clone(),
-                Target::Body => body.clone(),
+                Target::Heading(n) => Some(&styles[n as usize - 1]),
+                Target::Body => Some(&body),
             };
-            if !matches!(t, Target::Level(_)) {
-                pr.remove("outlineLvl");
-                match style {
-                    Some(id) => pr.set("pStyle", format!("<{w}pStyle {w}val=\"{}\"/>", crate::docx::write::props::esc(&id))),
-                    None => pr.remove("pStyle"),
-                }
+            e.whole(crate::format::ParaProp::OutlineLevel);
+            if let Some(id) = style {
+                e.outline_level = None;
+                e.style = id.as_deref().map(Into::into);
+                e.whole(crate::format::ParaProp::Style);
             }
-            let Some(r) = self.para_again(para, Some(pr.xml().as_deref()), &res, &cx) else { continue };
+            let direct = p.style.direct.edit(e);
+            let Some(r) = self.para_again(para, Some(direct), &res, &cx) else {
+                continue;
+            };
             let Some(p) = self.index.para(&self.doc, para) else { continue };
-            if r.style == *p.style {
+            if r.style.layout_eq(&p.style) && r.style.authored_eq(&p.style) {
                 continue;
             }
             let (mark, list) = (p.mark.clone(), p.list.clone());
@@ -1060,8 +1061,7 @@ impl Editor {
         // The editable ranges the content's last paragraph ends go on through the new one
         let ends: Vec<Inline> = match (place, self.part_block(&parts, c.last)) {
             (NewHeading::After | NewHeading::Subheading, Some(Block::Para(p))) => {
-                let n =
-                    p.inlines.iter().rev().take_while(|i| matches!(i, Inline::Opaque(o) if o.permission().is_some_and(|(start, _)| !start))).count();
+                let n = p.inlines.iter().rev().take_while(|i| matches!(i.permission(), Some((false, _)))).count();
                 p.inlines[p.inlines.len() - n..].to_vec()
             }
             _ => Vec::new(),

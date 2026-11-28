@@ -3,7 +3,7 @@
 use std::rc::Rc;
 
 use crate::docx::Compat;
-use crate::docx::model::Float;
+use crate::docx::model::{Float, FloatWrap, WrapText};
 
 use super::ids::ParaId;
 use super::units::{EPS, LU_PER_PT};
@@ -83,16 +83,16 @@ impl Placed {
     pub fn new(key: (usize, usize, usize), anchor: ParaId, f: &Rc<Float>, x: f64, y: f64, h: f64) -> Placed {
         let rect = [x, y, x + f.w, y + h];
         let [dt, db, dl, dr] = f.dist;
-        let wrap = match f.wrap.as_str() {
-            "square" | "tight" | "through" => Wrap::Square,
-            "topAndBottom" => Wrap::TopAndBottom,
-            _ => Wrap::None,
+        let wrap = match f.wrap {
+            FloatWrap::Square | FloatWrap::Tight | FloatWrap::Through => Wrap::Square,
+            FloatWrap::TopAndBottom => Wrap::TopAndBottom,
+            FloatWrap::None => Wrap::None,
         };
-        let side = match f.wrap_text.as_str() {
-            "left" => Side::Left,
-            "right" => Side::Right,
-            "largest" => Side::Largest,
-            _ => Side::Both,
+        let side = match f.wrap_text {
+            WrapText::BothSides => Side::Both,
+            WrapText::Left => Side::Left,
+            WrapText::Right => Side::Right,
+            WrapText::Largest => Side::Largest,
         };
         // The polygon spans the unturned box about the same centre, mirrored by its flips, and turns with the shape.
         let xfrm = f.shape.as_ref().map(|s| s.xfrm).unwrap_or_default();
@@ -107,7 +107,7 @@ impl Placed {
             .poly
             .as_ref()
             .filter(|_| wrap == Wrap::Square)
-            .map(|p| Contour { points: p.iter().copied().map(point).collect(), through: f.wrap == "through" });
+            .map(|p| Contour { points: p.iter().copied().map(point).collect(), through: f.wrap == FloatWrap::Through });
         let wrap_box = match &contour {
             Some(c) => {
                 let b =
@@ -144,7 +144,7 @@ impl Placed {
     /// Compat ≤ 14 keeps no distance above or below a tight or through float, and none below a frame.
     pub fn legacy_dist(mut self) -> Placed {
         let frame = self.float.text_box.is_some() && self.float.shape.is_none() && self.key.2 != TABLE_PIECE;
-        if matches!(self.float.wrap.as_str(), "tight" | "through") {
+        if matches!(self.float.wrap, FloatWrap::Tight | FloatWrap::Through) {
             let [dt, db, ..] = self.dist;
             self.excl[1] += dt;
             self.excl[3] -= db;
@@ -164,7 +164,7 @@ impl Placed {
         match () {
             _ if !legacy => 18.0,
             _ if frame => 72.0,
-            _ if self.key.2 != TABLE_PIECE && matches!(self.float.wrap.as_str(), "tight" | "through") => 9.0,
+            _ if self.key.2 != TABLE_PIECE && matches!(self.float.wrap, FloatWrap::Tight | FloatWrap::Through) => 9.0,
             _ => 18.0,
         }
     }
@@ -280,7 +280,7 @@ pub fn avoid(f: &mut Placed, placed: &[Placed], (lo, hi): (f64, f64), (top, bott
         f.moved_to(original.0, original.1);
         return false;
     }
-    let leftward = f.float.h_align.as_deref() == Some("right");
+    let leftward = f.float.h_align == Some(crate::docx::HorizontalAlign::Right);
     let frame = |o: &Placed| o.float.text_box.is_some() && o.float.shape.is_none() && o.key.2 != TABLE_PIECE;
     for _ in 0..32 {
         // A table leaves under 9 twips of overlap down as it is, and moves to a twip short of the bottom.
@@ -340,14 +340,14 @@ pub fn table_float(id: u64, w: f64, h: f64, dist: [f64; 4], allow_overlap: bool)
         alt: "".into(),
         lock_aspect: false,
         text_box: None,
-        h_relative: "column".into(),
+        h_relative: crate::docx::HorizontalRelation::Column,
         h_align: None,
         h_offset: 0.0,
-        v_relative: "paragraph".into(),
+        v_relative: crate::docx::VerticalRelation::Paragraph,
         v_align: None,
         v_offset: 0.0,
-        wrap: "square".into(),
-        wrap_text: "bothSides".into(),
+        wrap: FloatWrap::Square,
+        wrap_text: crate::docx::WrapText::BothSides,
         dist,
         effect: [0.0; 4],
         poly: None,
@@ -357,9 +357,8 @@ pub fn table_float(id: u64, w: f64, h: f64, dist: [f64; 4], allow_overlap: bool)
         layout_in_cell: true,
         order: 0,
         z: 0,
-        src: None,
+        origin: crate::docx::Origin::NONE,
         locked: false,
-        frame_src: None,
         in_note: false,
         parts: Vec::new(),
         shape: None,
@@ -372,6 +371,7 @@ pub fn table_float(id: u64, w: f64, h: f64, dist: [f64; 4], allow_overlap: bool)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::docx::VerticalAlign;
 
     fn fl(x0: f64, x1: f64, side: Side) -> Placed {
         let float = Rc::new(Float {
@@ -383,14 +383,14 @@ mod tests {
             alt: "".into(),
             lock_aspect: false,
             text_box: None,
-            h_relative: "column".into(),
+            h_relative: crate::docx::HorizontalRelation::Column,
             h_align: None,
             h_offset: 0.0,
-            v_relative: "paragraph".into(),
+            v_relative: crate::docx::VerticalRelation::Paragraph,
             v_align: None,
             v_offset: 0.0,
-            wrap: "square".into(),
-            wrap_text: "bothSides".into(),
+            wrap: FloatWrap::Square,
+            wrap_text: crate::docx::WrapText::BothSides,
             dist: [0.0; 4],
             effect: [0.0; 4],
             poly: None,
@@ -400,9 +400,8 @@ mod tests {
             layout_in_cell: true,
             order: 0,
             z: 0,
-            src: None,
+            origin: crate::docx::Origin::NONE,
             locked: false,
-            frame_src: None,
             in_note: false,
             parts: Vec::new(),
             shape: None,
@@ -506,7 +505,7 @@ mod tests {
         assert!(avoid(&mut f, &[apart(80.0, 612.0, 0)], across, (0.0, 720.0), Compat::Legacy));
         assert_eq!((f.rect[0], f.rect[1]), (532.0, 100.0));
         let mut f = apart(390.0, 540.0, 1);
-        Rc::make_mut(&mut f.float).h_align = Some("right".into());
+        Rc::make_mut(&mut f.float).h_align = Some(crate::docx::HorizontalAlign::Right);
         assert!(avoid(&mut f, &[apart(472.0, 572.0, 0)], across, down, Compat::Legacy));
         assert_eq!((f.rect[0], f.rect[1]), (322.0, 0.0));
     }
@@ -547,7 +546,7 @@ mod tests {
     fn a_pictures_relative_axes_size_on_their_own_and_it_draws_scaled_evenly() {
         let fr = Frames { page_w: 612.0, page_h: 792.0, margin: [72.0; 4], column: (72.0, 468.0), compat: Compat::Generic, cell: false, odd: true };
         let mut f = (*fl(0.0, 72.0, Side::Both).float).clone();
-        (f.h, f.image) = (54.0, Some(0));
+        (f.h, f.image) = (54.0, Some(crate::docx::ResourceId(0)));
         f.relative.size = [Some(("margin".into(), 400)), Some(("margin".into(), 50))];
         let s = sized(&f, &fr).expect("sized");
         assert_eq!((s.w, s.h), (187.2, 32.4));
@@ -562,7 +561,7 @@ mod tests {
         let fr = Frames { page_w: 612.0, page_h: 792.0, margin: [72.0; 4], column: (72.0, 468.0), compat: Compat::Generic, cell: false, odd: true };
         let at = |h: &str, pct: i64| {
             let mut f = (*fl(0.0, 40.0, Side::Both).float).clone();
-            f.h_relative = h.into();
+            f.h_relative = crate::docx::anchor::h_relative(h);
             f.relative.pos = [Some(pct), None];
             h_pos(&f, &fr)
         };
@@ -571,14 +570,14 @@ mod tests {
         let mut f = (*fl(0.0, 40.0, Side::Both).float).clone();
         f.relative.pos = [Some(500), None];
         assert_eq!(h_pos(&f, &two_columns), 306.0);
-        f.v_relative = "page".into();
+        f.v_relative = crate::docx::VerticalRelation::Page;
         f.relative.pos = [None, Some(123)];
         assert!((v_pos(&f, 20.0, &fr, 0.0, 0.0) - 97.42).abs() < 0.05);
     }
 
-    fn polygon(wrap: &str, pts: &[(f64, f64)], dist: [f64; 4]) -> Placed {
+    fn polygon(wrap: FloatWrap, pts: &[(f64, f64)], dist: [f64; 4]) -> Placed {
         let mut f = (*fl(0.0, 200.0, Side::Both).float).clone();
-        f.wrap = wrap.into();
+        f.wrap = wrap;
         f.poly = Some(pts.iter().map(|&(x, y)| (x / 21600.0, y / 21600.0)).collect());
         f.dist = dist;
         Placed::new((0, 0, 0), ParaId(1), &Rc::new(f), 72.0, 72.0, 100.0)
@@ -587,18 +586,18 @@ mod tests {
     #[test]
     fn a_polygon_wraps_by_its_widest_point_over_the_band() {
         let tri = [(0.0, 0.0), (0.0, 21600.0), (21600.0, 21600.0)];
-        let starts = |dist| intervals(&[polygon("tight", &tri, dist)], 72.0, 540.0, 72.0, 83.49, false).unwrap();
+        let starts = |dist| intervals(&[polygon(FloatWrap::Tight, &tri, dist)], 72.0, 540.0, 72.0, 83.49, false).unwrap();
         let free = starts([0.0; 4]);
         assert!((free[0].0 - 94.98).abs() < 1e-6 && free.len() == 1, "{free:?}");
         let free = starts([0.0, 0.0, 0.0, 18.0]);
         assert!((free[0].0 - 112.98).abs() < 1e-6, "{free:?}");
-        assert_eq!(intervals(&[polygon("tight", &tri, [0.0; 4])], 72.0, 540.0, 180.0, 190.0, false).unwrap(), vec![(72.0, 540.0)]);
+        assert_eq!(intervals(&[polygon(FloatWrap::Tight, &tri, [0.0; 4])], 72.0, 540.0, 180.0, 190.0, false).unwrap(), vec![(72.0, 540.0)]);
     }
 
     #[test]
     fn a_polygon_turns_with_its_shape_about_the_box_centre() {
         let mut f = (*fl(0.0, 200.0, Side::Both).float).clone();
-        f.wrap = "tight".into();
+        f.wrap = FloatWrap::Tight;
         f.poly = Some([(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)].into_iter().collect());
         let xfrm = crate::drawing::Xfrm { rot: crate::drawing::units::Angle(90 * 60000), ..Default::default() };
         let kind = crate::drawing::ShapeKind::Raw(crate::drawing::RawGraphic { uri: String::new() });
@@ -612,7 +611,7 @@ mod tests {
 
     #[test]
     fn a_vertical_flip_mirrors_the_polygon_top_to_bottom() {
-        let mut f = (*polygon("tight", &[(0.0, 0.0), (0.0, 21600.0), (21600.0, 21600.0)], [0.0; 4]).float).clone();
+        let mut f = (*polygon(FloatWrap::Tight, &[(0.0, 0.0), (0.0, 21600.0), (21600.0, 21600.0)], [0.0; 4]).float).clone();
         let xfrm = crate::drawing::Xfrm { flip_v: true, ..Default::default() };
         let kind = crate::drawing::ShapeKind::Raw(crate::drawing::RawGraphic { uri: String::new() });
         f.shape = Some(Box::new(crate::drawing::Shape { nv: Default::default(), xfrm, kind, spans: Default::default() }));
@@ -626,12 +625,12 @@ mod tests {
     fn compat_14_grows_both_axes_by_the_effect_extents_when_one_is_aligned() {
         let fr = |compat| Frames { page_w: 612.0, page_h: 792.0, margin: [72.0; 4], column: (72.0, 468.0), compat, cell: false, odd: true };
         let mut f = (*fl(0.0, 100.0, Side::Both).float).clone();
-        f.h_align = Some("left".into());
+        f.h_align = Some(crate::docx::HorizontalAlign::Left);
         f.v_offset = 40.0;
         f.effect = [5.0, 10.0, 5.0, 10.0];
         assert_eq!(v_pos(&f, 30.0, &fr(Compat::Legacy), 84.65, 84.65), 134.65);
         assert_eq!(v_pos(&f, 30.0, &fr(Compat::Generic), 84.65, 84.65), 124.65);
-        (f.h_align, f.v_align, f.v_relative) = (None, Some("top".into()), "margin".into());
+        (f.h_align, f.v_align, f.v_relative) = (None, Some(VerticalAlign::Top), crate::docx::VerticalRelation::Margin);
         assert_eq!(h_pos(&f, &fr(Compat::Legacy)), 72.0 + 5.0);
         assert_eq!((h_pos(&f, &fr(Compat::Generic)), v_pos(&f, 30.0, &fr(Compat::Generic), 0.0, 0.0)), (72.0, 82.0));
     }
@@ -642,10 +641,10 @@ mod tests {
             [(0.0, 0.0), (7200.0, 0.0), (7200.0, 14400.0), (14400.0, 14400.0), (14400.0, 0.0), (21600.0, 0.0), (21600.0, 21600.0), (0.0, 21600.0)];
         let band = |wrap, top: f64| intervals(&[polygon(wrap, &u, [0.0; 4])], 0.0, 540.0, top, top + 11.49, false).unwrap();
         let notch = (72.0 + 200.0 / 3.0, 72.0 + 400.0 / 3.0);
-        let through = band("through", 80.0);
+        let through = band(FloatWrap::Through, 80.0);
         assert!(through.iter().any(|&(a, b)| (a - notch.0).abs() < 1e-6 && (b - notch.1).abs() < 1e-6), "{through:?}");
-        assert!(!band("tight", 80.0).iter().any(|&(a, _)| a > 72.0 && a < 272.0));
-        assert!(!band("through", 135.0).iter().any(|&(a, _)| a > 72.0 && a < 272.0), "the band over the notch bottom");
+        assert!(!band(FloatWrap::Tight, 80.0).iter().any(|&(a, _)| a > 72.0 && a < 272.0));
+        assert!(!band(FloatWrap::Through, 135.0).iter().any(|&(a, _)| a > 72.0 && a < 272.0), "the band over the notch bottom");
     }
 
     #[test]
@@ -653,8 +652,8 @@ mod tests {
         let fr = |compat, odd| Frames { page_w: 612.0, page_h: 792.0, margin: [72.0; 4], column: (72.0, 468.0), compat, cell: false, odd };
         let x = |rel: &str, align: &str, compat, odd| {
             let mut f = (*fl(0.0, 40.0, Side::Both).float).clone();
-            f.h_relative = rel.into();
-            f.h_align = Some(align.into());
+            f.h_relative = crate::docx::anchor::h_relative(rel);
+            f.h_align = Some(crate::docx::anchor::h_align(align));
             h_pos(&f, &fr(compat, odd))
         };
         assert_eq!((x("insideMargin", "left", Compat::Generic, true), x("insideMargin", "left", Compat::Generic, false)), (0.0, 540.0));
@@ -671,8 +670,8 @@ mod tests {
     fn compat_14_snaps_an_aligned_offset_to_whole_twips() {
         let fr = |compat| Frames { page_w: 612.0, page_h: 792.0, margin: [72.0; 4], column: (72.0, 468.0), compat, cell: false, odd: true };
         let mut f = (*fl(0.0, 40.03, Side::Both).float).clone();
-        f.h_relative = "margin".into();
-        f.h_align = Some("center".into());
+        f.h_relative = crate::docx::HorizontalRelation::Margin;
+        f.h_align = Some(crate::docx::HorizontalAlign::Center);
         assert_eq!(h_pos(&f, &fr(Compat::Legacy)), 286.0);
         assert!((h_pos(&f, &fr(Compat::Generic)) - 285.985).abs() < 1e-9);
     }
@@ -681,47 +680,47 @@ mod tests {
     fn positions() {
         let fr =
             |compat| Frames { page_w: 612.0, page_h: 792.0, margin: [72.0, 72.0, 72.0, 72.0], column: (72.0, 468.0), compat, cell: false, odd: true };
-        let f = |h: &str, ha: Option<&str>, v: &str, va: Option<&str>| Float {
-            h_relative: h.into(),
-            h_align: ha.map(Into::into),
-            v_relative: v.into(),
-            v_align: va.map(Into::into),
+        let f = |h: &str, ha: Option<&str>, v: &str, va: Option<VerticalAlign>| Float {
+            h_relative: crate::docx::anchor::h_relative(h),
+            h_align: ha.map(crate::docx::anchor::h_align),
+            v_relative: crate::docx::anchor::v_relative(v),
+            v_align: va,
             ..(*fl(0.0, 40.0, Side::Both).float).clone()
         };
         let x = |ha, c| h_pos(&f("page", Some(ha), "page", None), &fr(c));
         assert_eq!((x("left", Compat::Legacy), x("right", Compat::Legacy)), (32.0, 540.0));
         assert_eq!((x("left", Compat::Generic), x("right", Compat::Generic)), (0.0, 572.0));
-        for va in ["top", "center", "bottom"] {
+        for va in [VerticalAlign::Top, VerticalAlign::Center, VerticalAlign::Bottom] {
             assert_eq!(v_pos(&f("column", None, "paragraph", Some(va)), 40.0, &fr(Compat::Generic), 200.0, 220.0), 200.0);
         }
     }
 
     #[test]
     fn a_piece_narrower_than_its_floats_gap_gets_no_text() {
-        let with = |wrap: &str, frame: bool| {
+        let with = |wrap: FloatWrap, frame: bool| {
             let mut f = (*fl(135.0, 300.0, Side::Both).float).clone();
-            f.wrap = wrap.into();
+            f.wrap = wrap;
             if frame {
                 f.text_box = Some(crate::docx::TextBox { blocks: Vec::new(), insets: [0.0; 4], outline: 0.0, auto_fit: false, v_anchor: 0, flow: 0 });
             }
             [Placed::new((0, 0, 0), ParaId(1), &Rc::new(f), 135.0, 0.0, 100.0)]
         };
         let left = |f: &[Placed], legacy| intervals(f, 72.0, 540.0, 10.0, 20.0, legacy).unwrap()[0];
-        assert_eq!(left(&with("square", false), true), (72.0, 135.0));
-        assert_eq!(left(&with("square", true), true), (300.0, 540.0), "an inch beside a compat 14 frame");
-        assert_eq!(left(&with("square", true), false), (72.0, 135.0));
-        let narrow = |wrap: &str, legacy| intervals(&with(wrap, false), 120.0, 540.0, 10.0, 20.0, legacy).unwrap()[0];
-        assert_eq!(narrow("tight", true), (120.0, 135.0), "9 pt beside a compat 14 tight float");
-        assert_eq!(narrow("tight", false), (300.0, 540.0));
+        assert_eq!(left(&with(FloatWrap::Square, false), true), (72.0, 135.0));
+        assert_eq!(left(&with(FloatWrap::Square, true), true), (300.0, 540.0), "an inch beside a compat 14 frame");
+        assert_eq!(left(&with(FloatWrap::Square, true), false), (72.0, 135.0));
+        let narrow = |wrap: FloatWrap, legacy| intervals(&with(wrap, false), 120.0, 540.0, 10.0, 20.0, legacy).unwrap()[0];
+        assert_eq!(narrow(FloatWrap::Tight, true), (120.0, 135.0), "9 pt beside a compat 14 tight float");
+        assert_eq!(narrow(FloatWrap::Tight, false), (300.0, 540.0));
     }
 
     #[test]
     fn compat_14_keeps_no_distance_above_or_below_a_tight_float() {
         let square = [(0.0, 0.0), (21600.0, 0.0), (21600.0, 21600.0), (0.0, 21600.0)];
-        let p = polygon("tight", &square, [10.0, 10.0, 5.0, 5.0]).legacy_dist();
+        let p = polygon(FloatWrap::Tight, &square, [10.0, 10.0, 5.0, 5.0]).legacy_dist();
         assert_eq!(p.excl, [67.0, 72.0, 277.0, 172.0]);
         assert!(intervals(&[p], 0.0, 540.0, 175.0, 185.0, true).unwrap() == vec![(0.0, 540.0)]);
-        let q = polygon("square", &square, [10.0, 10.0, 5.0, 5.0]).legacy_dist();
+        let q = polygon(FloatWrap::Square, &square, [10.0, 10.0, 5.0, 5.0]).legacy_dist();
         assert_eq!(q.excl[1], 62.0);
     }
 }

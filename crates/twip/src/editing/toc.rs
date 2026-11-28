@@ -1,9 +1,13 @@
 //! Tables of contents and tables of figures
 
+use crate::document::format::TabKind;
+use crate::docx::char_props::RunXml;
+use crate::format::ParaProps;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use crate::api::review::Body;
+use crate::docx::definitions::Definitions;
 use crate::docx::fields::{self, Shown, Switch};
 use crate::docx::props::Leader;
 use crate::docx::{Block, FieldEdge, FieldId, FieldKind, FieldView, Inline, Paragraph, Run};
@@ -16,6 +20,9 @@ use super::index::Container;
 use super::position::{Position, StoryId};
 use super::selection::Selection;
 use super::step::{Step, para_len};
+use crate::docx::char_props::{self, RunDirect};
+use crate::docx::run_xml;
+use crate::format::{CharEdit, CharProps, Prop, Toggle};
 
 /// A table's switches: what it collects and how its entries read. A table of figures is one that collects captions.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -440,7 +447,7 @@ pub(super) fn partner(blocks: &[Block], (b, k): (usize, usize)) -> Option<(usize
 /// The field edge an inline is: a start or an end (not a code view's markers).
 pub(crate) fn edge(i: &Inline) -> Option<&FieldEdge> {
     match i {
-        Inline::Opaque(o) => o.field.as_ref().filter(|f| matches!(f, FieldEdge::Start { .. } | FieldEdge::End)),
+        Inline::FieldEdge { edge, .. } => Some(&edge.kind).filter(|f| matches!(f, FieldEdge::Start { .. } | FieldEdge::End)),
         _ => None,
     }
 }
@@ -605,15 +612,9 @@ pub(super) fn first_free<'a>(prefix: &str, names: impl Iterator<Item = &'a str>)
     names.filter_map(|n| n.strip_prefix(prefix).and_then(|d| d.parse::<u64>().ok())).max().map_or(100_000_000, |n| n.checked_add(1).unwrap_or(0))
 }
 
-fn leader_xml(l: Leader) -> &'static str {
-    match l {
-        Leader::None => "none",
-        Leader::Dot => "dot",
-        Leader::Hyphen => "hyphen",
-        Leader::Underscore => "underscore",
-        Leader::Heavy => "heavy",
-        Leader::MiddleDot => "middleDot",
-    }
+/// A tab stop at `pos` twips.
+fn tab(pos: i64, kind: TabKind, leader: Leader) -> crate::format::TabStop {
+    crate::format::TabStop { pos: pos as f64 / 20.0, kind, leader }
 }
 
 impl Editor {
@@ -719,9 +720,11 @@ impl Editor {
     /// The entries a table with options `o` collects from the body, in document order.
     pub fn toc_entries(&self, o: &TocOptions) -> Vec<TocEntry> {
         let skip = self.toc_paras();
-        let styles = self.doc.resolver.as_ref().map(|r| &r.styles);
-        let name_of = |p: &Paragraph| -> Option<String> { styles?.by_id.get(p.style.style_id.as_deref()?).map(|s| s.name.clone()) };
-        let review = crate::docx::review::ReviewView { view: self.doc.review.view, ..Default::default() };
+        let cascade = self.doc.definitions.as_ref().map(|r| r.cascade());
+        let name_of = |p: &Paragraph| -> Option<String> {
+            cascade.as_ref()?.styles.get(p.style.style_id.as_deref()?).map(|s| s.name.as_deref().unwrap_or_default().to_string())
+        };
+        let review = crate::docx::review::ReviewView { view: self.review.view, ..Default::default() };
         // `\t`'s levels by style id, its names and aliases mapped as the readback maps them; a style's first pair wins.
         let mut style_levels: HashMap<String, u8> = HashMap::with_capacity(o.styles.len());
         if !o.styles.is_empty() {
@@ -989,8 +992,13 @@ impl Editor {
         self.doc
             .controls
             .get(c)
-            .and_then(|k| k.props.kind_xml.as_deref())
-            .is_some_and(|x| x.contains("docPartGallery") && x.contains("\"Table of Contents\""))
+            .and_then(|k| match &k.props.kept {
+                Some(crate::docx::KeptKind::Gallery { gallery, category } | crate::docx::KeptKind::BuildingBlock { gallery, category, .. }) => {
+                    Some((gallery.as_deref()?, category.as_deref()))
+                }
+                _ => None,
+            })
+            .is_some_and(|(g, c)| g == "Table of Contents" || c == Some("Table of Contents"))
     }
 
     /// Removes table `t` (Word's Remove Table of Contents): its field and result, with the building block control and
@@ -1053,7 +1061,7 @@ impl Editor {
                 }
             };
         }
-        let shows = |inl: &[Inline]| inl.iter().any(|i| i.units() > 0 || matches!(i, Inline::Bookmark(_)));
+        let shows = |inl: &[Inline]| inl.iter().any(|i| i.units() > 0 || i.bookmark().is_some());
         // The paragraph left: what came before the field in its first, then what follows it in its last, whose mark
         // is after the field (unless a building block control holds it).
         let in_control = last.controls.iter().any(|c| self.is_toc_control(c));
@@ -1168,10 +1176,10 @@ impl Editor {
             return Outcome::unavailable("no caret");
         };
         let mut blocks = self.toc_blocks(o, look, &code, &entries, &marks, slot.container, &here);
-        let end = FieldEdge::End.inline(&self.cx().w, here.mark.clone());
+        let end = FieldEdge::End.inline(here.mark.clone());
         // In a building block control the end has its own paragraph inside it (Word's gallery tables).
         let end = if frame.control {
-            let mut p = self.new_para(&format!("<{}pPr/>", self.cx().w), &[], slot.container, &here);
+            let mut p = self.new_para(ParaProps::default(), &[], slot.container, &here);
             p.inlines = vec![end];
             blocks.push(Block::Para(p));
             None
@@ -1236,15 +1244,13 @@ impl Editor {
             self.end_batch(false, fonts);
             return Outcome::unavailable("no caret");
         };
-        let w = self.cx().w;
         let right = ((self.text_width(slot.container) * 20.0).round() as i64 - 10).max(0);
         let id = crate::docx::ControlId::next();
         let mut blocks = vec![Block::Para(self.plain_para("TOCHeading", "Table of Contents", slot.container, &here))];
         for (k, level) in [1u8, 2, 3, 1, 2, 3].into_iter().enumerate() {
-            let ppr = format!(
-                "<{w}pPr><{w}pStyle {w}val=\"TOC{level}\"/><{w}tabs><{w}tab {w}val=\"right\" {w}leader=\"dot\" {w}pos=\"{right}\"/></{w}tabs></{w}pPr>"
-            );
-            let mut p = self.new_para(&ppr, &[(format!("Type chapter title (level {level})"), None, false)], slot.container, &here);
+            let ppr =
+                ParaProps { style: Some(format!("TOC{level}").into()), tabs: vec![tab(right, TabKind::Right, Leader::Dot)], ..Default::default() };
+            let mut p = self.new_para(ppr, &[(format!("Type chapter title (level {level})"), None, false)], slot.container, &here);
             let run = p.mark.clone();
             p.inlines.push(Inline::Tab(run.clone()));
             p.inlines.push(Inline::Text((k + 1).to_string(), run));
@@ -1314,11 +1320,10 @@ impl Editor {
     fn undirty(&mut self, t: &TocField, fonts: &Fonts) {
         let Shape::Spanning { start, .. } = t.shape else { return };
         let Some(Block::Para(p)) = self.index.blocks(&self.doc, t.container).and_then(|b| b.get(t.first)) else { return };
-        let Some(Inline::Opaque(o)) = p.inlines.get(start) else { return };
-        let Some(FieldEdge::Start { code, lock, dirty: true, view }) = &o.field else { return };
+        let Some(Inline::FieldEdge { edge, run }) = p.inlines.get(start) else { return };
+        let FieldEdge::Start { code, lock, dirty: true, view } = &edge.kind else { return };
         let mut inlines = p.inlines.clone();
-        inlines[start] = FieldEdge::Start { code: code.clone(), lock: *lock, dirty: false, view: *view }
-            .inline(&self.cx().w, o.run.clone().unwrap_or_else(|| p.mark.clone()));
+        inlines[start] = FieldEdge::Start { code: code.clone(), lock: *lock, dirty: false, view: *view }.inline(run.clone());
         let para = ParaId(p.id);
         let mut tx = self.begin("Update Table");
         // A flag, not content: never a tracked change.
@@ -1340,7 +1345,6 @@ impl Editor {
         let entries = self.toc_entries(&o);
         let marks = self.mark_sources(&mut tx, &entries);
         // Unused `_Toc` bookmarks the old entries linked to go.
-        let w = self.cx().w;
         // The table's blocks (offset by `t.first`).
         let Some(blocks) = self.index.blocks(&self.doc, t.container).and_then(|b| b.get(t.first..=t.last)).map(<[Block]>::to_vec) else {
             self.abort(tx);
@@ -1351,7 +1355,7 @@ impl Editor {
             return Outcome::unavailable("no table");
         };
         // Tracked, an end left in place goes too, and a new one comes: each field whole, deleted or inserted.
-        let mut end_kept: Option<Rc<crate::docx::Opaque>> = None;
+        let mut end_kept: Option<(Rc<crate::docx::Edge>, Run)> = None;
         let mut new = self.toc_blocks(&o, look, &t.code, &entries, &marks, t.container, first);
         // In the controls the table was in.
         for b in &mut new {
@@ -1364,15 +1368,14 @@ impl Editor {
                 let end_only = last.inlines[..end].iter().all(|i| i.units() == 0 && edge(i).is_none());
                 let after = (!end_only).then(|| last.inlines[end..].to_vec());
                 let range = if end_only { t.first..t.last } else { t.first..t.last + 1 };
-                if let (true, Some(Inline::Opaque(o))) = (end_only, last.inlines.get(end)) {
-                    end_kept = Some(o.clone());
+                if let (true, Some(Inline::FieldEdge { edge, run })) = (end_only, last.inlines.get(end)) {
+                    end_kept = Some((edge.clone(), run.clone()));
                 }
                 // Updated, it is no longer dirty.
                 let edge = match &first.inlines[start] {
-                    Inline::Opaque(o) => match &o.field {
-                        Some(FieldEdge::Start { code, lock, dirty: true, view }) => {
-                            let run = o.run.clone().unwrap_or_else(|| first.mark.clone());
-                            FieldEdge::Start { code: code.clone(), lock: *lock, dirty: false, view: *view }.inline(&w, run)
+                    Inline::FieldEdge { edge, run } => match &edge.kind {
+                        FieldEdge::Start { code, lock, dirty: true, view } => {
+                            FieldEdge::Start { code: code.clone(), lock: *lock, dirty: false, view: *view }.inline(run.clone())
                         }
                         _ => first.inlines[start].clone(),
                     },
@@ -1385,9 +1388,8 @@ impl Editor {
                     self.abort(tx);
                     return Outcome::unavailable("no table");
                 };
-                let edge =
-                    FieldEdge::Start { code: t.code.clone(), lock: *lock, dirty: false, view: FieldView::Result }.inline(&w, first.mark.clone());
-                let mut after = vec![FieldEdge::End.inline(&w, first.mark.clone())];
+                let edge = FieldEdge::Start { code: t.code.clone(), lock: *lock, dirty: false, view: FieldView::Result }.inline(first.mark.clone());
+                let mut after = vec![FieldEdge::End.inline(first.mark.clone())];
                 after.extend(first.inlines[end + 1..].iter().cloned());
                 (t.first..t.first + 1, edge, first.inlines[..begin].to_vec(), Some(after))
             }
@@ -1425,12 +1427,11 @@ impl Editor {
             self.abort(tx);
             return Outcome::Unchanged("the table couldn't be updated");
         }
-        if let Some(o) = end_kept.filter(|_| tx.tracked)
+        if let Some((kept, run)) = end_kept.filter(|_| tx.tracked)
             && let Some(rest) = self.index.para(&self.doc, rest)
         {
             let para = ParaId(rest.id);
-            let run = o.run.clone().unwrap_or_else(|| rest.mark.clone());
-            let cut = vec![CutEdge { edge: o, keep: false, para, container: t.container, block: t.last }];
+            let cut = vec![CutEdge { edge: kept, run: run.clone(), keep: false, para, container: t.container, block: t.last }];
             let deleted = self.delete_whole_fields(&mut tx, cut, None).is_ok();
             // The new end right after the deleted one.
             let under = self.index.para(&self.doc, para).map_or(0, |p| {
@@ -1438,7 +1439,7 @@ impl Editor {
                 let k = lead.iter().position(|i| edge(i).is_some()).map_or(0, |k| k + 1);
                 (lead.len() - k) as u32
             });
-            let end = FieldEdge::End.inline(&w, run);
+            let end = FieldEdge::End.inline(run);
             if !deleted
                 || self
                     .step(
@@ -1505,7 +1506,7 @@ impl Editor {
         }
         paras.sort_unstable_by_key(|p| p.0);
         paras.dedup();
-        let dropped = |i: &Inline| matches!(i, Inline::Bookmark(b) if gone.contains(b.trim_start_matches('/').to_ascii_lowercase().as_str()));
+        let dropped = |i: &Inline| i.bookmark().is_some_and(|(b, _)| gone.contains(b.to_ascii_lowercase().as_str()));
         for para in paras {
             let Some(p) = self.index.para(&self.doc, para) else { continue };
             if p.inlines.iter().any(dropped) {
@@ -1549,14 +1550,14 @@ impl Editor {
             ids.push("TOCHeading".into());
         }
         for id in ids {
-            let has = |e: &Editor| e.doc.resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key(&id));
+            let has = |e: &Editor| e.doc.definitions.as_ref().is_some_and(|r| r.has_style(&id));
             if has(self) {
                 continue;
             }
             let Some(b) = crate::services::styles::builtin::built_in(&id) else { return false };
             // TOC Heading is based on Heading 1.
             if id == "TOCHeading"
-                && !self.doc.resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key("Heading1"))
+                && !self.doc.definitions.as_ref().is_some_and(|r| r.has_style("Heading1"))
                 && let Some(h) = crate::services::styles::builtin::built_in("Heading1")
             {
                 self.add_built_in(h, fonts);
@@ -1597,8 +1598,18 @@ impl Editor {
             let Some(p) = self.index.para(&self.doc, e.para) else { continue };
             let len = para_len(p);
             let name = free_name("_Toc", &taken, &mut next);
-            let end = Step::Text { para: e.para, range: len..len, with: vec![Inline::Bookmark(format!("/{name}"))], edges: Default::default() };
-            let start = Step::Text { para: e.para, range: Unit(0)..Unit(0), with: vec![Inline::Bookmark(name.clone())], edges: Default::default() };
+            let end = Step::Text {
+                para: e.para,
+                range: len..len,
+                with: vec![Inline::Range(crate::docx::review::RangeMark::bookmark_end(&*name))],
+                edges: Default::default(),
+            };
+            let start = Step::Text {
+                para: e.para,
+                range: Unit(0)..Unit(0),
+                with: vec![Inline::Range(crate::docx::review::RangeMark::bookmark_start(&*name))],
+                edges: Default::default(),
+            };
             if self.step(tx, end).is_ok() && self.step(tx, start).is_ok() {
                 out.insert(e.para, name);
             }
@@ -1608,21 +1619,18 @@ impl Editor {
 
     /// A paragraph in style `style` holding `text`, for `container`.
     fn plain_para(&self, style: &str, text: &str, container: Container, like: &Paragraph) -> Paragraph {
-        let cx = self.cx();
-        let w = &cx.w;
-        let ppr = format!("<{w}pPr><{w}pStyle {w}val=\"{}\"/></{w}pPr>", crate::docx::write::props::esc(style));
-        self.new_para(&ppr, &[(text.to_string(), None, false)], container, like)
+        self.new_para(ParaProps { style: Some(style.into()), ..Default::default() }, &[(text.to_string(), None, false)], container, like)
     }
 
-    /// A new paragraph from its `w:pPr` and its texts (each with its source run's direct formatting, and bold).
-    pub(super) fn new_para(&self, ppr: &str, texts: &[(String, Option<&Run>, bool)], container: Container, like: &Paragraph) -> Paragraph {
-        let cx = self.cx();
-        let res = self.doc.resolver.clone();
+    /// A new paragraph from its authored properties and its texts (each with its source run's direct formatting, and
+    /// bold).
+    pub(super) fn new_para(&self, ppr: ParaProps, texts: &[(String, Option<&Run>, bool)], container: Container, like: &Paragraph) -> Paragraph {
+        let res = self.doc.definitions.clone();
         let region = res.as_ref().and_then(|r| self.region_in(container, r));
         // Without styles, `like`'s.
         let (style, base) = match &res {
             Some(r) => {
-                let x = r.para_from_xml(Some(ppr), region.as_ref(), &cx);
+                let x = crate::docx::para_xml::with(r, crate::docx::para_props::ParaDirect::typed(Rc::new(ppr)), None, region.as_ref());
                 (Rc::new(x.style), Some(x.base))
             }
             None => (like.style.clone(), None),
@@ -1630,12 +1638,13 @@ impl Editor {
         let run_of = |src: Option<&Run>, bold: bool| -> Run {
             match (&res, &base) {
                 (Some(r), Some(b)) => {
-                    let mut rpr = src.and_then(|s| s.direct.0.as_deref()).map(strip_rpr).unwrap_or_default();
+                    let mut e = entry_format(src);
                     if bold {
-                        rpr.push_str(&format!("<{w}b/><{w}bCs/>", w = cx.w));
+                        e.toggle(Toggle::BOLD, true);
+                        e.toggle(Toggle::BOLD_COMPLEX, true);
                     }
-                    let xml = (!rpr.is_empty()).then(|| format!("<{w}rPr>{rpr}</{w}rPr>", w = cx.w));
-                    r.run_from_xml(b, xml.as_deref(), &cx)
+                    let direct = src.map_or_else(RunDirect::default, |s| s.direct.clone()).edit(e);
+                    Rc::new(run_xml::resolve(r, b, direct, false))
                 }
                 _ => src.cloned().unwrap_or_else(|| like.mark.clone()),
             }
@@ -1645,29 +1654,39 @@ impl Editor {
         if inlines.is_empty() {
             inlines.push(Inline::Text(String::new(), mark.clone()));
         }
-        Paragraph { style, mark, list: None, inlines, src: None, id: crate::docx::next_para_id(), controls: Vec::new(), div: None }
+        Paragraph {
+            style,
+            mark,
+            list: None,
+            inlines,
+            origin: crate::docx::Origin::NONE,
+            id: crate::docx::next_para_id(),
+            controls: Vec::new(),
+            div: None,
+        }
     }
 
-    /// A run of a new paragraph (`w:pPr` `ppr`, in `container`) hidden in a web view (`w:webHidden`).
-    fn web_hidden(&self, ppr: &str, container: Container, run: &Run) -> Run {
-        let Some(r) = self.doc.resolver.clone() else { return run.clone() };
+    /// A run of a new paragraph (authored properties `ppr`, in `container`) hidden in a web view (`w:webHidden`).
+    fn web_hidden(&self, ppr: &ParaProps, container: Container, run: &Run) -> Run {
+        let Some(r) = self.doc.definitions.clone() else { return run.clone() };
         let cx = self.cx();
-        let base = r.para_from_xml(Some(ppr), self.region_in(container, &r).as_ref(), &cx).base;
-        r.run_from_xml(&base, Some(&format!("<{w}rPr><{w}webHidden/></{w}rPr>", w = cx.w)), &cx)
+        let base = crate::docx::para_xml::resolve(&r, ppr, None, self.region_in(container, &r).as_ref()).base;
+        let mut p = CharProps::default();
+        char_props::put_unmodelled_flag(&mut p, "webHidden", &cx);
+        Rc::new(run_xml::resolve(&r, &base, RunDirect::typed(Some(Rc::new(p))), false))
     }
 
     /// The table region a paragraph in `container` takes its table style's formatting from.
-    fn region_in(&self, container: Container, r: &crate::docx::resolve::Resolver) -> Option<crate::docx::styles::Region> {
+    fn region_in(&self, container: Container, r: &Definitions) -> Option<crate::format::cascade::TableRegion> {
         let Container::Cell { table, row, cell } = container else { return None };
-        self.index.table(&self.doc, table).map(|t| r.region_of(t, row, cell))
+        self.index.table(&self.doc, table).map(|t| r.cascade().region_of(t, row, cell))
     }
 
     /// The building block control Word's built-in tables of contents are in.
     fn toc_control(&self) -> crate::docx::Control {
-        let w = self.cx().w;
-        let kind_xml = format!("<{w}docPartObj><{w}docPartGallery {w}val=\"Table of Contents\"/><{w}docPartUnique/></{w}docPartObj>");
-        let props = crate::docx::ControlProps { kind: crate::docx::ControlKind::Other, kind_xml: Some(kind_xml), ..Default::default() };
-        crate::docx::Control { props, open: String::new(), close: String::new(), read: None, at: None }
+        let kept = Some(crate::docx::KeptKind::BuildingBlock { gallery: Some("Table of Contents".into()), category: None, unique: true });
+        let props = crate::docx::ControlProps { kind: crate::docx::ControlKind::Other, kept, ..Default::default() };
+        crate::docx::Control::new(props)
     }
 
     /// A table's result paragraphs: the start edge (code `code`) leading the first, one paragraph per entry, or Word's
@@ -1683,30 +1702,27 @@ impl Editor {
         container: Container,
         like: &Paragraph,
     ) -> Vec<Block> {
-        let cx = self.cx();
-        let w = cx.w.clone();
         let width = self.text_width(container);
         let right = ((width * 20.0).round() as i64 - 10).max(0);
         let figures = o.captions.is_some();
-        let start = FieldEdge::Start { code: code.to_string(), lock: false, dirty: false, view: FieldView::Result }.inline(&w, like.mark.clone());
+        let start = FieldEdge::Start { code: code.to_string(), lock: false, dirty: false, view: FieldView::Result }.inline(like.mark.clone());
         let mut out: Vec<Block> = Vec::with_capacity(entries.len().max(1));
         for e in entries {
             let style = if figures && !e.from_field { "TableofFigures".to_string() } else { format!("TOC{}", e.level.clamp(1, 9)) };
             let numbered = e.runs.first().is_some_and(|(_, r)| r.is_none()) && e.runs.get(1).is_some_and(|(p, _)| *p == EntryPiece::Tab);
-            let mut tabs = String::new();
+            let mut tabs = Vec::new();
             if numbered {
-                tabs.push_str(&format!("<{w}tab {w}val=\"left\" {w}pos=\"{}\"/>", 440 * i64::from(e.level)));
+                tabs.push(tab(440 * i64::from(e.level), TabKind::Left, Leader::None));
             }
             if look.right_align && e.page && o.separator.is_none() {
-                tabs.push_str(&format!("<{w}tab {w}val=\"right\" {w}leader=\"{}\" {w}pos=\"{right}\"/>", leader_xml(look.leader)));
+                tabs.push(tab(right, TabKind::Right, look.leader));
             }
-            let tabs = if tabs.is_empty() { String::new() } else { format!("<{w}tabs>{tabs}</{w}tabs>") };
-            let ppr = format!("<{w}pPr><{w}pStyle {w}val=\"{style}\"/>{tabs}</{w}pPr>");
-            let mut p = self.new_para(&ppr, &[], container, like);
+            let ppr = ParaProps { style: Some(style.as_str().into()), tabs, ..Default::default() };
+            let mut p = self.new_para(ppr.clone(), &[], container, like);
             let base = p.mark.clone();
             let run_for = |src: &Option<Run>| -> Run {
                 let Some(src) = src else { return base.clone() };
-                let mut q = self.new_para(&ppr, &[(String::new(), Some(src), false)], container, like);
+                let mut q = self.new_para(ppr.clone(), &[(String::new(), Some(src), false)], container, like);
                 match q.inlines.pop() {
                     Some(Inline::Text(_, r)) => r,
                     _ => base.clone(),
@@ -1753,8 +1769,7 @@ impl Editor {
             out.push(Block::Para(p));
         }
         if out.is_empty() {
-            let ppr = format!("<{w}pPr/>");
-            let mut p = self.new_para(&ppr, &[(none_found(figures).to_string(), None, true)], container, like);
+            let mut p = self.new_para(ParaProps::default(), &[(none_found(figures).to_string(), None, true)], container, like);
             p.inlines.insert(0, start);
             out.push(Block::Para(p));
         }
@@ -1819,7 +1834,7 @@ impl Editor {
         }
         let code = m.code();
         let cx = self.cx();
-        let res = self.doc.resolver.clone();
+        let res = self.doc.definitions.clone();
         // Word marks entries as hidden text: the run at the caret, hidden.
         let base = self.selection.focus().and_then(|c| c.para_offset()).and_then(|(para, at)| self.run_base(para, at, res.as_ref()?, &cx));
         let id = FieldId::next();
@@ -1827,9 +1842,9 @@ impl Editor {
             |run| {
                 let hidden = match (&res, &base) {
                     (Some(r), Some(b)) => {
-                        let w = &cx.w;
-                        let rpr = run.direct.0.as_deref().map(strip_rpr).unwrap_or_default();
-                        r.run_from_xml(b, Some(&format!("<{w}rPr>{rpr}<{w}vanish/></{w}rPr>")), &cx)
+                        let mut e = entry_format(Some(&run));
+                        e.toggle(Toggle::HIDDEN, true);
+                        Rc::new(run_xml::resolve(r, b, run.direct.edit(e), false))
                     }
                     _ => run.clone(),
                 };
@@ -1858,7 +1873,8 @@ fn blocks_para_at(e: &Editor, container: Container, k: usize) -> Option<ParaId> 
 
 /// A field edge a deletion reaches: kept (its partner is outside the range) or gone with its field.
 pub(super) struct CutEdge {
-    edge: Rc<crate::docx::Opaque>,
+    edge: Rc<crate::docx::Edge>,
+    run: Run,
     keep: bool,
     /// The paragraph it was in.
     para: ParaId,
@@ -1893,11 +1909,18 @@ impl Editor {
         for &place in &inside {
             let Some(partner) = partner(blocks, place) else { continue };
             let Block::Para(p) = &blocks[place.0] else { continue };
-            let Inline::Opaque(o) = &p.inlines[place.1] else { continue };
-            out.push(CutEdge { edge: o.clone(), keep: !inside.contains(&partner), para: ParaId(p.id), container, block: from.0 });
+            let Inline::FieldEdge { edge, run } = &p.inlines[place.1] else { continue };
+            out.push(CutEdge {
+                edge: edge.clone(),
+                run: run.clone(),
+                keep: !inside.contains(&partner),
+                para: ParaId(p.id),
+                container,
+                block: from.0,
+            });
         }
         // Ends before starts: an earlier field's end comes before a later one's start where both are kept.
-        out.sort_by_key(|c| matches!(c.edge.field, Some(FieldEdge::Start { .. })));
+        out.sort_by_key(|c| matches!(c.edge.kind, FieldEdge::Start { .. }));
         out
     }
 
@@ -1925,12 +1948,14 @@ impl Editor {
         let caret = at.and_then(|p| p.para_offset()).map(|(p, _)| p);
         for c in cut.into_iter().filter(|c| !c.keep) {
             let holds = |e: &Editor, p: ParaId| {
-                e.index.para(&e.doc, p).and_then(|q| q.inlines.iter().position(|i| matches!(i, Inline::Opaque(x) if Rc::ptr_eq(x, &c.edge))))
+                e.index
+                    .para(&e.doc, p)
+                    .and_then(|q| q.inlines.iter().position(|i| matches!(i, Inline::FieldEdge { edge, .. } if Rc::ptr_eq(edge, &c.edge))))
             };
             let Some((para, k)) = std::iter::once(c.para).chain(caret).find_map(|p| Some((p, holds(self, p)?))) else { continue };
             let Some(rec) = tx.rec.as_mut() else { continue };
             let mut ids = std::mem::take(&mut self.doc.review_ids);
-            let now = rec.delete_edge(&c.edge, &mut ids);
+            let now = rec.delete_edge(&c.edge, &c.run, &mut ids);
             self.doc.review_ids = ids;
             let Some(p) = self.index.para(&self.doc, para) else { continue };
             let mut inlines = p.inlines.clone();
@@ -1961,7 +1986,7 @@ impl Editor {
         if slot.container != container
             && let Some(q) = self.index.para(&self.doc, para)
         {
-            let moved = |i: &Inline| matches!(i, Inline::Opaque(x) if cut.iter().any(|c| Rc::ptr_eq(x, &c.edge)));
+            let moved = |i: &Inline| matches!(i, Inline::FieldEdge { edge, .. } if cut.iter().any(|c| Rc::ptr_eq(edge, &c.edge)));
             if q.inlines.iter().any(moved) {
                 let inlines: Vec<Inline> = q.inlines.iter().filter(|i| !moved(i)).cloned().collect();
                 self.step(tx, Step::Restyle { para, inlines })?;
@@ -1994,19 +2019,19 @@ impl Editor {
                     .collect()
             })
             .unwrap_or_default();
-        let found = |e: &Editor, o: &Rc<crate::docx::Opaque>| -> Option<ParaId> {
-            near.iter()
-                .copied()
-                .find(|p| e.index.para(&e.doc, *p).is_some_and(|q| q.inlines.iter().any(|i| matches!(i, Inline::Opaque(x) if Rc::ptr_eq(x, o)))))
+        let found = |e: &Editor, o: &Rc<crate::docx::Edge>| -> Option<ParaId> {
+            near.iter().copied().find(|p| {
+                e.index.para(&e.doc, *p).is_some_and(|q| q.inlines.iter().any(|i| matches!(i, Inline::FieldEdge { edge, .. } if Rc::ptr_eq(edge, o))))
+            })
         };
         let mut back = Vec::new();
         for c in cut {
             match (c.keep, found(self, &c.edge)) {
-                (true, None) => back.push(Inline::Opaque(c.edge)),
+                (true, None) => back.push(Inline::FieldEdge { edge: c.edge, run: c.run }),
                 (false, Some(p)) => {
                     let Some(q) = self.index.para(&self.doc, p) else { continue };
                     let inlines: Vec<Inline> =
-                        q.inlines.iter().filter(|i| !matches!(i, Inline::Opaque(x) if Rc::ptr_eq(x, &c.edge))).cloned().collect();
+                        q.inlines.iter().filter(|i| !matches!(i, Inline::FieldEdge { edge, .. } if Rc::ptr_eq(edge, &c.edge))).cloned().collect();
                     self.step(tx, Step::Restyle { para: p, inlines })?;
                 }
                 _ => {}
@@ -2027,28 +2052,15 @@ impl Editor {
     }
 }
 
-/// A run's `w:rPr` content without its style, revision marks and the `w:rPr` element itself: the direct formatting
-/// an entry keeps.
-fn strip_rpr(rpr: &str) -> String {
-    let inner = rpr.find('>').map_or("", |k| &rpr[k + 1..]);
-    let inner = inner.rfind("</").map_or(inner, |k| &inner[..k]);
-    let mut out = String::new();
-    let mut rest = inner;
-    // Element by element: those that aren't formatting go.
-    while let Some(open) = rest.find('<') {
-        let tail = &rest[open..];
-        let name_end = tail[1..].find(|c: char| c.is_whitespace() || c == '/' || c == '>').map_or(tail.len(), |k| k + 1);
-        let name = &tail[1..name_end];
-        let close = format!("</{name}>");
-        let end = match tail.find("/>") {
-            Some(k) if !tail[..k].contains('>') => k + 2,
-            _ => tail.find(&close).map_or(tail.len(), |k| k + close.len()),
-        };
-        let local = name.rsplit(':').next().unwrap_or(name);
-        if !matches!(local, "rStyle" | "ins" | "del" | "rPrChange" | "moveFrom" | "moveTo" | "vanish" | "webHidden") {
-            out.push_str(&tail[..end]);
-        }
-        rest = &tail[end..];
-    }
-    out
+/// The direct formatting of `run` (none: none) an entry keeps: all but its style and its hiding, in print and on the
+/// web.
+fn entry_format(run: Option<&Run>) -> CharEdit {
+    let mut e = CharEdit::new(run.and_then(|r| r.direct.props()).map_or_else(CharProps::default, |p| (**p).clone()));
+    e.style = None;
+    e.whole(Prop::Style);
+    e.toggles.set &= !Toggle::HIDDEN.0;
+    e.toggles.on &= !Toggle::HIDDEN.0;
+    e.whole(Prop::Toggle(Toggle::HIDDEN));
+    char_props::drop_unmodelled(&mut e, "webHidden");
+    e
 }

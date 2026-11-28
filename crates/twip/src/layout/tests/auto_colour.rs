@@ -7,7 +7,7 @@ use crate::layout::traverse::paint_items;
 
 fn colours(body: &str) -> Vec<(String, Option<u32>)> {
     let doc = crate::docx::read(&bytes(body).expect("a package")).expect("the document reads");
-    let snap = crate::layout::layout(&doc, &fonts());
+    let snap = crate::layout::tests::layout(&doc, &fonts());
     paint_items(&snap.pages()[0])
         .into_iter()
         .filter_map(|i| if let Item::Glyphs(r) = i { Some((r.chars.iter().map(|c| c.0).collect(), r.colour)) } else { None })
@@ -78,7 +78,7 @@ fn a_filled_shapes_content_keeps_its_colours_on_a_dark_page_and_an_unfilled_ones
     let own = |fill: &str| {
         let body = format!("<w:p>{}</w:p>", anchor(100, 200, 100, 50, 1, false, 5, &text_box(fill)));
         let doc = crate::docx::read(&bytes(&body).expect("a package")).expect("the document reads");
-        let snap = crate::layout::layout(&doc, &fonts());
+        let snap = crate::layout::tests::layout(&doc, &fonts());
         let mut found = None;
         crate::layout::traverse::paint(&snap.pages()[0], &mut |p| {
             if let Item::Glyphs(r) = p.item

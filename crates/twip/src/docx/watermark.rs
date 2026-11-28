@@ -3,7 +3,7 @@
 //! Word's text and picture watermarks: a VML shape in a header, behind the text and centred on the margins, that
 //! Word's Watermark dialog finds by its id's prefix.
 
-use super::model::Float;
+use super::model::{Float, Origin};
 
 /// A text watermark's shape id prefix.
 pub const TEXT_ID: &str = "PowerPlusWaterMarkObject";
@@ -39,7 +39,7 @@ pub struct TextMark {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PictureMark {
-    pub image: Option<usize>,
+    pub image: Option<crate::docx::ResourceId>,
     pub washout: bool,
 }
 
@@ -237,15 +237,15 @@ pub fn vml(m: &Watermark, w: &str, size: [f64; 2], spid: u32, image: &str, lang:
 
 /// A watermark's shape as a float, as the reader makes it of [`vml`]'s markup (`image` the picture, which `vml` names
 /// by `rid`): centred on the margins, behind the text, wrapping nothing.
-pub fn float(m: &Watermark, size: [f64; 2], spid: u32, image: Option<usize>) -> Option<Float> {
+pub fn float(m: &Watermark, size: [f64; 2], spid: u32, image: Option<crate::docx::ResourceId>) -> Option<Float> {
     const WML: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
     let rid = "rIdWatermark";
     let xml = format!(r#"<w:r xmlns:w="{WML}">{}</w:r>"#, vml(m, "w:", size, spid, rid, ""));
     let dom = roxmltree::Document::parse(&xml).ok()?;
     let pict = dom.root_element().children().find(|c| c.tag_name().name() == "pict")?;
-    struct One(&'static str, Option<usize>);
-    impl crate::drawing::read::Source for One {
-        fn image(&mut self, rid: &str) -> Option<usize> {
+    struct One(&'static str, Option<crate::docx::ResourceId>);
+    impl crate::docx::drawing::read::Source for One {
+        fn image(&mut self, rid: &str) -> Option<crate::docx::ResourceId> {
             if rid == self.0 { self.1 } else { None }
         }
         fn diagram(&mut self, _: &str) -> Option<crate::drawing::Shape> {
@@ -253,8 +253,8 @@ pub fn float(m: &Watermark, size: [f64; 2], spid: u32, image: Option<usize>) -> 
         }
     }
     let mut src = One(rid, image);
-    let mut ctx = crate::drawing::read::Ctx { source: &mut src, unknown_presets: Vec::new() };
-    let v = crate::drawing::vml::read(pict, &mut ctx)?;
+    let mut ctx = crate::docx::drawing::read::Ctx { source: &mut src, unknown_presets: Vec::new() };
+    let v = crate::docx::drawing::vml::read(pict, &mut ctx)?;
     let mut shape = v.shape;
     let emu = |p: f64| crate::drawing::units::Emu((p * 12700.0).round() as i64);
     shape.xfrm.ext = [emu(v.style.w), emu(v.style.h)];
@@ -269,14 +269,14 @@ pub fn float(m: &Watermark, size: [f64; 2], spid: u32, image: Option<usize>) -> 
         alt: "".into(),
         lock_aspect: false,
         text_box: None,
-        h_relative: "margin".into(),
-        h_align: Some("center".into()),
+        h_relative: crate::docx::HorizontalRelation::Margin,
+        h_align: Some(crate::docx::HorizontalAlign::Center),
         h_offset: 0.0,
-        v_relative: "margin".into(),
-        v_align: Some("center".into()),
+        v_relative: crate::docx::VerticalRelation::Margin,
+        v_align: Some(crate::docx::VerticalAlign::Center),
         v_offset: 0.0,
-        wrap: "none".into(),
-        wrap_text: "bothSides".into(),
+        wrap: crate::docx::FloatWrap::None,
+        wrap_text: crate::docx::WrapText::BothSides,
         dist: [0.0, 0.0, 9.0, 9.0],
         effect: [0.0; 4],
         poly: None,
@@ -289,9 +289,8 @@ pub fn float(m: &Watermark, size: [f64; 2], spid: u32, image: Option<usize>) -> 
         rot_swap: false,
         vml: true,
         relative: Default::default(),
-        src: None,
+        origin: Origin::NONE,
         locked: false,
-        frame_src: None,
         in_note: false,
         parts: Vec::new(),
         shape: Some(Box::new(shape)),

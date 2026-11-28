@@ -57,7 +57,7 @@ pub struct BodyRecord {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct HfRecord {
-    pub part: String,
+    pub part: super::ids::HeaderFooterId,
     pub fields: FieldValues,
     pub height: f64,
 }

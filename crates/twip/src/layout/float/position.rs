@@ -1,7 +1,7 @@
 //! Float positioning
 
 use crate::docx::Compat;
-use crate::docx::model::Float;
+use crate::docx::model::{Float, FloatWrap, HorizontalAlign, HorizontalRelation, VerticalAlign, VerticalRelation};
 
 use super::Frames;
 
@@ -67,35 +67,36 @@ fn snap(fr: &Frames, offset: f64) -> f64 {
 }
 
 // Inside and outside
-fn h_ref<'a>(f: &'a Float, fr: &Frames) -> &'a str {
-    match f.h_relative.as_str() {
-        r @ ("insideMargin" | "outsideMargin") => {
+fn h_ref(f: &Float, fr: &Frames) -> HorizontalRelation {
+    match f.h_relative {
+        r @ (HorizontalRelation::InsideMargin | HorizontalRelation::OutsideMargin) => {
             let inside_left = if fr.compat == Compat::Generic { fr.odd } else { !fr.odd };
-            if (r == "insideMargin") == inside_left { "leftMargin" } else { "rightMargin" }
+            if (r == HorizontalRelation::InsideMargin) == inside_left { HorizontalRelation::LeftMargin } else { HorizontalRelation::RightMargin }
         }
         r => r,
     }
 }
 
-fn v_ref<'a>(f: &'a Float, fr: &Frames) -> &'a str {
-    match (f.v_relative.as_str(), fr.odd) {
-        ("insideMargin", true) => "topMargin",
-        ("insideMargin", false) => "bottomMargin",
-        ("outsideMargin", odd) => {
+fn v_ref(f: &Float, fr: &Frames) -> VerticalRelation {
+    match (f.v_relative, fr.odd) {
+        (VerticalRelation::InsideMargin, true) => VerticalRelation::TopMargin,
+        (VerticalRelation::InsideMargin, false) => VerticalRelation::BottomMargin,
+        (VerticalRelation::OutsideMargin, odd) => {
             if odd == (fr.compat == Compat::Generic) {
-                "bottomMargin"
+                VerticalRelation::BottomMargin
             } else {
-                "topMargin"
+                VerticalRelation::TopMargin
             }
         }
         (r, _) => r,
     }
 }
 
-fn by_parity<'a>(align: Option<&'a str>, fr: &Frames, (min, max): (&'a str, &'a str)) -> Option<&'a str> {
+fn by_parity(align: Option<HorizontalAlign>, fr: &Frames) -> Option<HorizontalAlign> {
+    let (min, max) = (HorizontalAlign::Left, HorizontalAlign::Right);
     match align {
-        Some("inside") => Some(if fr.odd { min } else { max }),
-        Some("outside") => Some(if fr.odd { max } else { min }),
+        Some(HorizontalAlign::Inside) => Some(if fr.odd { min } else { max }),
+        Some(HorizontalAlign::Outside) => Some(if fr.odd { max } else { min }),
         a => a,
     }
 }
@@ -103,7 +104,7 @@ fn by_parity<'a>(align: Option<&'a str>, fr: &Frames, (min, max): (&'a str, &'a 
 /// The axes on which the box with its effect extents is placed: those with an alignment, a relative size or a
 /// percentage position. Compat ≤ 14: both, when either is.
 fn grown(f: &Float, fr: &Frames) -> [bool; 2] {
-    let own = |k: usize| [&f.h_align, &f.v_align][k].is_some() || f.relative.size[k].is_some() || f.relative.pos[k].is_some();
+    let own = |k: usize| [f.h_align.is_some(), f.v_align.is_some()][k] || f.relative.size[k].is_some() || f.relative.pos[k].is_some();
     match [own(0), own(1)] {
         [a, b] if fr.compat == Compat::Legacy => [a || b; 2],
         axes => axes,
@@ -111,24 +112,24 @@ fn grown(f: &Float, fr: &Frames) -> [bool; 2] {
 }
 
 /// The left edge of horizontal reference `href`'s box and its width.
-fn h_box(href: &str, fr: &Frames) -> (f64, f64) {
+fn h_box(href: HorizontalRelation, fr: &Frames) -> (f64, f64) {
     match href {
-        "page" => (0.0, fr.page_w),
-        "margin" => (fr.margin[0], fr.page_w - fr.margin[0] - fr.margin[1]),
-        "leftMargin" => (0.0, fr.margin[0]),
-        "rightMargin" => (fr.page_w - fr.margin[1], fr.margin[1]),
+        HorizontalRelation::Page => (0.0, fr.page_w),
+        HorizontalRelation::Margin => (fr.margin[0], fr.page_w - fr.margin[0] - fr.margin[1]),
+        HorizontalRelation::LeftMargin => (0.0, fr.margin[0]),
+        HorizontalRelation::RightMargin => (fr.page_w - fr.margin[1], fr.margin[1]),
         _ => fr.column,
     }
 }
 
 /// The top of vertical reference `vref`'s box and its height (none for the paragraph and the line).
-fn v_box(vref: &str, fr: &Frames, para_top: f64, line_top: f64) -> (f64, f64) {
+fn v_box(vref: VerticalRelation, fr: &Frames, para_top: f64, line_top: f64) -> (f64, f64) {
     match vref {
-        "page" => (0.0, fr.page_h),
-        "margin" => (fr.margin[2], fr.page_h - fr.margin[2] - fr.margin[3]),
-        "topMargin" => (0.0, fr.margin[2]),
-        "bottomMargin" => (fr.page_h - fr.margin[3], fr.margin[3]),
-        "line" => (line_top, 0.0),
+        VerticalRelation::Page => (0.0, fr.page_h),
+        VerticalRelation::Margin => (fr.margin[2], fr.page_h - fr.margin[2] - fr.margin[3]),
+        VerticalRelation::TopMargin => (0.0, fr.margin[2]),
+        VerticalRelation::BottomMargin => (fr.page_h - fr.margin[3], fr.margin[3]),
+        VerticalRelation::Line => (line_top, 0.0),
         _ => (para_top, 0.0),
     }
 }
@@ -149,22 +150,29 @@ pub fn h_pos(f: &Float, fr: &Frames) -> f64 {
     let href = h_ref(f, fr);
     let (x0, w) = h_box(href, fr);
     if let Some(p) = f.relative.pos[0] {
-        let base = if matches!(href, "page" | "margin" | "leftMargin" | "rightMargin") { w } else { fr.page_w - fr.margin[0] - fr.margin[1] };
+        let base = if matches!(
+            href,
+            HorizontalRelation::Page | HorizontalRelation::Margin | HorizontalRelation::LeftMargin | HorizontalRelation::RightMargin
+        ) {
+            w
+        } else {
+            fr.page_w - fr.margin[0] - fr.margin[1]
+        };
         return x0 + if f.poly.is_none() { f.effect[0] } else { 0.0 } + share(base, p);
     }
-    if fr.compat == Compat::Legacy && f.h_relative == "page" {
-        match f.h_align.as_deref() {
-            Some("left") if fr.margin[0] >= f.w => return fr.margin[0] - f.w,
-            Some("right") if fr.margin[1] >= f.w => return fr.page_w - fr.margin[1],
+    if fr.compat == Compat::Legacy && f.h_relative == HorizontalRelation::Page {
+        match f.h_align {
+            Some(HorizontalAlign::Left) if fr.margin[0] >= f.w => return fr.margin[0] - f.w,
+            Some(HorizontalAlign::Right) if fr.margin[1] >= f.w => return fr.page_w - fr.margin[1],
             _ => {}
         }
     }
     let [l, _, r, _] = if f.poly.is_none() { f.effect } else { [0.0; 4] };
     x0 + snap(
         fr,
-        match by_parity(f.h_align.as_deref(), fr, ("left", "right")) {
-            Some("center") => (w - f.w) / 2.0 + (l - r) / 2.0,
-            Some("right") => w - f.w - r,
+        match by_parity(f.h_align, fr) {
+            Some(HorizontalAlign::Center) => (w - f.w) / 2.0 + (l - r) / 2.0,
+            Some(HorizontalAlign::Right) => w - f.w - r,
             Some(_) => l,
             None => f.h_offset + if grown(f, fr)[0] { l } else { 0.0 },
         },
@@ -177,27 +185,35 @@ pub fn v_pos(f: &Float, h: f64, fr: &Frames, para_top: f64, line_top: f64) -> f6
     // reference but the line and the paragraph.
     if fr.cell && f.v_align.is_some() {
         return match vref {
-            "line" => line_top,
-            "paragraph" => para_top,
+            VerticalRelation::Line => line_top,
+            VerticalRelation::Paragraph => para_top,
             _ => fr.margin[2],
         };
     }
     let (y0, ht) = v_box(vref, fr, para_top, line_top);
     if let Some(p) = f.relative.pos[1].filter(|_| !fr.cell) {
-        let base = if matches!(vref, "page" | "margin" | "topMargin" | "bottomMargin") { ht } else { fr.page_h - fr.margin[2] - fr.margin[3] };
+        let base = if matches!(vref, VerticalRelation::Page | VerticalRelation::Margin | VerticalRelation::TopMargin | VerticalRelation::BottomMargin)
+        {
+            ht
+        } else {
+            fr.page_h - fr.margin[2] - fr.margin[3]
+        };
         return y0 + if f.poly.is_none() { f.effect[1] } else { 0.0 } + share(base, p);
     }
     match vref {
-        "page" | "margin" | "topMargin" | "bottomMargin" | "line" => {}
+        VerticalRelation::Page | VerticalRelation::Margin | VerticalRelation::TopMargin | VerticalRelation::BottomMargin | VerticalRelation::Line => {
+        }
         _ if f.v_align.is_some() => return para_top,
         _ => return para_top + f.v_offset + if grown(f, fr)[1] && f.poly.is_none() { f.effect[1] } else { 0.0 },
     }
     let [_, t, _, b] = if f.poly.is_none() { f.effect } else { [0.0; 4] };
     y0 + snap(
         fr,
-        match by_parity(f.v_align.as_deref(), fr, ("top", "bottom")) {
-            Some("center") => (ht - h) / 2.0 + (t - b) / 2.0,
-            Some("bottom") => ht - h - b,
+        match f.v_align {
+            Some(VerticalAlign::Center) => (ht - h) / 2.0 + (t - b) / 2.0,
+            Some(VerticalAlign::Bottom) => ht - h - b,
+            Some(VerticalAlign::Inside) if !fr.odd => ht - h - b,
+            Some(VerticalAlign::Outside) if fr.odd => ht - h - b,
             Some(_) => t,
             None => f.v_offset + if grown(f, fr)[1] { t } else { 0.0 },
         },
@@ -208,11 +224,15 @@ pub fn v_pos(f: &Float, h: f64, fr: &Frames, para_top: f64, line_top: f64) -> f6
 /// extents moves left off the right edge and up off the bottom, then right of the left edge and below the top.
 /// In a cell, both modes, a wrapping float stays inside the cell's box horizontally, its left edge first.
 pub fn page_clamp(f: &Float, (x, y): (f64, f64), h: f64, fr: &Frames) -> (f64, f64) {
-    if fr.cell && f.wrap != "none" {
+    if fr.cell && f.wrap != FloatWrap::None {
         let [l, _, r, _] = f.effect;
         return ((x - (x + f.w + r - fr.page_w).max(0.0)).max(l), y);
     }
-    if fr.compat != Compat::Legacy || fr.cell || f.wrap == "none" || !(f.h_relative == "column" || f.v_relative == "paragraph") {
+    if fr.compat != Compat::Legacy
+        || fr.cell
+        || f.wrap == FloatWrap::None
+        || !(f.h_relative == HorizontalRelation::Column || f.v_relative == VerticalRelation::Paragraph)
+    {
         return (x, y);
     }
     let [l, t, r, b] = f.effect;

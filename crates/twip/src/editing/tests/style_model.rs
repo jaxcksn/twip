@@ -3,6 +3,7 @@
 use super::super::Editor;
 use super::super::commands::Command;
 use super::fonts;
+use crate::docx::origin::ParagraphOrigin;
 use crate::docx::styles::Styles;
 use crate::docx::{Block, Inline};
 
@@ -25,15 +26,15 @@ pub fn open_pkg(bytes: &[u8]) -> Editor {
 }
 
 pub fn reopened(e: &Editor) -> Editor {
-    open_pkg(&crate::docx::write::save(e.document()).expect("saves"))
+    open_pkg(&crate::docx::write::save(e.document(), e.docx()).expect("saves"))
 }
 
 fn first_para(e: &Editor) -> &crate::docx::Paragraph {
     e.document().sections[0].blocks.iter().find_map(|b| if let Block::Para(p) = b { Some(p) } else { None }).expect("a paragraph")
 }
 
-fn styles(e: &Editor) -> &Styles {
-    &e.document().resolver.as_ref().expect("styles").styles
+fn styles(e: &Editor) -> Styles {
+    crate::docx::baseline::Baseline::of(e.document(), e.docx()).frozen.styles
 }
 
 fn colours() -> crate::docx::props::ThemeColours {
@@ -86,7 +87,7 @@ fn joined_runs(e: &Editor) -> (String, f64) {
 fn joined() -> Editor {
     let body = r#"<w:p><w:pPr><w:pStyle w:val="Heading1"/><w:rPr><w:vanish/></w:rPr></w:pPr><w:r><w:t>Head </w:t></w:r></w:p><w:p><w:r><w:t>Body</w:t></w:r></w:p>"#;
     let e = open_pkg(&pkg(JOIN_STYLES, body));
-    assert_eq!(first_para(&e).src.as_ref().map(|s| s.ranges.len()), Some(2), "joined");
+    assert_eq!(first_para(&e).read_parts(), 2, "joined");
     e
 }
 
@@ -270,7 +271,7 @@ fn deleting_a_style_takes_it_out_of_the_paragraphs_and_runs_naming_it() {
     e.execute(Command::DeleteStyle(id("Mark")), fonts());
     let doc = {
         use std::io::Read;
-        let bytes = crate::docx::write::save(e.document()).expect("saves");
+        let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
         let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).expect("a package");
         let mut s = String::new();
         z.by_name("word/document.xml").expect("the body").read_to_string(&mut s).expect("text");
@@ -322,7 +323,8 @@ fn a_new_style_made_a_character_style_takes_a_character_base() {
     let v = e.style_dialog_update(&was, now, fonts()).expect("updates");
     assert_eq!(v.based_on.as_ref().map(|b| b.0.as_str()), Some("DefaultParagraphFont"));
     e.style_dialog_apply(v, fonts());
-    let accent = styles(&e).get("Accent").expect("made");
+    let sheet = styles(&e);
+    let accent = sheet.get("Accent").expect("made");
     assert_eq!((accent.kind, accent.based_on.as_deref()), (crate::docx::styles::StyleKind::Character, Some("DefaultParagraphFont")));
 }
 
@@ -473,7 +475,8 @@ fn a_built_in_style_the_document_lacks_opens_in_the_style_dialog_and_saves_with_
     now.size = Points(30.0);
     let v = e.style_dialog_update(&was, now, fonts()).expect("updates");
     e.style_dialog_apply(v, fonts());
-    let h4 = styles(&e).get("Heading4").expect("added");
+    let sheet = styles(&e);
+    let h4 = sheet.get("Heading4").expect("added");
     assert_eq!((h4.name.as_str(), h4.base.rpr.size, h4.based_on.as_deref()), ("heading 4", Some(30.0), Some("Normal")));
 }
 
@@ -499,21 +502,21 @@ fn a_table_style_edit_keeps_the_tables_own_alignment_and_row_heights() {
     let mut e = open_pkg(&pkg(&style, body));
     let look = |e: &Editor| {
         let t = e.index().table_ids().next().and_then(|t| e.index().table(e.document(), t)).expect("a table");
-        (t.jc, t.rows[0].height.clone(), t.rows[0].cant_split)
+        (t.jc, t.rows[0].height, t.rows[0].cant_split)
     };
     assert_eq!(look(&e), (crate::docx::props::Jc::Right, None, true), "the style's");
     e.execute(Command::SetTableAlignment(HorizontalAlignment::Center), fonts());
     e.execute(Command::SetRowHeight(AutoOr::Value(RowHeight { height: Points(30.0), rule: HeightRule::Exact })), fonts());
     e.execute(Command::SetRowCanBreak(true), fonts());
     let own = look(&e);
-    assert_eq!(own, (crate::docx::props::Jc::Center, Some((30.0, "exact".to_string())), false));
+    assert_eq!(own, (crate::docx::props::Jc::Center, Some((30.0, crate::docx::HeightRule::Exact)), false));
     let raw = styles(&e).get("TableGrid").expect("TableGrid").raw.replace("w:sz=\"4\"", "w:sz=\"12\"");
     e.edit_styles("Modify Style", |s| s.set_xml(raw), fonts());
     assert_eq!(look(&e), own, "the table's own stay");
     assert_eq!(look(&reopened(&e)), own);
     let xml = {
         use std::io::Read;
-        let bytes = crate::docx::write::save(e.document()).expect("saves");
+        let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
         let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).expect("a package");
         let mut s = String::new();
         z.by_name("word/document.xml").expect("the body").read_to_string(&mut s).expect("text");
@@ -556,7 +559,7 @@ fn a_paragraph_joined_by_a_hidden_mark_keeps_its_parts_after_its_first_part_is_e
 
 #[test]
 fn a_paragraph_joined_by_a_hidden_mark_keeps_its_parts_through_an_undone_delete_across_them() {
-    let ends = |e: &Editor| first_para(e).src.as_ref().map(|s| s.joined.iter().map(|j| j.end).collect::<Vec<_>>());
+    let ends = |e: &Editor| first_para(e).origin.is_some().then(|| first_para(e).joined_parts().iter().map(|j| j.end).collect::<Vec<_>>());
     let mut e = joined();
     let read = ends(&e);
     let para = crate::layout::ParaId(first_para(&e).id);
@@ -676,7 +679,7 @@ fn defaults_set_in_a_self_closing_styles_part_save_well_formed() {
     let mut e = open_pkg(&bytes);
     let d = crate::api::command::DocumentDefaults { size: Some(crate::api::value::Points(14.0)), ..Default::default() };
     e.execute(Command::SetDocumentDefaults(d), fonts());
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut xml = String::new();
     std::io::Read::read_to_string(&mut zip::ZipArchive::new(std::io::Cursor::new(&saved)).unwrap().by_name("word/styles.xml").unwrap(), &mut xml)
         .unwrap();

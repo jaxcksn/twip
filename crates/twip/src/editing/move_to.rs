@@ -175,7 +175,7 @@ impl Editor {
     /// Link Here: the selection bookmarked (`OLE_LINKn`), and at `drop` a `LINK` field to it showing its text. One
     /// undo step.
     fn link_drop(&mut self, drop: Position, fonts: &Fonts) -> Outcome {
-        let Some(file) = self.doc.file_name.clone() else { return Outcome::unavailable("the document has no file name to link to") };
+        let Some(file) = self.file_name.clone() else { return Outcome::unavailable("the document has no file name to link to") };
         if !self.editable(&drop) || self.kept(CommandId::InsertField, &drop, &drop) {
             return Outcome::Unchanged("kept");
         }
@@ -190,7 +190,9 @@ impl Editor {
             .flat_map(|p| p.inlines.iter())
             .filter_map(|i| match i {
                 // Bookmark names are without case: `ole_link1` is OLE_LINK1's.
-                Inline::Bookmark(n) => n.get(..8).filter(|p| p.eq_ignore_ascii_case("OLE_LINK")).and_then(|_| n[8..].parse::<u32>().ok()),
+                Inline::Range(r) if let Some((n, true)) = r.bookmark() => {
+                    n.get(..8).filter(|p| p.eq_ignore_ascii_case("OLE_LINK")).and_then(|_| n[8..].parse::<u32>().ok())
+                }
                 _ => None,
             })
             .max()

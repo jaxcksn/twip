@@ -2,6 +2,7 @@
 
 use std::rc::Rc;
 
+use crate::docx::review::ReviewView;
 use crate::docx::{Block, Document, Table, VMerge};
 use crate::layout::{ParaId, TableId, Unit};
 
@@ -14,6 +15,7 @@ use super::text::UnitText;
 
 pub struct Nav<'a> {
     pub doc: &'a Document,
+    pub review: &'a ReviewView,
     pub idx: &'a DocIndex,
     pub pages: &'a mut Pages,
     pub near: usize,
@@ -27,7 +29,7 @@ pub struct LineAt {
 
 impl Nav<'_> {
     fn text(&self, para: ParaId) -> Option<UnitText> {
-        self.idx.para(self.doc, para).map(|p| UnitText::in_review(p, &self.doc.review))
+        self.idx.para(self.doc, para).map(|p| UnitText::in_review(p, self.review))
     }
 
     fn story_of_container(&self, c: Container) -> StoryId {

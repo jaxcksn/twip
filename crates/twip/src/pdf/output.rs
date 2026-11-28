@@ -326,10 +326,11 @@ pub(crate) fn dump(bytes: Vec<u8>) -> String {
 fn pdf_output_matches_snapshots() {
     let (dir, write) = (root().join("pdf"), std::env::var_os("TWIP_WRITE_PDF").is_some());
     let fonts = bundled_fonts();
-    let mut got = BTreeMap::new();
+    let (mut got, hyphenation) = (BTreeMap::new(), crate::layout::tests::output::hyphenation());
     for (name, d) in corpus() {
-        let snap = crate::layout::layout(&d, &fonts);
-        let (bytes, _) = super::export::export_with(&d, &snap, "", &PdfOptions::default(), None, Some(&fonts)).expect("exports");
+        let snap = crate::layout::tests::layout_hyphenated(&d, &fonts, Some(&hyphenation));
+        let (bytes, _) = super::export::export_with(&d, &crate::layout::tests::view(&d), None, &snap, "", &PdfOptions::default(), None, Some(&fonts))
+            .expect("exports");
         got.insert(format!("{name}.txt"), dump(undated(bytes)));
     }
     assert!(!got.is_empty(), "no fixtures read from {}", root().join("fixtures").display());

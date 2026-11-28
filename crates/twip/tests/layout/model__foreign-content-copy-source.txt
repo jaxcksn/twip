@@ -1,0 +1,9 @@
+page 0 12240 15840
+  1440 1616 Content to copy
+  1440 2013 Inline Office Math equation:
+  1440 2411 Editable range in a read-only document: these words may be edited, these may not.
+  1440 2808 Run with a 3-D scene and extrusion
+  1440 3206 Content control with a colour and tag appearance: Tagged plain-text control
+  1440 4507 Inline picture from a media part:
+  2160 4905 Paragraph in Source Quote, a style the destination lacks
+  1440 5302 Run in Source Mark, a character style the destination lacks

@@ -84,7 +84,7 @@ pub fn model(e: &mut Editor, section: usize) -> RulerModel {
     let Some(m) = margins(e, section) else { return RulerModel::default() };
     let Some(s) = e.document().sections.get(section) else { return RulerModel::default() };
     let (left, right) = (m.text.start.0, m.text.end.0);
-    let s = s.section_in(e.document().review.view);
+    let s = s.section_in(e.review().view);
     let columns = columns(s.columns, left, right);
     let (page_w, page_h, top, bottom) = (s.page_w, s.page_h, m.top, s.page_h - s.bottom);
     let side = |edge: MarginEdge| match (edge, m.mirrored) {
@@ -306,8 +306,9 @@ pub fn margins(e: &mut Editor, section: usize) -> Option<RulerMargins> {
     let settings = &doc.settings;
     let facing =
         crate::layout::page::Facing { mirror: settings.mirror_margins, gutter_at_top: settings.gutter_at_top, book_fold: settings.book_fold };
-    let (left, right, top) = crate::layout::page::margins_in(s, doc.review.view, facing, number);
-    let s = s.section_in(doc.review.view);
+    let view = e.review().view;
+    let (left, right, top) = crate::layout::page::margins_in(s, view, facing, number);
+    let s = s.section_in(view);
     let swapped = crate::layout::page::swaps_margins(&s, facing, number);
     let (start, end) = if swapped { (MarginEdge::Right, MarginEdge::Left) } else { (MarginEdge::Left, MarginEdge::Right) };
     let own = |edge: MarginEdge| if edge == MarginEdge::Left { s.left } else { s.right };

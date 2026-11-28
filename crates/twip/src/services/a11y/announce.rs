@@ -41,7 +41,7 @@ fn caret_marks(e: &Editor) -> Vec<ReviewMark> {
     let Some((para, u)) = e.selection().focus().and_then(|p| p.para_offset()) else { return Vec::new() };
     // shortcut: the body's marks are found again per announcement, up to the caret's paragraph; keep them with the
     // layout if it shows in typing profiles.
-    marks_of(e.document(), para).into_iter().filter(|s| s.0 <= u.0 && u.0 < s.1).map(|s| s.2).collect()
+    marks_of(e.document(), e.review(), para).into_iter().filter(|s| s.0 <= u.0 && u.0 < s.1).map(|s| s.2).collect()
 }
 
 /// The caret paragraph's list and level, and how many items at its level the list has around it (in its container,
@@ -49,7 +49,7 @@ fn caret_marks(e: &Editor) -> Vec<ReviewMark> {
 fn caret_list(e: &Editor) -> Option<((i64, i64), usize)> {
     let (para, _) = e.selection().focus()?.para_offset()?;
     let p = e.index().para(e.document(), para)?;
-    let (list, level) = (p.style.list?, p.style.num?.1);
+    let (list, level) = (p.style.list?, p.style.num?.level);
     if heading_level(e.document(), p).is_some() {
         return None;
     }
@@ -57,7 +57,9 @@ fn caret_list(e: &Editor) -> Option<((i64, i64), usize)> {
     let blocks = e.index().blocks(e.document(), slot.container)?;
     // Items of any list run on (a nested list is inside the item before it); those of this list at this level count.
     let item = |b: &Block| match b {
-        Block::Para(q) if q.style.num.is_some() && heading_level(e.document(), q).is_none() => Some((q.style.list, q.style.num.map_or(0, |n| n.1))),
+        Block::Para(q) if q.style.num.is_some() && heading_level(e.document(), q).is_none() => {
+            Some((q.style.list, q.style.num.map_or(0, |n| n.level)))
+        }
         _ => None,
     };
     let before = blocks[..slot.block].iter().rev().map_while(item);
@@ -72,10 +74,12 @@ fn story_name(e: &Editor, s: StoryId) -> Option<&'static str> {
     Some(match s {
         StoryId::BuildingBlock(_) => return None,
         StoryId::Body => "Body",
-        StoryId::HeaderFooter(i) => match e.document().stories.keys().nth(i as usize) {
-            Some(name) if name.contains("footer") => "Footer",
-            _ => "Header",
-        },
+        StoryId::HeaderFooter(i) => {
+            match e.document().stories.keys().nth(i as usize).and_then(|id| crate::docx::write::story_part(e.document(), e.docx(), *id)) {
+                Some(name) if name.contains("footer") => "Footer",
+                _ => "Header",
+            }
+        }
         StoryId::Footnote(_) => "Footnote",
         StoryId::Endnote(_) => "Endnote",
         StoryId::TextBox(_) => "Text box",

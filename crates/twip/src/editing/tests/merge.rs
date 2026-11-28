@@ -214,7 +214,7 @@ fn control_edits_save_and_read_back() {
             }
         }
         let want = shape(&e);
-        let bytes = crate::docx::write::save(e.document()).expect("saves");
+        let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
         if let Some(d) = std::env::var_os("WORD_CHECK_DIR") {
             std::fs::write(std::path::Path::new(&d).join(format!("CTL-{}.docx", name.replace([' ', '\''], "-"))), &bytes).unwrap();
         }
@@ -238,7 +238,7 @@ fn control_edits_save_and_read_back() {
 #[test]
 fn changed_control_properties_are_written() {
     let bytes = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-MERGE-CONTROLS.docx")).unwrap();
-    let mut doc = crate::docx::read_editable(&bytes).unwrap();
+    let (mut doc, docx) = crate::docx::read_editable(&bytes).unwrap();
     let by_tag = |d: &crate::docx::Document, t: &str| d.controls.iter().find(|(_, c)| c.props.tag.as_deref() == Some(t)).map(|(id, _)| *id);
     for (old, new) in [("Recipient/Name", "Renamed/Inline"), ("Content:Complaint", "Renamed/Block"), ("Group/One", "Renamed/Group")] {
         let id = by_tag(&doc, old).unwrap_or_else(|| panic!("{old} in the fixture"));
@@ -248,7 +248,7 @@ fn changed_control_properties_are_written() {
     if let Some(id) = row {
         doc.controls.get_mut(&id).unwrap().props.alias = Some("Renamed row".into());
     }
-    let again = crate::docx::read_editable(&crate::docx::write::save(&doc).unwrap()).unwrap();
+    let (again, _) = crate::docx::read_editable(&crate::docx::write::save(&doc, &docx).unwrap()).unwrap();
     for t in ["Renamed/Inline", "Renamed/Block", "Renamed/Group"] {
         assert!(by_tag(&again, t).is_some(), "{t} written");
     }
@@ -266,7 +266,7 @@ fn word_check_files() {
     use crate::docx::{Block, Control, ControlId, ControlKind, ControlProps, Inline};
     let dir = std::path::PathBuf::from(std::env::var("WORD_CHECK_DIR").expect("WORD_CHECK_DIR"));
     let bytes = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-TEXT.docx")).unwrap();
-    let mut doc = crate::docx::read_editable(&bytes).unwrap();
+    let (mut doc, docx) = crate::docx::read_editable(&bytes).unwrap();
     let id = ControlId::next();
     let props =
         ControlProps { kind: ControlKind::PlainText { multi_line: false }, tag: Some("R3".into()), showing_placeholder: true, ..Default::default() };
@@ -274,7 +274,7 @@ fn word_check_files() {
     let Some(Block::Para(p)) = doc.sections[0].blocks.first_mut() else { panic!("a first paragraph") };
     let run = p.inlines.iter().find_map(|i| i.run().cloned()).expect("a run");
     p.inlines.splice(0..0, [Inline::ControlStart(id), Inline::Text("Click or tap here to enter text.".into(), run), Inline::ControlEnd(id)]);
-    std::fs::write(dir.join("R3-PLACEHOLDER.docx"), crate::docx::write::save(&doc).unwrap()).unwrap();
+    std::fs::write(dir.join("R3-PLACEHOLDER.docx"), crate::docx::write::save(&doc, &docx).unwrap()).unwrap();
     let mut all = serde_json::Map::new();
     let mut data = serde_json::Map::new();
     let mut names: Vec<_> =
@@ -322,7 +322,7 @@ fn design_mode_labels_empty_fields() {
     assert!(drawn(&mut e).contains("\u{ab}Cost_Amount\u{bb}"), "the first estimate in design mode");
     send(&mut e, &mut seq, json!({"type": "command", "command": {"type": "setFieldLabels", "labels": {"MERGEFIELD Cost_Amount": "Cost amount"}}}));
     assert!(drawn(&mut e).contains("Cost amount"), "the host's label");
-    let saved = crate::docx::write::save(e.document()).unwrap();
+    let saved = crate::docx::write::save(e.document(), e.docx()).unwrap();
     let mut xml = String::new();
     std::io::Read::read_to_string(
         &mut zip::ZipArchive::new(std::io::Cursor::new(&saved[..])).unwrap().by_name("word/document.xml").unwrap(),
@@ -391,7 +391,7 @@ fn regions_save_and_read_back() {
     };
     let want = kinds(&mut e, &mut seq);
     assert_eq!(want.iter().filter(|(k, _)| k == "\"repeating_item\"").count(), 4, "{want:?}");
-    let bytes = crate::docx::write::save(e.document()).unwrap();
+    let bytes = crate::docx::write::save(e.document(), e.docx()).unwrap();
     if let Some(d) = std::env::var_os("WORD_CHECK_DIR") {
         std::fs::write(std::path::Path::new(&d).join("REGIONS.docx"), &bytes).unwrap();
     }
@@ -405,7 +405,7 @@ fn checkbox_tags_and_floats_survive_control_edits() {
     let mut e = open("FX-MERGE-CONTROLS.docx");
     let check = elements(&mut e, &mut seq, json!({ "kind": "checkbox" }))[0]["id"].clone();
     send(&mut e, &mut seq, json!({ "type": "command", "command": { "type": "setControl", "id": check, "tag": "Check:Renamed" } }));
-    let saved = crate::docx::write::save(e.document()).unwrap();
+    let saved = crate::docx::write::save(e.document(), e.docx()).unwrap();
     let mut again = Editor::open(&saved, fonts()).unwrap();
     let tags: Vec<Value> = elements(&mut again, &mut seq, json!({ "kind": "checkbox" })).iter().map(|c| c["tag"].clone()).collect();
     assert_eq!(tags, [json!("Check:Renamed")]);
@@ -425,7 +425,7 @@ fn checkbox_tags_and_floats_survive_control_edits() {
     assert!(before > 0);
     send(&mut e, &mut seq, json!({ "type": "key", "code": "Home", "mods": { "ctrl": true } }));
     send(&mut e, &mut seq, json!({"type": "command", "command": {"type": "insertControl", "kind": "plainText", "tag": "New"}}));
-    let again = Editor::open(&crate::docx::write::save(e.document()).unwrap(), fonts()).unwrap();
+    let again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).unwrap(), fonts()).unwrap();
     assert_eq!(floats(&again), before);
 }
 
@@ -465,7 +465,7 @@ fn filling_a_control_keeps_its_paragraph() {
             fonts(),
         );
         assert!(matches!(out, Outcome::Changed(_)), "{sdt}: {out:?}");
-        let saved = crate::docx::write::save(e.document()).expect("saves");
+        let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
         let xml = document_xml(&saved);
         for kept in ["w:bookmarkStart w:id=\"5\"", "<w:vanish/>", "m:oMath", "w:ruby", "w:ffData", "w:sdtContent"] {
             assert!(xml.contains(kept), "{sdt}: {kept} kept in {xml}");
@@ -488,17 +488,17 @@ fn editing_a_link_or_simple_field_keeps_its_element() {
     );
     let bytes = super::blank_body(body);
     for (from, to) in [("link text", "linked text"), ("Ada", "Ada L")] {
-        let mut doc = crate::docx::read_editable(&bytes).expect("reads");
+        let (mut doc, docx) = crate::docx::read_editable(&bytes).expect("reads");
         let Some(crate::docx::Block::Para(p)) = doc.sections[0].blocks.first_mut() else { panic!("a paragraph") };
         let i = p.inlines.iter_mut().find(|i| matches!(i, crate::docx::Inline::Text(s, _) if s == from)).expect("the text");
         if let crate::docx::Inline::Text(s, _) = i {
             *s = to.into();
         }
-        let xml = document_xml(&crate::docx::write::save(&doc).expect("saves"));
+        let xml = document_xml(&crate::docx::write::save(&doc, &docx).expect("saves"));
         assert!(xml.contains(r#"<w:hyperlink w:anchor="Target" w:tooltip="Tip" w:docLocation="loc" w:history="1">"#), "{to}: {xml}");
         assert!(xml.contains(r#"<w:fldSimple w:instr=" DOCVARIABLE Who " w:dirty="1">"#), "{to}: {xml}");
         assert!(!xml.contains("fldChar"), "{to}: no complex field in {xml}");
-        let again = crate::docx::read_editable(&crate::docx::write::save(&doc).expect("saves")).expect("reads");
+        let (again, _) = crate::docx::read_editable(&crate::docx::write::save(&doc, &docx).expect("saves")).expect("reads");
         let Some(crate::docx::Block::Para(p)) = again.sections[0].blocks.first() else { panic!("a paragraph") };
         let text: String = p.inlines.iter().filter_map(|i| if let crate::docx::Inline::Text(s, _) = i { Some(s.as_str()) } else { None }).collect();
         assert!(text.contains(to), "{to}: {text}");
@@ -508,12 +508,12 @@ fn editing_a_link_or_simple_field_keeps_its_element() {
 #[test]
 fn an_edited_paragraph_keeps_its_text_wrapping_breaks() {
     let bytes = super::blank_body(r#"<w:p><w:r><w:t>one</w:t><w:br w:clear="left"/><w:t>two</w:t><w:br w:clear="all"/><w:t>three</w:t></w:r></w:p>"#);
-    let mut doc = crate::docx::read_editable(&bytes).expect("reads");
+    let (mut doc, docx) = crate::docx::read_editable(&bytes).expect("reads");
     let Some(crate::docx::Block::Para(p)) = doc.sections[0].blocks.first_mut() else { panic!("a paragraph") };
     let Some(crate::docx::Inline::Text(s, _)) = p.inlines.iter_mut().find(|i| matches!(i, crate::docx::Inline::Text(s, _) if s == "two")) else {
         panic!("the text")
     };
     *s = "twice".into();
-    let xml = document_xml(&crate::docx::write::save(&doc).expect("saves"));
+    let xml = document_xml(&crate::docx::write::save(&doc, &docx).expect("saves"));
     assert!(xml.contains(r#"<w:br w:clear="left"/>"#) && xml.contains(r#"<w:br w:clear="all"/>"#) && xml.contains("twice"), "{xml}");
 }

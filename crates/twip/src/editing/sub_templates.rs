@@ -1,10 +1,16 @@
 //! Sub-templates
 
+use crate::docx::definitions::TypedDefsXml;
+use crate::docx::list_xml::NumberingXml;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use crate::api::command::{ApplicationFieldTypes, ReferenceRule, SubTemplateRules, SubTemplateView};
+use crate::document::paragraph::ListId;
+use crate::docx::definitions::{Definitions, TypedDefs};
 use crate::docx::fields::{self, FieldCode};
+use crate::docx::list_xml::ListXml;
+use crate::docx::para_props::ParaXml;
 use crate::docx::{Block, Document, ElementId, FieldId, FieldKind, Gallery, Inline, Paragraph, Section};
 use crate::font::Fonts;
 use crate::layout::expansion::{Expansion, Expansions};
@@ -18,6 +24,7 @@ use super::index::{Container, DocIndex};
 use super::position::{Position, StoryId};
 use super::selection::Selection;
 use super::step::Step;
+use crate::docx::run_xml;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Rule {
@@ -34,7 +41,7 @@ impl Rule {
             field_type: r.field_type.trim().to_uppercase(),
             argument: r.argument.unwrap_or(0) as usize,
             category: r.category.clone(),
-            gallery: r.gallery.as_deref().map(Gallery::parse),
+            gallery: r.gallery.as_deref().map(crate::docx::glossary::gallery),
             api: r,
         }
     }
@@ -82,44 +89,26 @@ pub struct Surface {
     template_touched: bool,
 }
 
-/// Blocks from another part or package, written afresh: their source XML dropped, their pictures', floats' and
-/// shapes' image indices moved up by `base`, text boxes included.
-fn detach(blocks: &mut [Block], base: usize) {
-    let up = |k: &mut Option<usize>| *k = k.map(|k| k + base);
+/// Blocks from another part or package, written afresh: their source XML dropped, text boxes included.
+fn detach(blocks: &mut [Block]) {
     for b in blocks {
         match b {
             Block::Para(p) => {
-                p.src = None;
+                p.detach();
                 for i in &mut p.inlines {
-                    match i {
-                        Inline::Picture(pic, _) => {
-                            up(&mut pic.image);
-                            if let Some(s) = &mut pic.shape {
-                                s.rebase_images(base);
-                            }
+                    if let Inline::Float(f, _) = i {
+                        for tb in f.parts.iter_mut().filter_map(|part| part.text_box.as_mut()) {
+                            detach(&mut tb.blocks);
                         }
-                        Inline::Float(f, _) => {
-                            up(&mut f.image);
-                            if let Some(s) = &mut f.shape {
-                                s.rebase_images(base);
-                            }
-                            for part in &mut f.parts {
-                                up(&mut part.image);
-                                if let Some(tb) = &mut part.text_box {
-                                    detach(&mut tb.blocks, base);
-                                }
-                            }
-                        }
-                        _ => {}
                     }
                     if let Some(tb) = i.story_mut() {
-                        detach(&mut tb.blocks, base);
+                        detach(&mut tb.blocks);
                     }
                 }
             }
             Block::Table(t) => {
-                t.src = None;
-                t.rows.iter_mut().flat_map(|r| r.cells.iter_mut()).for_each(|c| detach(&mut c.blocks, base));
+                t.detach();
+                t.rows.iter_mut().flat_map(|r| r.cells.iter_mut()).for_each(|c| detach(&mut c.blocks));
             }
         }
     }
@@ -131,7 +120,7 @@ struct Imported {
     blocks: Vec<Block>,
     controls: Vec<(crate::docx::ControlId, crate::docx::Control)>,
     refs: super::clipboard::Refs,
-    numbering: crate::docx::numbering::Numbering,
+    defs: Option<Rc<crate::docx::definitions::TypedDefs>>,
 }
 
 /// Each paragraph of `blocks`: in tables and text boxes too.
@@ -156,16 +145,16 @@ fn each_para(blocks: &mut [Block], f: &mut dyn FnMut(&mut Paragraph)) {
     }
 }
 
-fn empty_para(doc: &Document, cx: &crate::docx::write::props::Cx) -> Option<Paragraph> {
-    let res = doc.resolver.as_ref()?;
-    let r = res.para_from_xml(None, None, cx);
-    let mark = res.run_from_xml(&r.base, None, cx);
+fn empty_para(doc: &Document) -> Option<Paragraph> {
+    let res = doc.definitions.as_ref()?;
+    let r = crate::docx::para_xml::resolve(res, &Default::default(), None, None);
+    let mark = run_xml::plain(res, &r.base);
     Some(Paragraph {
         style: Rc::new(r.style),
         mark,
         list: None,
         inlines: Vec::new(),
-        src: None,
+        origin: crate::docx::Origin::NONE,
         id: crate::docx::next_para_id(),
         div: None,
         controls: Vec::new(),
@@ -420,7 +409,7 @@ impl Editor {
         }
         path.pop();
         let nested = (!nested.paras.is_empty()).then_some(&nested);
-        let (height, content) = crate::layout::expansion::lay(&self.doc, body, width, fonts, nested);
+        let (height, content) = crate::layout::expansion::lay(&self.doc, &self.review, body, width, fonts, nested, self.layout.hyphenation());
         Some(Rc::new(Expansion { field: f, part, size: (width, height), content }))
     }
 
@@ -511,20 +500,17 @@ impl Editor {
         std::mem::swap(&mut s.doc.images, &mut self.doc.images);
         std::mem::swap(&mut s.doc.controls, &mut self.doc.controls);
         std::mem::swap(&mut s.doc.settings, &mut self.doc.settings);
-        std::mem::swap(&mut s.doc.hyphenation, &mut self.doc.hyphenation);
         std::mem::swap(&mut s.doc.line_number_run, &mut self.doc.line_number_run);
-        s.doc.resolver = self.doc.resolver.clone();
-        s.doc.review = self.doc.review.clone();
+        s.doc.definitions = self.doc.definitions.clone();
         s.doc.theme = self.doc.theme.clone();
         s.doc.colour_map = self.doc.colour_map;
         if let Some(entry) = self.doc.sections.get(s.section)
-            && entry.page() != s.doc.sections[0].page()
+            && !crate::docx::page_borders::same_page(&entry.page(), &s.doc.sections[0].page())
         {
             s.doc.sections[0].set_page(entry.page());
         }
         let out = f(&mut self.layout, &s.doc);
         std::mem::swap(&mut s.doc.line_number_run, &mut self.doc.line_number_run);
-        std::mem::swap(&mut s.doc.hyphenation, &mut self.doc.hyphenation);
         std::mem::swap(&mut s.doc.settings, &mut self.doc.settings);
         std::mem::swap(&mut s.doc.controls, &mut self.doc.controls);
         std::mem::swap(&mut s.doc.images, &mut self.doc.images);
@@ -564,8 +550,7 @@ impl Editor {
             colour_map: d.colour_map,
             settings: d.settings.clone(),
             line_number_run: d.line_number_run.clone(),
-            resolver: d.resolver.clone(),
-            review: d.review.clone(),
+            definitions: d.definitions.clone(),
             people: d.people.clone(),
             ..Document::default()
         };
@@ -573,7 +558,9 @@ impl Editor {
             Some(h) => h,
             None => (std::mem::take(&mut self.layout), std::mem::take(&mut self.pages), self.expansions.take(), self.selection),
         };
-        self.layout = DocumentLayout::new();
+        let hyphenation = template.hyphenation().cloned();
+        self.layout = DocumentLayout::new(self.review.clone());
+        self.layout.set_hyphenation(hyphenation);
         self.pages = Pages::default();
         self.pages.shows = Some(part);
         self.index.flow = Some(part);
@@ -647,7 +634,7 @@ impl Editor {
             _ => None,
         };
         let mut im = match copied.as_deref().or(c.from.as_ref().map(|b| b.0.as_slice())) {
-            None => Imported { blocks: empty_para(&self.doc, &self.cx()).map(Block::Para).into_iter().collect(), ..Imported::default() },
+            None => Imported { blocks: empty_para(&self.doc).map(Block::Para).into_iter().collect(), ..Imported::default() },
             Some(bytes) => match self.imported_body(bytes) {
                 Some(b) => b,
                 None => return invalid("not a DOCX"),
@@ -681,17 +668,16 @@ impl Editor {
     /// `bytes`' body, read from the DOCX: its pictures added, its blocks written afresh, a last paragraph after a
     /// last table; with the notes, comments and lists it refers to there.
     fn imported_body(&mut self, bytes: &[u8]) -> Option<Imported> {
-        let mut read = crate::docx::read_editable(bytes).ok()?;
+        let (mut read, _) = crate::docx::read_editable(bytes).ok()?;
         let mut blocks: Vec<Block> = std::mem::take(&mut read.sections).into_iter().flat_map(|s| s.blocks).collect();
-        let base = self.doc.images.len() + self.pending_images.len();
-        self.pending_images.append(&mut read.images);
-        detach(&mut blocks, base);
+        self.pending_images.extend(std::mem::take(&mut read.images));
+        detach(&mut blocks);
         if !matches!(blocks.last(), Some(Block::Para(_))) {
-            blocks.extend(empty_para(&self.doc, &self.cx()).map(Block::Para));
+            blocks.extend(empty_para(&self.doc).map(Block::Para));
         }
         let refs = super::clipboard::refs_of(&read, &blocks);
-        let numbering = read.resolver.as_ref().map(|r| r.numbering.clone()).unwrap_or_default();
-        Some(Imported { blocks, controls: std::mem::take(&mut read.controls).into_iter().collect(), refs, numbering })
+        let defs = read.definitions.as_ref().map(|r| r.typed());
+        Some(Imported { blocks, controls: std::mem::take(&mut read.controls).into_iter().collect(), refs, defs })
     }
 
     /// Makes `im`'s references the document's, in `tx`: its lists join the document's under ids of their own, its
@@ -712,7 +698,7 @@ impl Editor {
             .filter_map(|p| self.index.para(&self.doc, p))
             .flat_map(|p| p.inlines.iter())
             .filter_map(|i| match i {
-                Inline::Bookmark(n) if !n.starts_with('/') => Some(n.to_lowercase()),
+                Inline::Range(r) if let Some((n, true)) = r.bookmark() => Some(n.to_lowercase()),
                 _ => None,
             })
             .collect();
@@ -720,7 +706,7 @@ impl Editor {
         each_para(&mut im.blocks, &mut |p| {
             paras.insert(ParaId(p.id));
             p.inlines.retain(|i| match i {
-                Inline::Bookmark(n) => !taken.contains(&n.trim_start_matches('/').to_lowercase()),
+                Inline::Range(r) if let Some((n, _)) = r.bookmark() => !taken.contains(&n.to_lowercase()),
                 Inline::Range(r) if glossary => !matches!(r.kind, RangeKind::CommentStart | RangeKind::CommentEnd),
                 Inline::CommentRef { .. } => !glossary,
                 _ => true,
@@ -738,14 +724,12 @@ impl Editor {
     /// The lists `im`'s paragraphs (its notes' and comments' too) name, added to the document's numbering under new
     /// ids, the paragraphs' `w:numId`s moved to them.
     fn import_lists(&mut self, tx: &mut super::Tx, im: &mut Imported) -> Result<(), &'static str> {
-        use crate::docx::write::props::Props;
-        let Some(res) = self.doc.resolver.clone() else { return Ok(()) };
-        let cx = self.cx();
-        let w = cx.w.clone();
+        let Some(res) = self.doc.definitions.clone() else { return Ok(()) };
         let num_of = |p: &Paragraph| -> Option<i64> {
-            let pr = Props::parse(p.style.direct.0.as_deref(), "pPr", &cx);
-            let num = Props::parse(pr.get("numPr"), "numPr", &cx);
-            crate::docx::write::props::attr_of(num.get("numId")?, "val")?.trim().parse().ok().filter(|n| *n != 0)
+            match p.style.direct.get().list {
+                Some(crate::format::ListChoice::In(id)) => Some(id.0),
+                _ => None,
+            }
         };
         let mut used: Vec<i64> = Vec::new();
         let mut note = |blocks: &mut [Block]| each_para(blocks, &mut |p| used.extend(num_of(p)));
@@ -754,69 +738,41 @@ impl Editor {
         im.refs.comments.iter_mut().for_each(|c| note(&mut c.body));
         used.sort_unstable();
         used.dedup();
-        used.retain(|n| im.numbering.nums.contains_key(n));
+        let Some(theirs) = im.defs.clone() else { return Ok(()) };
+        used.retain(|n| theirs.cascade.lists.lists.contains_key(&ListId(*n)));
         if used.is_empty() {
             return Ok(());
         }
         let mut next = res.clone();
-        let numbering = &mut Rc::make_mut(&mut next).numbering;
-        let mut next_num = numbering.nums.keys().copied().chain(self.doc.added_lists.iter().map(|l| l.num_id)).max().unwrap_or(0).max(0) + 1;
-        let mut next_abstract =
-            numbering.abstracts.keys().copied().chain(self.doc.added_lists.iter().map(|l| l.abstract_id)).max().unwrap_or(-1).max(-1) + 1;
-        let (mut nums, mut abstracts): (HashMap<i64, i64>, HashMap<i64, i64>) = (HashMap::new(), HashMap::new());
-        for n in used {
-            let Some(num) = im.numbering.nums.get(&n) else { continue };
-            let Some(a) = im.numbering.abstracts.get(&num.abstract_id) else { continue };
-            // The document's own list, as a copy of its content names it
-            let own =
-                numbering.nums.get(&n).is_some_and(|h| h.raw == num.raw && numbering.abstracts.get(&h.abstract_id).is_some_and(|ha| ha.raw == a.raw));
-            if own {
-                continue;
-            }
-            let to_abstract = *abstracts.entry(num.abstract_id).or_insert_with(|| {
-                let id = next_abstract;
-                next_abstract += 1;
-                let mut el = Props::parse(Some(&a.raw), "abstractNum", &cx);
-                el.set_own("abstractNumId", &id.to_string(), &cx);
-                let raw = el.xml().unwrap_or_else(|| a.raw.clone());
-                numbering
-                    .abstracts
-                    .insert(id, crate::docx::numbering::AbstractNum { raw, origin: crate::docx::styles::StyleOrigin::Document, ..a.clone() });
-                id
-            });
-            let to = next_num;
-            next_num += 1;
-            let mut el = Props::parse(Some(&num.raw), "num", &cx);
-            el.set_own("numId", &to.to_string(), &cx);
-            el.set("abstractNumId", format!("<{w}abstractNumId {w}val=\"{to_abstract}\"/>"));
-            let raw = el.xml().unwrap_or_else(|| num.raw.clone());
-            numbering.nums.insert(
-                to,
-                crate::docx::numbering::Num { abstract_id: to_abstract, origin: crate::docx::styles::StyleOrigin::Document, raw, ..num.clone() },
-            );
-            nums.insert(n, to);
-        }
+        let r = Rc::make_mut(&mut next);
+        let ours = r.cascade();
+        let next_num = ours.lists.lists.keys().map(|k| k.0).chain(self.docx.added_lists.iter().map(|l| l.num_id)).max().unwrap_or(0).max(0) + 1;
+        let next_abstract =
+            ours.lists.defs.keys().map(|k| k.0).chain(self.docx.added_lists.iter().map(|l| l.abstract_id)).max().unwrap_or(-1).max(-1) + 1;
+        #[cfg(test)]
+        let was = r.clone();
+        let nums = copy_lists(r, &theirs, &used, (next_abstract, next_num));
+        #[cfg(test)]
+        xml_route::check(was, r, &theirs, &used, (next_abstract, next_num), &self.cx(), &nums);
+        let nums = nums.0;
         if nums.is_empty() {
             return Ok(());
         }
         let renumber = |blocks: &mut [Block]| {
             each_para(blocks, &mut |p| {
                 let Some(to) = num_of(p).and_then(|n| nums.get(&n)) else { return };
-                let mut pr = Props::parse(p.style.direct.0.as_deref(), "pPr", &cx);
-                let mut num = Props::parse(pr.get("numPr"), "numPr", &cx);
-                num.set("numId", format!("<{w}numId {w}val=\"{to}\"/>"));
-                if let Some(x) = num.xml() {
-                    pr.set("numPr", x);
-                }
-                let direct = crate::docx::Raw(pr.xml().map(|x| Rc::from(x.as_str())));
+                let mut e = crate::format::ParaEdit::new((**p.style.direct.get()).clone());
+                e.list = Some(crate::format::ListChoice::In(crate::document::paragraph::ListId(*to)));
+                e.part(crate::format::ParaProp::List);
+                let direct = p.style.direct.edit(e);
                 p.style = Rc::new(crate::docx::ParaStyle { direct, ..(*p.style).clone() });
             })
         };
         renumber(&mut im.blocks);
         im.refs.notes.iter_mut().for_each(|n| renumber(&mut n.2));
         im.refs.comments.iter_mut().for_each(|c| renumber(&mut c.body));
-        let added = self.doc.added_lists.clone();
-        self.step(tx, Step::Resolver { resolver: Some(next), added }).map(|_| ()).map_err(|_| "the lists changed meanwhile")
+        let added = self.docx.added_lists.clone();
+        self.step(tx, Step::Definitions { definitions: Some(next), added }).map(|_| ()).map_err(|_| "the lists changed meanwhile")
     }
 
     /// The paragraphs of `stories` and `paras` formatted again in `tx`, as the document's styles and lists have them.
@@ -866,20 +822,21 @@ impl Editor {
         let failed = |e: String| Error::new(ErrorCode::ExportFailed, e);
         let k = self.named_part(name, category).ok_or_else(|| Error::invalid(format!("no sub-template {name}")))? as usize;
         let mut doc = self.doc.clone();
-        let read = doc.source.as_ref().map_or(1, |s| s.blocks.len());
+        let mut docx = self.docx.clone();
+        let read = docx.source.as_ref().map_or(1, |s| s.blocks.len());
         let g = doc.glossary.as_mut().ok_or_else(|| Error::invalid("no glossary"))?;
         let mut body = g.parts[k].body.clone();
         g.parts.iter_mut().for_each(|b| b.state = crate::docx::PartState::Removed);
-        detach(&mut body, 0);
+        detach(&mut body);
         let last = doc.sections.len().checked_sub(1).ok_or_else(|| failed("no section".into()))?;
         let mut sec = doc.sections.swap_remove(last);
         sec.blocks = body;
         doc.sections = vec![sec];
-        doc.section_sources = vec![read];
-        doc.edited_sections = doc.edited_sections.contains(&last).then_some(0).into_iter().collect();
-        let bytes = crate::docx::write::save(&doc).map_err(failed)?;
+        docx.section_sources = vec![read];
+        docx.edited_sections = docx.edited_sections.contains(&last).then_some(0).into_iter().collect();
+        let bytes = crate::docx::write::save(&doc, &docx).map_err(failed)?;
         // The template's headers and footers aren't the body's: their references go (their parts stay, unused).
-        let main = doc.source.as_ref().map(|s| s.main.clone()).ok_or_else(|| failed("not read for editing".into()))?;
+        let main = docx.source.as_ref().map(|s| s.main.clone()).ok_or_else(|| failed("not read for editing".into()))?;
         let mut xml = String::new();
         let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).map_err(|e| failed(e.to_string()))?;
         std::io::Read::read_to_string(&mut zip.by_name(&main).map_err(|e| failed(e.to_string()))?, &mut xml).map_err(|e| failed(e.to_string()))?;
@@ -950,7 +907,10 @@ impl Editor {
         let Some(s) = self.surface.take() else { return Outcome::Unchanged("not on a sub-template") };
         let touched = s.template_touched;
         let (template, pages, expansions, back) = self.park_out(s);
+        let hyphenation = self.layout.hyphenation().cloned();
         self.layout = template;
+        self.layout.set_hyphenation(hyphenation);
+        self.layout.set_view(self.review.clone());
         self.pages = pages;
         self.pages.shows = None;
         self.index.flow = None;
@@ -1103,7 +1063,7 @@ impl Editor {
         let (rules, types) = (&self.sub_template_rules, &self.application_field_types);
         let (changed, back) = fields::rekind(&mut self.doc, &|code: &FieldCode| field_kind(rules, types, code));
         if back {
-            fields::evaluate(&mut self.doc, crate::docx::now_local());
+            fields::evaluate(&mut self.doc, self.file_name.as_deref(), crate::docx::now_local());
         }
         if changed || back {
             self.changed_everywhere();
@@ -1174,6 +1134,54 @@ fn changes_environment(steps: &[Step]) -> bool {
     steps.iter().any(|s| matches!(s, Step::DefaultTab(_) | Step::Hyphenation(_) | Step::PageSettings(_)))
 }
 
+/// List `n`'s definition id in `t`: -1 when it names none.
+fn def_of(t: &TypedDefs, n: i64) -> Option<i64> {
+    t.cascade.lists.lists.get(&ListId(n)).map(|l| l.def.map_or(-1, |d| d.0))
+}
+
+/// Whether list `n` of an imported document, written as `num` with its definition as `def`, is `r`'s own, as a copy of
+/// its content names it: the same list and definition, written alike, under its id here.
+fn own_list(r: &Definitions, n: i64, num: &str, def: &str) -> bool {
+    let ours = r.typed();
+    ours.list_xml(n).is_some_and(|h| h == num) && def_of(&ours, n).and_then(|ha| ours.def_xml(ha)).is_some_and(|ha| ha == def)
+}
+
+/// Lists `used` of `theirs` (an imported document's definitions) added to `r` under the definition and list ids from
+/// `free` on, each definition once; a list `r` has as its own ([`own_list`], as `r` stands as each comes) stays. Each
+/// is written as read where that reads the same in this document's numbering part, else from its definition. The list
+/// and definition ids they took, by their ids there.
+fn copy_lists(r: &mut Definitions, theirs: &TypedDefs, used: &[i64], free: (i64, i64)) -> (HashMap<i64, i64>, HashMap<i64, i64>) {
+    let (mut next_abstract, mut next_num) = free;
+    let ncx = r.typed().numbering.cx();
+    let (mut nums, mut abstracts) = (HashMap::new(), HashMap::new());
+    for &n in used {
+        let Some(num_def) = def_of(theirs, n) else { continue };
+        let (Some(num), Some(a)) = (theirs.list_xml(n), theirs.def_xml(num_def)) else { continue };
+        if own_list(r, n, &num, &a) {
+            continue;
+        }
+        let to_abstract = match abstracts.get(&num_def) {
+            Some(&id) => id,
+            None => {
+                let id = next_abstract;
+                next_abstract += 1;
+                if let Some((held, v)) = super::import::copied_def(theirs, num_def, id, &ncx) {
+                    r.set_list_def(held.edited(v, &[]));
+                }
+                abstracts.insert(num_def, id);
+                id
+            }
+        };
+        let to = next_num;
+        next_num += 1;
+        if let Some(held) = super::import::copied_list(theirs, n, to, to_abstract, &ncx) {
+            r.set_list(held);
+        }
+        nums.insert(n, to);
+    }
+    (nums, abstracts)
+}
+
 /// The kind a field with `code` has under the editor's settings: a sub-template reference; none, as a MERGEFIELD, for
 /// an application type (it keeps its result and shows its label); else its code's own.
 fn field_kind(rules: &[Rule], types: &[String], code: &FieldCode) -> Option<FieldKind> {
@@ -1191,4 +1199,86 @@ pub fn rules(field_type: &str, category: &str) -> crate::api::command::Command {
     crate::api::command::Command::SetSubTemplateRules(SubTemplateRules {
         rules: vec![ReferenceRule { field_type: field_type.into(), argument: None, category: category.into(), gallery: None }],
     })
+}
+
+/// Copying an imported document's lists by rewriting their XML, as they were copied before they were copied typed:
+/// each copy made typed is made this way too and the two compared.
+#[cfg(test)]
+mod xml_route {
+    use super::*;
+    use crate::docx::definitions::DefinitionsXml;
+    use crate::docx::write::props::{Cx, Props};
+
+    /// [`copy_lists`] over the definitions' XML, the document's main part's namespaces `cx` reading it; with `rebind`,
+    /// their own part's reading it, and each element declaring the namespaces it has there that this document's
+    /// numbering part lacks.
+    fn apply(
+        r: &mut Definitions,
+        theirs: &TypedDefs,
+        used: &[i64],
+        free: (i64, i64),
+        cx: &Cx,
+        rebind: bool,
+    ) -> (HashMap<i64, i64>, HashMap<i64, i64>) {
+        let (there, here) = (theirs.numbering.cx(), r.typed().numbering.cx());
+        let cx = if rebind { &there } else { cx };
+        let w = cx.w.clone();
+        let rebound = |raw: String| if rebind { super::super::import::xml_route::rebound(&raw, &there, &here).unwrap_or(raw) } else { raw };
+        let (mut next_abstract, mut next_num) = free;
+        let (mut nums, mut abstracts) = (HashMap::new(), HashMap::new());
+        for &n in used {
+            let Some(num_def) = def_of(theirs, n) else { continue };
+            let (Some(num), Some(a)) = (theirs.list_xml(n), theirs.def_xml(num_def)) else { continue };
+            if own_list(r, n, &num, &a) {
+                continue;
+            }
+            let to_abstract = match abstracts.get(&num_def) {
+                Some(&id) => id,
+                None => {
+                    let id = next_abstract;
+                    next_abstract += 1;
+                    let mut el = Props::parse(Some(&a), "abstractNum", cx);
+                    el.set_own("abstractNumId", &id.to_string(), cx);
+                    r.set_abstract_xml(rebound(el.xml().unwrap_or_else(|| a.to_string())));
+                    abstracts.insert(num_def, id);
+                    id
+                }
+            };
+            let to = next_num;
+            next_num += 1;
+            let mut el = Props::parse(Some(&num), "num", cx);
+            el.set_own("numId", &to.to_string(), cx);
+            el.set("abstractNumId", format!("<{w}abstractNumId {w}val=\"{to_abstract}\"/>"));
+            r.set_num_xml(rebound(el.xml().unwrap_or_else(|| num.to_string())));
+            nums.insert(n, to);
+        }
+        (nums, abstracts)
+    }
+
+    /// The copy made over the XML from `was`, the definitions before it, set against `r` and `typed`, the typed
+    /// route's: the same ids taken, and each definition and list compared.
+    pub(super) fn check(
+        was: Definitions,
+        r: &Definitions,
+        theirs: &TypedDefs,
+        used: &[i64],
+        free: (i64, i64),
+        cx: &Cx,
+        typed: &(HashMap<i64, i64>, HashMap<i64, i64>),
+    ) {
+        use super::super::import::xml_route;
+        // Elements whose XML doesn't read under the main part's or this document's numbering part's namespaces: the XML
+        // route set a definition under its id there, or none, its lists numbering with none
+        let here = r.typed().numbering.cx();
+        let reads = |x: &str| cx.parse(x, |_, _| ()).is_some() && here.parse(x, |_, _| ()).is_some();
+        let xml = |n: i64| [theirs.list_xml(n), def_of(theirs, n).and_then(|d| theirs.def_xml(d))].into_iter().flatten();
+        let unread: Vec<String> = used.iter().flat_map(|n| xml(*n)).filter(|x| !reads(x)).map(|x| x.into_owned()).collect();
+        if let Some(first) = unread.first() {
+            xml_route::refused(&format!("elements ({})", unread.len()), first.clone());
+        }
+        let mut old = was;
+        let got = apply(&mut old, theirs, used, free, cx, !unread.is_empty());
+        assert_eq!(&got, typed, "the same ids taken");
+        xml_route::compare_parts(&old, r, &[], &got.0, &got.1);
+    }
 }

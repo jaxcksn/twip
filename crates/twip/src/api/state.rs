@@ -1929,7 +1929,7 @@ pub(crate) fn build(editor: &mut crate::editing::Editor, flags: Flags<'_>) -> St
         tracking: editor.tracking(),
         tracking_locked: doc.settings.protection.as_ref().is_some_and(|p| p.forces_tracking()),
         protection: None,
-        markup_view: doc.review.view,
+        markup_view: editor.review().view,
         revisions: 0,
         comments: doc.comments.by_id.len() as u32,
         active_comment: comment,

@@ -8,7 +8,7 @@ use crate::docx::model::next_para_id;
 use crate::docx::props::Width;
 use crate::docx::{Block, Document, Inline, NoteKind, Paragraph, Picture, Table};
 use crate::font::Fonts;
-use crate::layout::layout;
+use crate::layout::tests::layout;
 
 use super::{doc, fixture, fixtures, fonts};
 
@@ -31,8 +31,7 @@ fn first_para(d: &Document) -> Paragraph {
 fn para_with(template: &Paragraph, inlines: Vec<Inline>) -> Block {
     let mut p = template.clone();
     p.inlines = inlines;
-    p.id = next_para_id();
-    p.src = None;
+    p.renew_identity();
     Block::Para(p)
 }
 
@@ -108,7 +107,7 @@ fn odd_documents_lay_out() {
                 effect: [0.0; 4],
                 shape: None,
                 text: None,
-                src: Default::default(),
+                origin: crate::docx::Origin::NONE,
             },
             run.clone(),
         )],

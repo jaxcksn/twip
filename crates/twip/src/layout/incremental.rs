@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::docx::model::*;
+use crate::docx::page_borders::PageBordersXml;
 use crate::docx::review::ReviewView;
 use crate::font::Fonts;
 
@@ -94,7 +95,7 @@ type Shadow = Vec<Vec<Option<Block>>>;
 
 struct Extras {
     sections: Vec<Section>,
-    stories: std::collections::BTreeMap<String, Vec<Block>>,
+    stories: std::collections::BTreeMap<HeaderFooterId, Vec<Block>>,
     footnotes: HashMap<i64, Vec<Block>>,
     endnotes: HashMap<i64, Vec<Block>>,
     separators: HashMap<String, Vec<Block>>,
@@ -132,7 +133,7 @@ fn same_props(a: &Section, b: &Section) -> bool {
         line_numbers,
         v_align,
         page_borders,
-        page_borders_xml,
+        page_borders_direct,
         line_grid,
         notes,
         no_endnote,
@@ -142,7 +143,7 @@ fn same_props(a: &Section, b: &Section) -> bool {
         form_protected,
         blocks: _,
         change,
-        read: _,
+        origin: _,
     } = a;
     *break_kind == b.break_kind
         && [*page_w, *page_h, *top, *bottom, *left, *right, *header, *footer, *gutter]
@@ -157,7 +158,7 @@ fn same_props(a: &Section, b: &Section) -> bool {
         && *line_numbers == b.line_numbers
         && *v_align == b.v_align
         && *page_borders == b.page_borders
-        && *page_borders_xml == b.page_borders_xml
+        && page_borders_direct.written_alike(&b.page_borders_direct)
         && *line_grid == b.line_grid
         && *notes == b.notes
         && *no_endnote == b.no_endnote
@@ -165,7 +166,7 @@ fn same_props(a: &Section, b: &Section) -> bool {
         && *rtl_gutter == b.rtl_gutter
         && *footnote_columns == b.footnote_columns
         && *form_protected == b.form_protected
-        && *change == b.change
+        && crate::docx::page_borders::same_change(change.as_deref(), b.change.as_deref())
 }
 
 impl Extras {
@@ -185,7 +186,7 @@ impl Extras {
     }
 
     /// The header and footer parts that changed, when nothing else did.
-    fn changed_parts(&self, doc: &Document, fonts: &Fonts, env: &LayoutEnv) -> Option<Vec<String>> {
+    fn changed_parts(&self, doc: &Document, fonts: &Fonts, env: &LayoutEnv) -> Option<Vec<HeaderFooterId>> {
         let rest = self.fonts == fonts.revision()
             && self.endnotes_sect_end == doc.settings.endnotes_sect_end
             && self.sections.len() == doc.sections.len()
@@ -204,7 +205,7 @@ impl Extras {
                 return None;
             }
             if was != now {
-                changed.push(name.clone());
+                changed.push(*name);
             }
         }
         Some(changed)
@@ -331,7 +332,7 @@ fn row_restart(
     let blocks = &doc.sections.get(span.section)?.blocks;
     let Some(Block::Table(table)) = blocks.get(span.first) else { return None };
     let prev = match span.first.checked_sub(1).and_then(|i| blocks.get(i)) {
-        Some(Block::Para(p)) => Some(&**p.para_style_in(doc.review.view)),
+        Some(Block::Para(p)) => Some(&**p.para_style_in(env.text.review.view)),
         _ => None,
     };
     fn inside<'p>(pg: &'p PageRecord, span: &Span) -> Option<&'p super::record::BodyRecord> {
@@ -409,7 +410,7 @@ pub struct Reuse {
     span: Option<Span>,
     restart: usize,
     /// The header and footer parts that changed: pages showing one compose them again.
-    parts: Vec<String>,
+    parts: Vec<HeaderFooterId>,
     keys: Vec<(usize, usize, u8, usize, usize)>,
     renumbered: std::collections::HashSet<(NoteKind, i64)>,
 }
@@ -578,9 +579,7 @@ impl Reuse {
         for (part, h) in parts.iter().zip(&b.hf) {
             let same = match (*part, h) {
                 (None, None) => true,
-                (Some(part), Some(h)) => {
-                    *part == h.part && !self.parts.iter().any(|p| p == part) && fields_used(&fields, &cx.doc.stories[part]) == h.fields
-                }
+                (Some(part), Some(h)) => part == h.part && !self.parts.contains(&part) && fields_used(&fields, &cx.doc.stories[&part]) == h.fields,
                 _ => false,
             };
             if !same {
@@ -629,18 +628,23 @@ pub struct DocumentLayout {
     chains: Option<Rc<[super::env::Chain]>>,
     /// The tables a live drag lays out.
     live: Rc<[u64]>,
+    /// The hyphenation patterns the host supplied.
+    hyphenation: Option<super::hyphenate::Hyphenation>,
+    /// The view the document is laid out in.
+    view: ReviewView,
 }
 
 type Frame = (Rc<PageFragment>, PageMeta, [Option<HfRecord>; 2]);
 
 impl Default for DocumentLayout {
     fn default() -> Self {
-        DocumentLayout::new()
+        DocumentLayout::new(ReviewView::default())
     }
 }
 
 impl DocumentLayout {
-    pub fn new() -> DocumentLayout {
+    /// A layout of nothing yet, laying documents out in `view`.
+    pub fn new(view: ReviewView) -> DocumentLayout {
         DocumentLayout {
             cache: LayoutCache::new(),
             published: Rc::new(Snapshot::new(Revision(0), LayoutRevision(0), LayoutStatus::Pending { stale_from: 0 }, Vec::new(), Vec::new())),
@@ -658,13 +662,47 @@ impl DocumentLayout {
             env: None,
             chains: None,
             live: Rc::from([]),
+            hyphenation: None,
+            view,
         }
+    }
+
+    /// The view the document is laid out in.
+    pub fn view(&self) -> &ReviewView {
+        &self.view
+    }
+
+    /// Takes the view to lay the document out in; whether it differs from the one it had. The environment is read
+    /// again when it does; the document is laid out again from the next edit.
+    pub fn set_view(&mut self, view: ReviewView) -> bool {
+        if self.view == view {
+            return false;
+        }
+        self.view = view;
+        self.env = None;
+        true
     }
 
     /// The tables (model ids) a live drag lays out as it would leave them: each is laid out only as far as the pages
     /// laid out need, the rest of it as later pages do.
     pub fn set_live_tables(&mut self, tables: Rc<[u64]>) {
         self.live = tables;
+    }
+
+    /// The hyphenation patterns the host supplied.
+    pub fn hyphenation(&self) -> Option<&super::hyphenate::Hyphenation> {
+        self.hyphenation.as_ref()
+    }
+
+    /// Takes the host's hyphenation patterns; whether they differ from the ones it had. The environment is read again
+    /// when they do.
+    pub fn set_hyphenation(&mut self, h: Option<super::hyphenate::Hyphenation>) -> bool {
+        if self.hyphenation == h {
+            return false;
+        }
+        self.hyphenation = h;
+        self.env = None;
+        true
     }
 
     /// The document changed: its environment is read again, though nothing needs laying out again.
@@ -690,7 +728,7 @@ impl DocumentLayout {
                     doc.sections.get(s.section).and_then(|sec| sec.blocks.get(s.first..s.new_end)).is_some_and(|b| !super::env::chained(b))
                 })
         });
-        let env = Rc::new(LayoutEnv::with_chains(doc, kept));
+        let env = Rc::new(LayoutEnv::with_chains(doc, &self.view, kept, self.hyphenation.as_ref()));
         self.chains = Some(env.chains.clone());
         self.env = Some(env.clone());
         env
@@ -810,7 +848,7 @@ impl DocumentLayout {
     fn start(&mut self, doc: &Document, fonts: &Fonts) -> Running {
         let rev = self.revision;
         let env = self.env(doc);
-        let new_job = || LayoutJob::new(doc, rev);
+        let new_job = || LayoutJob::new(doc, &env.text.review, rev);
         let full = |job, why: &'static str| {
             crate::prof::time(why, || ());
             #[cfg(test)]
@@ -860,7 +898,7 @@ impl DocumentLayout {
         if seeded {
             job.seed((*b.finished.known).clone(), b.finished.records.iter().map(|p| p.hf_full).collect());
         }
-        let closed = span.map(|s| close(s, &doc.sections[s.section].blocks, &doc.review));
+        let closed = span.map(|s| close(s, &doc.sections[s.section].blocks, &env.text.review));
         let base = &b.finished.records;
         #[cfg(test)]
         let forced = FORCE_FIRST_PAGE.get();
@@ -870,7 +908,7 @@ impl DocumentLayout {
         let r = match &closed {
             _ if forced || base.is_empty() => 0,
             Some(s) => {
-                let r = restart_page(base, s, &doc.sections[s.section].blocks, &doc.review);
+                let r = restart_page(base, s, &doc.sections[s.section].blocks, &env.text.review);
                 let notes = job.note_numbers().clone();
                 let latest = b.table.as_ref();
                 crate::prof::time("layout:row-restart", || {
@@ -973,7 +1011,7 @@ impl DocumentLayout {
             #[cfg(test)]
             FULL_JOBS.set(FULL_JOBS.get() + 1);
             self.job = Some(Running {
-                job: LayoutJob::new(doc, self.revision),
+                job: LayoutJob::new(doc, &self.view, self.revision),
                 reuse: None,
                 span: None,
                 incremental: false,

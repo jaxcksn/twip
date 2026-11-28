@@ -7,7 +7,7 @@ use crate::font::Face;
 
 use crate::docx::VMerge;
 
-use super::ids::{FloatId, FragmentId, ParaId, TableId, Unit};
+use super::ids::{FloatId, FragmentId, HeaderFooterId, ParaId, TableId, Unit};
 use super::units::EPS;
 
 #[derive(Clone, Debug)]
@@ -122,7 +122,7 @@ impl std::hash::Hash for GlyphPaint {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ImageKey {
-    pub index: Option<usize>,
+    pub image: Option<crate::docx::ResourceId>,
     pub generation: u32,
 }
 
@@ -333,14 +333,15 @@ pub enum Dash {
 }
 
 impl Dash {
-    /// An `ST_Border` style's dashes; solid for any other style.
-    pub fn of(style: &str) -> Dash {
+    /// A border style's dashes; solid for any other style.
+    pub fn of(style: crate::docx::props::BorderStyle) -> Dash {
+        use crate::docx::props::BorderStyle;
         match style {
-            "dotted" => Dash::Dotted,
-            "dashed" => Dash::Dashed,
-            "dotDash" => Dash::DotDash,
-            "dotDotDash" => Dash::DotDotDash,
-            "dashSmallGap" => Dash::DashSmallGap,
+            BorderStyle::Dotted => Dash::Dotted,
+            BorderStyle::Dashed => Dash::Dashed,
+            BorderStyle::DotDash => Dash::DotDash,
+            BorderStyle::DotDotDash => Dash::DotDotDash,
+            BorderStyle::DashSmallGap => Dash::DashSmallGap,
             _ => Dash::Solid,
         }
     }
@@ -505,10 +506,10 @@ pub enum BoxKind {
         layer: Layer,
     },
     Header {
-        story: String,
+        story: HeaderFooterId,
     },
     Footer {
-        story: String,
+        story: HeaderFooterId,
     },
     /// A vertical section's body, drawn turned: its children are laid out unturned, their items already turned.
     Turned(super::vertical::Turning),

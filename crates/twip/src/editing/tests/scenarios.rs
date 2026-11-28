@@ -781,6 +781,18 @@ fn run(path: &Path) {
                 r.check(w, &where_);
             }
         }
+        // `TWIP_SCENARIO_OUT=dir` keeps what each scenario saves, to compare two builds' bytes.
+        if let Some(dir) = std::env::var_os("TWIP_SCENARIO_OUT").filter(|_| zoom == 1.0) {
+            let name = path
+                .strip_prefix(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenarios"))
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace(['/', '\\'], "__");
+            let out = Path::new(&dir).join(name).with_extension("docx");
+            std::fs::create_dir_all(&dir).expect("the output directory");
+            let saved = crate::docx::write::save(r.e.document(), r.e.docx()).map_err(|e| e.to_string());
+            std::fs::write(&out, saved.unwrap_or_else(|e| format!("not saved: {e}").into_bytes())).expect("writes");
+        }
     }
 }
 

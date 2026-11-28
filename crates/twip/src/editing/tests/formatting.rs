@@ -1,5 +1,7 @@
 //! Character and paragraph formatting: what it changes, what it keeps
 
+use crate::docx::definitions::DefinitionsXml;
+use crate::docx::origin::RubyOrigin;
 use std::io::Read;
 
 use super::super::Editor;
@@ -13,7 +15,7 @@ use crate::docx::{Block, Inline};
 use crate::layout::{TableId, Unit};
 
 fn doc_xml(e: &Editor) -> String {
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
     let mut s = String::new();
     z.by_name("word/document.xml").unwrap().read_to_string(&mut s).unwrap();
@@ -196,7 +198,7 @@ fn bold_reaches_a_rubys_base_text_and_saves() {
     let (r, _) = ruby(&e);
     assert!(r.base.iter().all(|(_, run)| run.bold), "the base text is bold");
     assert!(r.text.iter().all(|(_, run)| !run.bold), "the annotation keeps its own formatting");
-    let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reads");
+    let again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reads");
     let (r, _) = ruby(&again);
     assert!(r.base.iter().all(|(_, run)| run.bold), "as saved");
 }
@@ -228,7 +230,7 @@ fn tab_stops_in_a_style_that_updates_itself_change_the_style() {
     let undo = e.history().undo_depth();
     let out = e.execute(C::AddTabStop(AddTabStop { position: Points(144.0), alignment: None, leader: None }), fonts());
     assert!(matches!(out, super::super::commands::Outcome::Changed(_)), "{out:?}");
-    let raw = &e.document().resolver.as_ref().expect("styles").styles.get("Auto").expect("Auto").raw;
+    let raw = &e.document().definitions.as_ref().expect("styles").style_xml("Auto").expect("Auto");
     assert!(raw.contains("w:pos=\"2880\""), "{raw}");
     assert_eq!(e.history().undo_depth(), undo + 1);
     assert!(first_para(&e).style.tabs.iter().any(|t| (t.pos - 144.0).abs() < 0.01), "the paragraph takes it");
@@ -249,8 +251,8 @@ fn a_font_size_past_words_limit_is_refused_wherever_it_comes_from() {
     let mut e = edit("<w:p><w:r><w:t>x</w:t></w:r></w:p>");
     let d = crate::api::command::DocumentDefaults { size: Some(Points(1e30)), ..Default::default() };
     assert!(matches!(e.execute(C::SetDocumentDefaults(d), fonts()), super::super::commands::Outcome::Refused(_)));
-    let normal = e.document().resolver.as_ref().expect("styles").styles.get("Normal").expect("Normal").raw.clone();
-    assert!(e.format_style(&normal, vec![C::SetFontSize(Points(1e12))], fonts()).is_err());
+    let normal = e.document().definitions.as_ref().expect("styles").style_xml("Normal").expect("Normal");
+    assert!(e.format_style_xml(&normal, vec![C::SetFontSize(Points(1e12))], fonts()).is_err());
     let line = crate::api::command::Border {
         style: crate::api::command::BorderStyle::Single,
         width: Points(1e6),
@@ -340,6 +342,33 @@ fn the_format_painter_takes_part_of_a_paragraphs_style_formatting() {
 }
 
 #[test]
+fn the_format_painter_writes_what_it_took_as_it_was_written() {
+    let styles = concat!(
+        r#"<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>"#,
+        r#"<w:style w:type="paragraph" w:styleId="Odd"><w:name w:val="Odd"/><w:basedOn w:val="Normal"/><w:rPr><w:b w:val="1"/><w:eastAsianLayout w:id="7"/></w:rPr></w:style>"#,
+    );
+    let own = r#"<w:rPr><w:b w:val="true"/><w:snapToGrid w:val="0"/><w:color w:val="c00000"/></w:rPr>"#;
+    let body = format!(
+        r#"<w:p><w:r>{own}<w:t>source</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Odd"/></w:pPr><w:r><w:rPr><w:color w:val="00b050"/></w:rPr><w:t>styled</w:t></w:r></w:p><w:p><w:r><w:rPr><w:i/><w:color w:val="0000FF"/></w:rPr><w:t>target</w:t></w:r></w:p>"#
+    );
+    let mut e = super::style_model::open_pkg(&super::style_model::pkg(styles, &body));
+    let ids = texts_ids(&e);
+    let paint = |e: &mut Editor, from: usize| {
+        let at = |u| Position::text(StoryId::Body, ids[from], Unit(u));
+        e.selection = Selection::range(at(0), at(2), Default::default());
+        e.execute(C::CopyFormatting, fonts());
+        let at = |u| Position::text(StoryId::Body, ids[2], Unit(u));
+        e.selection = Selection::range(at(0), at(6), Default::default());
+        e.execute(C::PasteFormatting, fonts());
+        let xml = doc_xml(e);
+        let at = xml.rfind("<w:rPr>").expect("the target's properties");
+        xml[at..at + xml[at..].find("</w:rPr>").expect("closed") + 8].to_string()
+    };
+    assert_eq!(paint(&mut e, 0), own, "a run's own as written");
+    assert_eq!(paint(&mut e, 1), r#"<w:rPr><w:b w:val="1"/><w:color w:val="00b050"/><w:eastAsianLayout w:id="7"/></w:rPr>"#, "with its style's");
+}
+
+#[test]
 fn the_format_painter_takes_a_whole_paragraphs_formatting_too() {
     let mut e = edit(
         r#"<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:after="480"/></w:pPr><w:r><w:t>one</w:t></w:r></w:p><w:p><w:r><w:t>two</w:t></w:r></w:p><w:p><w:r><w:t>three</w:t></w:r></w:p>"#,
@@ -361,7 +390,7 @@ fn a_built_in_style_not_applied_is_not_added() {
     let undo = e.history().undo_depth();
     let out = e.execute(C::SetTableStyle(crate::api::value::StyleId("TableGrid1".into())), fonts());
     assert!(matches!(out, super::super::commands::Outcome::Unchanged(_)), "{out:?}");
-    assert!(!e.document().resolver.as_ref().expect("styles").styles.by_id.contains_key("TableGrid1"), "not in a table");
+    assert!(!e.document().definitions.as_ref().expect("styles").has_style("TableGrid1"), "not in a table");
     assert_eq!(e.history().undo_depth(), undo);
 }
 
@@ -397,9 +426,9 @@ fn a_font_replaced_in_a_rubys_annotation_and_base_keeps_its_xml() {
     let fonts_of = |r: &crate::docx::Ruby| -> Vec<String> { r.base.iter().chain(&r.text).map(|(_, run)| run.ascii.clone()).collect() };
     let (r, _) = ruby(&e);
     assert_eq!(fonts_of(&r), ["Times New Roman", "Times New Roman"]);
-    let xml = r.xml.0.as_deref().expect("its XML").to_string();
+    let xml = r.origin_xml().expect("its XML").to_string();
     assert_eq!(xml.matches("w:ascii=\"Times New Roman\"").count(), 2, "{xml}");
-    let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reads");
+    let again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reads");
     assert_eq!(fonts_of(&ruby(&again).0), ["Times New Roman", "Times New Roman"], "as saved");
 }
 
@@ -410,7 +439,29 @@ fn bold_over_a_ruby_leaves_an_empty_run_in_its_base_alone() {
     e.execute(Command::SelectAll, fonts());
     e.execute(C::SetBold(true), fonts());
     let (r, _) = ruby(&e);
-    let xml = r.xml.0.as_deref().expect("its XML").to_string();
+    let xml = r.origin_xml().expect("its XML").to_string();
     assert!(xml.contains("<w:r/></w:rubyBase>"), "no properties beside the empty run: {xml}");
     assert!(r.base.iter().all(|(_, run)| run.bold), "the base text is bold");
+}
+
+#[test]
+fn a_font_the_built_in_defaults_name_is_replaced_where_the_part_writes_none() {
+    use crate::api::command::CommandResult;
+    let styles = r#"<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>"#;
+    let mut e = Editor::open(&super::style_model::pkg(styles, "<w:p><w:r><w:t>one</w:t></w:r></w:p>"), fonts()).expect("opens");
+    e.complete(fonts());
+    let part = |e: &Editor| {
+        let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
+        let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).expect("a package");
+        let mut xml = String::new();
+        z.by_name("word/styles.xml").expect("styles").read_to_string(&mut xml).expect("reads");
+        xml
+    };
+    let font = |e: &Editor| first_para(e).inlines.iter().find_map(|i| if let Inline::Text(_, r) = i { Some(r.ascii.clone()) } else { None });
+    assert_eq!(font(&e).as_deref(), Some("Aptos"), "Word's defaults");
+    let before = part(&e);
+    e.execute(replace_font("Aptos", "Courier New", None), fonts());
+    assert_eq!(e.made, Some(CommandResult::FontReplaced { changed: 1, skipped: 0 }), "the defaults, once");
+    assert_eq!(font(&e).as_deref(), Some("Courier New"), "text over the defaults takes the new font");
+    assert_eq!(part(&e), before, "the styles part writes no defaults still");
 }

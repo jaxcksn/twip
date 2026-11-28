@@ -343,7 +343,7 @@ fn delete_removes_only_the_selected_group_child() {
 
 /// The blank document with a picture inserted in its first paragraph.
 fn with_inserted_picture() -> Editor {
-    let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let data = open("FX-OBJ.docx").document().images.last().map(|(_, d)| d.to_vec()).expect("an image");
     let mut e = Editor::open(&super::blank_with("Body text here"), fonts()).expect("opens");
     e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, super::para_id(&e, 0), Unit(2))));
     let out = e.execute(Command::InsertPicture(Picture { data: Bytes(data), alt_text: None }), fonts());
@@ -359,7 +359,7 @@ fn an_inserted_picture_can_be_cropped() {
     assert!(changed(&out), "{out:?}");
     let p = first_inline_picture(&e).expect("the picture");
     assert!((p.w - w * 0.75).abs() < 0.1, "{} of {w}", p.w);
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let xml = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part");
     assert!(xml.contains("<a:srcRect l=\"25000\""), "the crop is saved");
     Editor::open(&saved, fonts()).expect("reopens");
@@ -403,10 +403,10 @@ fn an_inserted_picture_can_be_rotated_once_floating() {
 
 #[test]
 fn a_quarter_turned_new_picture_saves_its_unturned_extent() {
-    let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
-    let mut doc = crate::docx::read_editable(&super::blank_with("Body text here")).unwrap();
-    doc.settings.compat_mode = 15;
-    let mut e = Editor::with_document(doc, fonts());
+    let data = open("FX-OBJ.docx").document().images.last().map(|(_, d)| d.to_vec()).expect("an image");
+    let (mut doc, docx) = crate::docx::read_editable(&super::blank_with("Body text here")).unwrap();
+    doc.settings.policy.mode = 15;
+    let mut e = Editor::with_session(doc, docx, fonts());
     e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, super::para_id(&e, 0), Unit(2))));
     assert!(changed(&e.execute(Command::InsertPicture(Picture { data: Bytes(data), alt_text: None }), fonts())));
     assert!(changed(&e.execute(Command::SetObjectWrap(ObjectWrap::Square), fonts())));
@@ -419,7 +419,7 @@ fn a_quarter_turned_new_picture_saves_its_unturned_extent() {
         .find_map(|i| if let crate::docx::Inline::Float(f, _) = i { Some((f.w, f.h, f.rot_swap)) } else { None })
         .expect("the float");
     assert!(swap && (w - h).abs() > 1.0, "a quarter-turned, unsquare box: {w} x {h}");
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let xml = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part");
     let extent = format!(r#"<wp:extent cx="{}" cy="{}""#, (h * 12700.0).round() as i64, (w * 12700.0).round() as i64);
     assert!(xml.contains(&extent), "{extent} in {xml}");
@@ -532,7 +532,7 @@ fn float_picture() -> (Editor, FloatId) {
 }
 
 fn natural(e: &Editor, f: &crate::docx::Float) -> (f64, f64) {
-    let (w, h, dx, dy) = crate::docx::image::image_info(&e.document().images[f.image.expect("image")]).expect("decodes");
+    let (w, h, dx, dy) = crate::docx::image::image_info(e.document().images.get(f.image.expect("image")).unwrap()).expect("decodes");
     (w * 72.0 / dx, h * 72.0 / dy)
 }
 
@@ -602,7 +602,7 @@ fn floating_objects_are_refused_in_a_footnote() {
         let out = e.execute(c, fonts());
         assert!(matches!(out, Outcome::Refused(_)), "{out:?}");
     }
-    let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let data = open("FX-OBJ.docx").document().images.last().map(|(_, d)| d.to_vec()).expect("an image");
     assert!(changed(&e.execute(Command::InsertPicture(Picture { data: Bytes(data), alt_text: None }), fonts())));
     assert!(matches!(e.selection(), Selection::Object(ObjectRef::Inline { .. })), "{:?}", e.selection());
     let out = e.execute(Command::SetObjectWrap(ObjectWrap::Square), fonts());
@@ -635,7 +635,7 @@ fn floating_and_inlining_a_picture_keeps_its_effect_extent() {
     assert!(changed(&e.execute(Command::SetObjectWrap(ObjectWrap::Square), fonts())));
     let Selection::Object(ObjectRef::Floating(f)) = e.selection() else { panic!("{:?}", e.selection()) };
     assert_eq!(e.float_of(f).map(|n| n.effect), Some(effect), "floated");
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let xml = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part");
     assert!(xml.contains(r#"<wp:effectExtent l="12700" t="25400" r="38100" b="50800"/>"#), "the floated picture's extent is saved");
     assert!(changed(&e.execute(Command::SetObjectWrap(ObjectWrap::Inline), fonts())));
@@ -687,7 +687,7 @@ fn wrap_points_drag_add_and_remove_as_one_step_each_and_save() {
     assert_eq!(e.history.undo_depth(), depth + 1, "one step");
     assert_eq!(poly(&e), Some(vec![(20, 20), (0, 100), (100, 100), (100, 0), (20, 20)]));
     let f = FloatId(all_floats(&e)[0]);
-    assert_eq!(e.float_of(f).map(|f| f.wrap.as_str()), Some("tight"), "a square wrap becomes tight");
+    assert_eq!(e.float_of(f).map(|f| f.wrap), Some(crate::docx::FloatWrap::Tight), "a square wrap becomes tight");
     assert!(e.editing_wrap_points(), "still editing");
     // A point added on the bottom edge
     let pts = wrap_points(&mut e);
@@ -703,7 +703,7 @@ fn wrap_points_drag_add_and_remove_as_one_step_each_and_save() {
     assert_eq!(poly(&e).map(|p| p.len()), Some(5));
     assert_eq!(e.history.undo_depth(), depth + 3);
     // Saved and read again
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let again = Editor::open(&saved, fonts()).expect("opens");
     assert_eq!(poly(&again), poly(&e));
     e.execute(Command::Undo(Default::default()), fonts());
@@ -793,7 +793,7 @@ fn regroup_groups_again_what_ungroup_made_until_one_is_gone() {
 
 #[test]
 fn the_default_picture_wrap_inserts_in_line_in_a_note() {
-    let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let data = open("FX-OBJ.docx").document().images.last().map(|(_, d)| d.to_vec()).expect("an image");
     let mut e = Editor::open(&super::blank_with("Body text here"), fonts()).expect("opens");
     e.set_default_picture_wrap(ObjectWrap::Square);
     e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, super::para_id(&e, 0), Unit(2))));
@@ -810,7 +810,7 @@ fn the_default_picture_wrap_inserts_in_line_in_a_note() {
 
 #[test]
 fn the_default_picture_wrap_floats_an_inserted_picture_in_one_step() {
-    let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let data = open("FX-OBJ.docx").document().images.last().map(|(_, d)| d.to_vec()).expect("an image");
     let mut e = Editor::open(&super::blank_with("Body text here"), fonts()).expect("opens");
     assert_eq!(e.default_picture_wrap(), ObjectWrap::Inline);
     e.set_default_picture_wrap(ObjectWrap::Square);
@@ -822,13 +822,13 @@ fn the_default_picture_wrap_floats_an_inserted_picture_in_one_step() {
     let f = all_floats(&e);
     assert_eq!(f.len(), 1, "floating");
     let fl = e.float_of(FloatId(f[0])).expect("the float");
-    assert_eq!((fl.wrap.as_str(), &*fl.alt), ("square", "A"));
+    assert_eq!((fl.wrap, &*fl.alt), (crate::docx::FloatWrap::Square, "A"));
     e.execute(Command::Undo(Default::default()), fonts());
     assert!(all_floats(&e).is_empty());
 }
 
 fn saved_xml(e: &Editor) -> String {
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part")
 }
 
@@ -873,7 +873,7 @@ fn a_turned_inline_picture_takes_its_turned_bounds_in_the_line() {
     let xml = saved_xml(&e);
     let ee = format!(r#"effectExtent l="{}" t="{}""#, (dx * 12700.0).round() as i64, (dy * 12700.0).round() as i64);
     assert!(xml.contains(&ee) && xml.contains(r#"rot="5400000""#), "{ee} in {xml}");
-    let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    let again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens");
     assert_eq!(first_inline_picture(&again).map(|p| p.effect), first_inline_picture(&e).map(|p| p.effect));
     // Resizing keeps the turned bounds.
     let out = e.execute(Command::SetObjectSize(ObjectSize { width: Some(Points(w / 2.0)), lock_aspect: Some(true), ..Default::default() }), fonts());
@@ -949,7 +949,7 @@ fn the_selection_pane_lists_renames_hides_and_restacks() {
     // Saved and read again.
     let xml = saved_xml(&e);
     assert!(xml.contains(r#"name="Gold star""#) && xml.contains(r#"title="A star""#) && xml.contains(r#"hidden="1""#), "{xml}");
-    let mut again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("opens");
+    let mut again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("opens");
     again.complete(fonts());
     let back: Vec<_> = again.object_list(0, fonts()).into_iter().map(|o| (o.name, o.hidden)).collect();
     assert_eq!(back, vec![("S2".to_string(), true), ("Gold star".to_string(), false)]);
@@ -997,7 +997,7 @@ fn a_group_child_is_listed_renamed_and_hidden_in_its_group() {
     assert!(changed(&e.set_object_name("Inner", fonts())));
     assert!(changed(&e.set_object_hidden(g.id, &child, true, fonts())));
     assert_eq!(drawn(&mut e).len(), 1);
-    let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("opens");
+    let again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("opens");
     let tree = again.float_of(g.id).or_else(|| again.float_of(FloatId(all_floats(&again)[0]))).and_then(|f| f.shape.clone()).expect("the group");
     let c = tree.at(&child).expect("the child");
     assert_eq!((c.nv.name.as_str(), c.nv.hidden), ("Inner", true));
@@ -1065,7 +1065,7 @@ fn a_wrap_polygon_of_up_to_1024_points_is_saved_and_read_whole() {
             })
             .collect();
         assert!(changed(&e.set_wrap_points(&pts, fonts())), "{n}");
-        let mut again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+        let mut again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens");
         again.complete(fonts());
         let g = FloatId(all_floats(&again)[0]);
         again.set_selection(Selection::Object(ObjectRef::Floating(g)));
@@ -1239,7 +1239,7 @@ fn picture_recolor_reads_back_saves_and_replaces_the_one_before() {
         assert!(saved.contains(xml), "{xml} in {saved}");
         let others = ["<a:grayscl/>", "<a:biLevel", "<a:duotone>"].into_iter().filter(|x| saved.contains(x)).count();
         assert_eq!(others, 1, "one recolouring: {saved}");
-        let mut again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+        let mut again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens");
         select_first_inline_picture(&mut again);
         assert_eq!(again.picture_adjust().map(|a| a.recolor), Some(recolor));
     }
@@ -1254,11 +1254,11 @@ fn picture_recolor_reads_back_saves_and_replaces_the_one_before() {
 fn a_pictures_image_and_a_shapes_picture_fill_read_back() {
     use crate::drawing::paint::{BlipFill, BlipMode, Fill};
     use crate::drawing::units::Pct;
-    let data = open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let data = open("FX-OBJ.docx").document().images.last().map(|(_, d)| d.to_vec()).expect("an image");
     let mut e = with_inserted_picture();
     assert_eq!(e.object_image(), Some(&data[..]));
     assert_eq!(e.shape_fill_image(), None, "a picture has no fill");
-    let k = e.document().images.iter().position(|i| *i == data).expect("the image");
+    let k = e.document().images.find(&data).expect("the image");
     let _ = e.execute(Command::Escape, fonts());
     assert!(changed(
         &e.execute(Command::InsertShape(ShapeInsert { preset: ShapePreset::from_name("rect").unwrap(), width: None, height: None }), fonts())
@@ -1280,7 +1280,7 @@ fn lock_aspect_off_on_an_inline_picture_is_saved() {
     assert!(e.object_props(fonts()).is_some_and(|p| !p.lock_aspect));
     let xml = saved_xml(&e);
     assert!(!xml.contains(r#"noChangeAspect="1""#), "{xml}");
-    let mut again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    let mut again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens");
     select_first_inline_picture(&mut again);
     assert!(again.object_props(fonts()).is_some_and(|p| !p.lock_aspect), "read back off");
     e.undo(true, fonts());
@@ -1290,7 +1290,8 @@ fn lock_aspect_off_on_an_inline_picture_is_saved() {
 
 #[test]
 fn a_read_pictures_title_and_lock_are_saved_without_a_resize() {
-    let saved = crate::docx::write::save(with_inserted_picture().document()).expect("saves");
+    let e = with_inserted_picture();
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let reopen = || {
         let mut e = Editor::open(&saved, fonts()).expect("reopens");
         select_first_inline_picture(&mut e);
@@ -1468,7 +1469,7 @@ fn a_column_float_dragged_to_the_other_column_keeps_its_place() {
     assert_eq!(e.index().float_anchor(f), Some(target), "anchored in the right column");
     assert_eq!(drawn(&mut e), before, "drawn where it was");
     let fl = e.float_of(f).expect("the float");
-    assert_eq!((fl.h_align.as_deref(), fl.relative.pos[0]), (None, None), "placed by an offset");
+    assert_eq!((fl.h_align, fl.relative.pos[0]), (None, None), "placed by an offset");
     // 130 from the page's edge is 194 left of the right column (324).
     assert!((fl.h_offset + 194.0).abs() < 0.1, "from the right column: {}", fl.h_offset);
 }
@@ -1697,9 +1698,9 @@ fn a_frame_dragged_to_a_twip_that_reads_as_an_alignment_keeps_its_place() {
         let mut moved = e.float_of(f).cloned().expect("the frame");
         (moved.h_offset, moved.v_offset) = (at, at);
         assert!(changed(&e.commit_frame(f, &moved, "Move Object", fonts())), "{at}");
-        let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+        let again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens");
         let n = again.float_of(FloatId(all_floats(&again)[0])).cloned().expect("the frame");
-        assert_eq!((n.h_align.as_deref(), n.v_align.as_deref()), (None, None), "{at}: a place, not an alignment");
+        assert_eq!((n.h_align, n.v_align), (None, None), "{at}: a place, not an alignment");
         assert!((n.h_offset - at).abs() <= 0.06 && (n.v_offset - at).abs() <= 0.06, "{at}: ({}, {})", n.h_offset, n.v_offset);
     }
 }
@@ -1713,7 +1714,7 @@ fn allowing_overlap_overrides_a_styles_suppress_overlap() {
     assert!(e.float_of(f).is_some_and(|n| !n.allow_overlap), "the style keeps it apart");
     let props: FrameProperties = e.frame_properties(None).expect("frame properties");
     assert!(changed(&e.set_frame_with_overlap(props, Some(true), fonts())));
-    let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    let again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens");
     assert!(again.float_of(FloatId(all_floats(&again)[0])).is_some_and(|n| n.allow_overlap), "saved as allowed");
 }
 

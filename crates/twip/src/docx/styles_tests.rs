@@ -1,5 +1,7 @@
 //! Styles: reading their flags, and editing the styles table
 
+use crate::docx::definitions::DefinitionsXml;
+use crate::docx::definitions::TypedDefsXml;
 use std::path::Path;
 
 use super::styles::{StyleEditError, StyleKind, Styles};
@@ -8,8 +10,8 @@ use super::*;
 fn styles() -> Styles {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-STYLES.docx");
     let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-    let doc = read_editable(&bytes).unwrap_or_else(|e| panic!("FX-STYLES: {e}"));
-    doc.resolver.expect("a resolver").styles.clone()
+    let (doc, docx) = read_editable(&bytes).unwrap_or_else(|e| panic!("FX-STYLES: {e}"));
+    crate::docx::baseline::Baseline::as_read(&doc, &docx).frozen.styles
 }
 
 #[test]
@@ -73,9 +75,9 @@ fn fixture_bytes() -> Vec<u8> {
     std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-STYLES.docx")).expect("FX-STYLES")
 }
 
-fn edit(doc: &mut Document, f: impl FnOnce(&mut Styles)) {
-    let res = doc.resolver.as_mut().expect("a resolver");
-    f(&mut std::rc::Rc::make_mut(res).styles);
+fn edit(doc: &mut Document, f: impl FnOnce(&mut crate::docx::definitions::StyleEdits)) {
+    let res = doc.definitions.as_mut().expect("a resolver");
+    f(&mut std::rc::Rc::make_mut(res).style_edits());
 }
 
 fn styles_part(bytes: &[u8]) -> String {
@@ -89,29 +91,30 @@ fn styles_part(bytes: &[u8]) -> String {
 #[test]
 fn saving_with_no_style_edits_keeps_the_package() {
     let bytes = fixture_bytes();
-    let doc = read_editable(&bytes).expect("reads");
-    assert_eq!(write::save(&doc).expect("saves"), bytes);
+    let (doc, docx) = read_editable(&bytes).expect("reads");
+    assert_eq!(write::save(&doc, &docx).expect("saves"), bytes);
 }
 
 #[test]
 fn a_changed_added_and_deleted_style_are_written_and_the_rest_kept() {
     let bytes = fixture_bytes();
     let before = styles_part(&bytes);
-    let mut doc = read_editable(&bytes).expect("reads");
+    let (mut doc, docx) = read_editable(&bytes).expect("reads");
     edit(&mut doc, |s| {
-        let callout = s.get("Callout").expect("Callout").raw.replace("<w:sz w:val=\"24\"/>", "<w:sz w:val=\"28\"/>");
+        let callout = s.typed().style_xml("Callout").expect("Callout").replace("<w:sz w:val=\"24\"/>", "<w:sz w:val=\"28\"/>");
         s.set_xml(callout).expect("changes Callout");
         s.set_xml("<w:style w:type=\"character\" w:customStyle=\"1\" w:styleId=\"Code\"><w:name w:val=\"Code\"/></w:style>".into())
             .expect("adds Code");
         s.delete("Draft").expect("deletes Draft");
     });
-    let after = styles_part(&write::save(&doc).expect("saves"));
+    let after = styles_part(&write::save(&doc, &docx).expect("saves"));
     assert!(after.contains("<w:sz w:val=\"28\"/>") && after.contains("<w:rsid w:val=\"00A1B2C3\"/>"), "Callout changed, its other children kept");
     assert!(after.contains("w:styleId=\"Code\"") && !after.contains("w:styleId=\"Draft\""));
     let kept = |xml: &str| xml[xml.find("w:styleId=\"Quote\"").expect("Quote")..].split("</w:style>").next().map(str::to_string);
     assert_eq!(kept(&after), kept(&before), "an untouched style is byte for byte the same");
-    let again = read_editable(&write::save(&doc).expect("saves")).expect("reads again");
-    let s = &again.resolver.expect("a resolver").styles;
+    let (again, again_docx) = read_editable(&write::save(&doc, &docx).expect("saves")).expect("reads again");
+    let baseline = crate::docx::baseline::Baseline::as_read(&again, &again_docx);
+    let s = &baseline.styles;
     assert_eq!(s.chain_rpr(Some("Callout")).size, Some(14.0));
     assert!(s.get("Code").is_some() && s.get("Draft").is_none());
 }

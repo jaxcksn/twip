@@ -394,7 +394,7 @@ pub fn fill_effects_values(state: &State) -> FillEffectsDialog {
 fn two_stops(stops: &[GradientStop]) -> Option<Vec<GradientStop>> {
     let rgb = |s: &GradientStop| s.colour.rgb.filter(|_| s.colour.theme.is_none() && s.colour.preset.is_none() && s.colour.transforms.is_empty());
     let (a, b) = (rgb(stops.first()?)?, rgb(stops.last()?)?);
-    let blend = crate::drawing::vml::two_colour(&crate::drawing::colour::Colour::srgb(a.0), &crate::drawing::colour::Colour::srgb(b.0));
+    let blend = crate::drawing::paint::two_colour(&crate::drawing::colour::Colour::srgb(a.0), &crate::drawing::colour::Colour::srgb(b.0));
     let same = blend.len() == stops.len()
         && blend.iter().zip(stops).all(|((p, c), s)| (p.fraction() - s.position).abs() < 1e-4 && ColourValue::of(c, None) == s.colour);
     same.then(|| vec![stops[0].clone(), stops[stops.len() - 1].clone()])
@@ -404,7 +404,7 @@ fn two_stops(stops: &[GradientStop]) -> Option<Vec<GradientStop>> {
 fn one_colour(v: FillEffectsDialog) -> FillEffectsDialog {
     let plain = |c: &ColourValue| c.rgb.filter(|_| c.theme.is_none() && c.preset.is_none() && c.transforms.is_empty());
     let (Some(a), Some(b), GradientColors::Two) = (plain(&v.color1), plain(&v.color2), v.colors) else { return v };
-    match crate::drawing::vml::shade_of(a.0, b.0) {
+    match crate::drawing::colour::shade_of(a.0, b.0) {
         Some((light, n)) => {
             let n = f64::from(n) / 510.0;
             FillEffectsDialog { colors: GradientColors::One, lightness: if light { 1.0 - n } else { n }, ..v }

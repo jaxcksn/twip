@@ -1,5 +1,6 @@
 //! Object properties and the Selection Pane
 
+use crate::docx::origin::FloatOrigin;
 use std::cmp::Reverse;
 
 use crate::api::state::ObjectKind;
@@ -297,11 +298,11 @@ impl Editor {
 
     /// The selected picture's image bytes (a group child's when one is selected), as the document holds them.
     pub fn object_image(&self) -> Option<&[u8]> {
-        self.doc.images.get(self.selected_image()?).map(Vec::as_slice)
+        self.doc.images.get(self.selected_image()?)
     }
 
     /// The selected picture's image (a group child's when one is selected).
-    pub(super) fn selected_image(&self) -> Option<usize> {
+    pub(super) fn selected_image(&self) -> Option<crate::docx::ResourceId> {
         match self.object_shape().map(|s| &s.kind) {
             Some(ShapeKind::Pic(p)) => p.blip.image,
             _ => match self.selection {
@@ -328,7 +329,7 @@ impl Editor {
             },
             _ => return None,
         };
-        self.doc.images.get(k).map(Vec::as_slice)
+        self.doc.images.get(k)
     }
 
     /// Edits the selected object's shape (a group child's when one is selected), inline or floating.

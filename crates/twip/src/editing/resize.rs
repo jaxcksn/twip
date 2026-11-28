@@ -2,6 +2,7 @@
 
 use std::rc::Rc;
 
+use crate::docx::HeightRule;
 use crate::docx::props::Width;
 use crate::font::Fonts;
 use crate::layout::TableId;
@@ -488,7 +489,6 @@ impl Editor {
         let old_sum: f64 = t.grid.iter().sum();
         let (n, sized) = (t.rows.len(), !matches!(t.width, Width::Auto | Width::Nil));
         let mut rows = t.rows.clone();
-        let cx = self.cx();
         let grid_of = Grid::of(t);
         let g = &grid_of;
         let mut grid = d.base.grid.clone();
@@ -663,10 +663,10 @@ impl Editor {
                     for &(r, h) in &d.base.rows {
                         let Some(row) = rows.get_mut(r) else { continue };
                         let rule = match &row.height {
-                            Some((_, rule)) if rule == "exact" => "exact",
-                            _ => "atLeast",
+                            Some((_, HeightRule::Exact)) => HeightRule::Exact,
+                            _ => HeightRule::AtLeast,
                         };
-                        super::table_format::set_height(row, Some(((h * sy).min(MAX.max(h)).max(1.0), rule.to_string())), &cx);
+                        super::table_format::set_height(row, Some(((h * sy).min(MAX.max(h)).max(1.0), rule)));
                     }
                 }
             }
@@ -699,13 +699,13 @@ impl Editor {
                 props.floating = floating;
             }
             if resized {
-                super::table_format::set_width(&mut props, Width::Dxa(new_sum), &cx);
+                super::table_format::set_width(&mut props, Width::Dxa(new_sum));
             }
             if indent_by != 0.0 {
-                let compat = self.doc.resolver.as_ref().map_or(crate::docx::Compat::Generic, |r| r.styles.compat);
+                let compat = self.doc.definitions.as_ref().map_or(crate::docx::Compat::Generic, |r| r.cascade().rules.compat);
                 let nested = self.index.table_slot(d.table).is_some_and(|s| matches!(s.container, Container::Cell { .. }));
                 let from = if nested { t.ind } else { crate::layout::table::placed_indent(t, compat) };
-                super::table_format::set_indent(&mut props, from + indent_by, &cx);
+                super::table_format::set_indent(&mut props, from + indent_by);
             }
             steps.push(Step::TableProps { table: d.table, props });
         }
@@ -764,10 +764,10 @@ impl Editor {
         let h = (d.base.before + d.guide()[1] - d.row_top).clamp(1.0, MAX);
         let mut row = self.index.table(&self.doc, d.table).and_then(|t| t.rows.get(r)).ok_or(STALE)?.clone();
         let rule = match &row.height {
-            Some((_, rule)) if rule == "exact" => "exact",
-            _ => "atLeast",
+            Some((_, HeightRule::Exact)) => HeightRule::Exact,
+            _ => HeightRule::AtLeast,
         };
-        super::table_format::set_height(&mut row, Some((h, rule.to_string())), &self.cx());
+        super::table_format::set_height(&mut row, Some((h, rule)));
         Ok(("Row Height", vec![Step::Rows { table: d.table, range: r..r + 1, with: vec![row], grid: None }]))
     }
 

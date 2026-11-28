@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use crate::docx::Compat;
 use crate::docx::model::*;
-use crate::docx::props::{Border, Jc};
+use crate::docx::props::{Border, BorderStyle, Jc};
 use crate::docx::review::ReviewView;
 use crate::layout::fragment::Child;
 use crate::layout::ids::{ParaId, TableId};
@@ -51,14 +51,14 @@ fn part(own: Option<&Option<Border>>, table: &Option<Border>) -> f64 {
     };
     match b {
         None => 0.75,
-        Some(b) if &*b.style == "nil" => {
+        Some(b) if b.style == BorderStyle::Nil => {
             if cell {
                 0.75
             } else {
                 0.0
             }
         }
-        Some(b) if &*b.style == "none" => {
+        Some(b) if b.style == BorderStyle::None => {
             if b.color.is_some() {
                 0.0
             } else {
@@ -468,7 +468,7 @@ pub(super) fn assemble(
                 content_h,
                 align_h,
                 fixed_floats,
-                v_align: if unaligned { "top".into() } else { c.v_align.clone() },
+                v_align: if unaligned { VerticalAlignment::Top } else { c.v_align },
                 v_merge: c.v_merge,
                 col: g.col,
                 span: g.span,
@@ -561,8 +561,8 @@ pub(super) fn assemble(
         let content = content.max(min_margins);
         let bottom = cells.iter().map(|c| c.margins[2]).fold(0.0, f64::max);
         let (height, exact, min_h) = match &r.height {
-            Some((h, rule)) if rule == "exact" && *h > 0.0 => (*h + bottom, true, 0.0),
-            Some((h, rule)) if rule != "auto" => (top_border + content.max(*h + min_margins), false, top_border + *h + min_margins),
+            Some((h, HeightRule::Exact)) if *h > 0.0 => (*h + bottom, true, 0.0),
+            Some((h, HeightRule::Exact | HeightRule::AtLeast)) => (top_border + content.max(*h + min_margins), false, top_border + *h + min_margins),
             _ => (top_border + content, false, 0.0),
         };
         // Vertical cells: lines as long as the row's content is high, stacked across the cell. A merged region's first
@@ -842,10 +842,10 @@ fn turn_cell(
     };
     // Compat ≤ 14 doesn't clamp: a block thicker than the cell starts before its first side.
     let floor = if env.ctx.env.text.compat == Compat::Legacy { f64::NEG_INFINITY } else { 0.0 };
-    let across = match c.v_align.as_str() {
-        "center" => ((g.cw + far - story.height) / 2.0).max(floor),
-        "bottom" => (g.cw + far - story.height).max(floor),
-        _ => 0.0,
+    let across = match c.v_align {
+        VerticalAlignment::Center => ((g.cw + far - story.height) / 2.0).max(floor),
+        VerticalAlignment::Bottom => (g.cw + far - story.height).max(floor),
+        VerticalAlignment::Top | VerticalAlignment::Both => 0.0,
     };
     // Glyphs whose ink lies wholly outside the cell's clip, between its side borders' inner edges, are not drawn,
     // before the first side as past the far one.
@@ -874,7 +874,7 @@ fn turn_cell(
         row: None,
     };
     c.units = Rc::new(StoryLayout { units: vec![unit], ..StoryLayout::default() });
-    c.v_align = "top".into();
+    c.v_align = VerticalAlignment::Top;
     Ok(())
 }
 

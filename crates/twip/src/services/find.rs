@@ -12,7 +12,6 @@ use crate::api::services::{FindMatch, FindQuery, FontDialog, ParagraphDialog};
 use crate::api::state::Tri;
 use crate::api::value::{HighlightColor, MatchId, NoneOr, StyleId};
 use crate::docx::review::CommentId;
-use crate::docx::styles::StyleKind;
 use crate::docx::{Inline, Paragraph, RunStyle};
 use crate::editing::Editor;
 use crate::editing::commands::Outcome;
@@ -21,6 +20,7 @@ use crate::editing::index::Container;
 use crate::editing::position::Position;
 use crate::editing::search::{self, Clusters, Hay, MatchOptions, Needle, Needs, Pattern, Piece, SearchError, Sep, Template, Token};
 use crate::font::Fonts;
+use crate::format::StyleKind;
 use crate::layout::{ParaId, Unit};
 
 use super::spelling::searched_paras;
@@ -140,7 +140,7 @@ pub fn next_para(e: &Editor, para: ParaId) -> Option<(ParaId, Sep)> {
 /// joins the two paragraphs as they read, so no match crosses it.
 fn shown_next(e: &Editor, para: ParaId) -> Option<(ParaId, Sep)> {
     let p = e.index().para(e.document(), para)?;
-    if e.document().review.hides(&p.mark.rev) {
+    if e.review().hides(&p.mark.rev) {
         return None;
     }
     next_para(e, para)
@@ -201,7 +201,7 @@ impl FindFormat {
 
     fn style_kind(&self, e: &Editor) -> Option<StyleKind> {
         let id = self.style.as_ref()?;
-        Some(e.document().resolver.as_ref().and_then(|r| r.styles.by_id.get(&id.0)).map_or(StyleKind::Paragraph, |s| s.kind))
+        Some(e.document().definitions.as_ref().and_then(|r| r.style_kind(&id.0)).unwrap_or(StyleKind::Paragraph))
     }
 
     fn asks_characters(&self, e: &Editor) -> bool {

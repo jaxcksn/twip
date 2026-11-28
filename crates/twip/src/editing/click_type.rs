@@ -83,8 +83,8 @@ impl Editor {
         }
         let set = &self.doc.settings;
         let facing = crate::layout::page::Facing { mirror: set.mirror_margins, gutter_at_top: set.gutter_at_top, book_fold: set.book_fold };
-        let (l, right, _) = crate::layout::page::margins_in(sec, self.doc.review.view, facing, number);
-        let r = sec.section_in(self.doc.review.view).page_w - right;
+        let (l, right, _) = crate::layout::page::margins_in(sec, self.review.view, facing, number);
+        let r = sec.section_in(self.review.view).page_w - right;
         let (top, bottom) = geo.body_area?;
         let body = geo.stories.iter().position(|s| s.story == StoryId::Body && s.float.is_none())?;
         if py < top || py > bottom || px < l || px > r || geo.in_notes(px, py) {
@@ -196,17 +196,18 @@ impl Editor {
     /// Gives the caret's paragraph the Click and Type `style` (`None`: the default paragraph style) and none of its
     /// direct paragraph formatting but its mark's and its section's.
     fn click_and_type_paragraph(&mut self, style: Option<&str>, fonts: &Fonts) -> bool {
-        let styles = self.doc.resolver.as_ref().map(|r| &r.styles);
-        let paragraph = |id: &str| styles.and_then(|s| s.by_id.get(id)).is_some_and(|s| s.kind == crate::docx::styles::StyleKind::Paragraph);
+        let cascade = self.doc.definitions.as_ref().map(|r| r.cascade());
+        let styles = cascade.as_deref().map(|c| &*c.styles);
+        let paragraph = |id: &str| styles.and_then(|s| s.get(id)).is_some_and(|s| s.kind == crate::format::StyleKind::Paragraph);
         let style = style.filter(|s| paragraph(s) && styles.and_then(|st| st.default_paragraph.as_deref()) != Some(*s));
-        let pstyle = style.map(crate::docx::write::props::esc);
-        let edit = |p: &mut crate::docx::write::props::Props, cx: &crate::docx::write::props::Cx, _: &crate::docx::Paragraph| {
-            p.kids.retain(|(k, _)| k == "rPr" || k == "sectPr");
-            if let Some(v) = &pstyle {
-                p.set("pStyle", format!("<{w}pStyle {w}val=\"{v}\"/>", w = cx.w));
+        let style: Option<std::rc::Rc<str>> = style.map(Into::into);
+        let edit = |e: &mut crate::format::ParaEdit, _: &crate::docx::Paragraph| {
+            e.props = crate::format::ParaProps { style: style.clone(), ..Default::default() };
+            if style.is_some() {
+                e.whole(crate::format::ParaProp::Style);
             }
         };
-        !matches!(self.format_paras_direct("Style", &edit, fonts), Outcome::Refused(_))
+        !matches!(self.format_paras_direct_typed("Style", &edit, fonts), Outcome::Refused(_))
     }
 
     fn tab_out(&mut self, alignment: TabAlignment, at: f64, fonts: &Fonts) -> bool {

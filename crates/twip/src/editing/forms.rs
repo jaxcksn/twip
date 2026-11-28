@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use crate::api::command::{FormFieldChange, FormFieldFill, FormFieldType, TextInputType};
 use crate::docx::forms::{FormData, FormKind};
-use crate::docx::{ElementId, FieldId, FieldKind, FormField, Inline, Raw};
+use crate::docx::{ElementId, FieldId, FieldKind, FormField, Inline};
 use crate::font::Fonts;
 use crate::layout::{ParaId, Unit};
 
@@ -91,10 +91,7 @@ fn owned_bookmark(inlines: &[Inline], f: FieldId, name: &str) -> Option<(usize, 
         return None;
     }
     let s = form_span(inlines, f)?;
-    let named = |i: &Inline, end: bool| {
-        let Inline::Bookmark(n) = i else { return false };
-        n.strip_prefix('/').map_or(!end && n.eq_ignore_ascii_case(name), |n| end && n.eq_ignore_ascii_case(name))
-    };
+    let named = |i: &Inline, end: bool| i.bookmark().is_some_and(|(n, start)| start != end && n.eq_ignore_ascii_case(name));
     let start = inlines[..s.end].iter().rposition(|i| named(i, false))?;
     let end = start + 1 + inlines[start + 1..].iter().position(|i| named(i, true))?;
     (end > s.begin).then_some((start, end))
@@ -109,14 +106,14 @@ fn rename_form_bookmark(f: FieldId, inlines: &mut Vec<Inline>, owned: Option<(us
             inlines.remove(start);
         }
         Some((start, end)) => {
-            inlines[start] = Inline::Bookmark(new.to_string());
-            inlines[end] = Inline::Bookmark(format!("/{new}"));
+            inlines[start] = Inline::Range(crate::docx::review::RangeMark::bookmark_start(new));
+            inlines[end] = Inline::Range(crate::docx::review::RangeMark::bookmark_end(new));
         }
         None if new.is_empty() => {}
         None => {
             if let Some(s) = form_span(inlines, f) {
-                inlines.insert(s.end + 1, Inline::Bookmark(format!("/{new}")));
-                inlines.insert(s.begin, Inline::Bookmark(new.to_string()));
+                inlines.insert(s.end + 1, Inline::Range(crate::docx::review::RangeMark::bookmark_end(new)));
+                inlines.insert(s.begin, Inline::Range(crate::docx::review::RangeMark::bookmark_start(new)));
             }
         }
     }
@@ -187,7 +184,11 @@ impl Editor {
                     Inline::FieldBegin { id, form: Some(form), .. } if *id != f && form.data.name.eq_ignore_ascii_case(new) => {
                         return Err("another form field has the name");
                     }
-                    Inline::Bookmark(n) if n.eq_ignore_ascii_case(new) && !own.is_some_and(|o| n.eq_ignore_ascii_case(o)) => {
+                    Inline::Range(r)
+                        if let Some((n, true)) = r.bookmark()
+                            && n.eq_ignore_ascii_case(new)
+                            && !own.is_some_and(|o| n.eq_ignore_ascii_case(o)) =>
+                    {
                         return Err("a bookmark has the name");
                     }
                     _ => {}
@@ -209,7 +210,7 @@ impl Editor {
             if let Some(p) = self.index.para(&self.doc, para) {
                 names.extend(p.inlines.iter().filter_map(|i| match i {
                     Inline::FieldBegin { form: Some(f), .. } => Some(f.data.name.to_ascii_lowercase()),
-                    Inline::Bookmark(n) if !n.starts_with('/') => Some(n.to_ascii_lowercase()),
+                    Inline::Range(r) if let Some((n, true)) = r.bookmark() => Some(n.to_ascii_lowercase()),
                     _ => None,
                 }));
             }
@@ -227,13 +228,13 @@ impl Editor {
             |run| {
                 let mut v = crate::docx::fields::field_inlines_with(id, &format!(" {code} "), &display, &run);
                 if let Some(Inline::FieldBegin { form, .. }) = v.first_mut() {
-                    *form = Some(Rc::new(FormField { xml: Raw(None), data: data.clone(), read: data.clone() }));
+                    *form = Some(Rc::new(FormField { data: data.clone(), origin: crate::docx::Origin::NONE }));
                 }
                 if let Some(b) = v.first_mut() {
                     shown(b);
                 }
-                v.insert(0, Inline::Bookmark(name.clone()));
-                v.push(Inline::Bookmark(format!("/{name}")));
+                v.insert(0, Inline::Range(crate::docx::review::RangeMark::bookmark_start(&*name)));
+                v.push(Inline::Range(crate::docx::review::RangeMark::bookmark_end(&*name)));
                 v
             },
             "Insert Form Field",
@@ -490,7 +491,8 @@ impl Editor {
         let mut mine = 0;
         let fills = |c: &crate::docx::ControlId| {
             self.doc.controls.get(c).is_some_and(|k| {
-                k.props.lock.editable() && !matches!(k.props.kind, ControlKind::Group | ControlKind::RepeatingSection | ControlKind::RepeatingItem)
+                k.props.lock.editable()
+                    && !matches!(k.props.kind, ControlKind::Group | ControlKind::RepeatingSection { .. } | ControlKind::RepeatingItem)
             })
         };
         let mut seen = std::collections::HashSet::new();

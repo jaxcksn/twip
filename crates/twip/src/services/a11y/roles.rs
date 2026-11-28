@@ -9,8 +9,9 @@ pub(crate) fn heading_level(doc: &Document, p: &Paragraph) -> Option<u32> {
         // Outline level 9 is body text.
         return (0..9).contains(&l).then_some(l as u32 + 1);
     }
-    let style = doc.resolver.as_ref()?.styles.by_id.get(p.style.style_id.as_deref()?)?;
-    let (word, n) = style.name.split_once(' ')?;
+    let c = doc.definitions.as_ref()?.cascade();
+    let style = c.styles.get(p.style.style_id.as_deref()?)?;
+    let (word, n) = style.name.as_deref()?.split_once(' ')?;
     let level: u32 = n.parse().ok()?;
     (word.eq_ignore_ascii_case("heading") && (1..=9).contains(&level)).then_some(level)
 }
@@ -37,7 +38,11 @@ pub(crate) fn alt<'a>(alt: &'a str, shape: Option<&crate::drawing::Shape>) -> Al
 
 /// The document's language: its defaults', else `language`.
 pub(crate) fn document_language(doc: &Document, language: &str) -> String {
-    doc.resolver.as_ref().and_then(|r| r.styles.doc_rpr.lang.clone()).filter(|l| !l.is_empty()).unwrap_or_else(|| language.to_string())
+    doc.definitions
+        .as_ref()
+        .and_then(|r| r.cascade().doc_char().lang.latin.as_deref().map(str::to_string))
+        .filter(|l| !l.is_empty())
+        .unwrap_or_else(|| language.to_string())
 }
 
 /// A run's language where it differs from the document's `doc_lang` (a run naming none is in the document's).

@@ -339,7 +339,7 @@ impl<'d> PageFill<'d, '_> {
         let style = p.para_style_in(view);
         let breaks_first = |b: Option<&Block>| {
             let Some(Block::Para(q)) = b else { return false };
-            let mut shown = q.inlines.iter().filter(|i| !matches!(i, Inline::Bookmark(..) | Inline::Opaque(..) | Inline::Range(..)));
+            let mut shown = q.inlines.iter().filter(|i| !matches!(i, Inline::Foreign(..) | Inline::FieldEdge { .. } | Inline::Range(..)));
             matches!(shown.next(), Some(Inline::Break(crate::docx::model::BreakKind::Page | crate::docx::model::BreakKind::Column, _)))
         };
         let prev = prev.filter(|_| !breaks_first(self.sec.blocks.get(bi)));
@@ -841,7 +841,7 @@ impl<'d> PageFill<'d, '_> {
             for (k, i) in p.inlines.iter().enumerate() {
                 match i {
                     // A name found again moves to the end where the page's effects are merged.
-                    Inline::Bookmark(name) if !name.starts_with('/') => self.at.effects.bookmarks.push((name.clone(), id)),
+                    Inline::Range(r) if let Some((name, true)) = r.bookmark() => self.at.effects.bookmarks.push((name.to_string(), id)),
                     Inline::FieldBegin { kind: Some(FieldKind::PageRef(_) | FieldKind::NoteRef(..)), .. }
                         if crate::docx::fields::relative_at(&p.inlines, k) =>
                     {

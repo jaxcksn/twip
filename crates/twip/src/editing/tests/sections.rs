@@ -169,7 +169,7 @@ fn a_section_break_splits_its_section_and_saves_a_sectpr_of_its_own() {
     let end = Unit(texts(&e).iter().find(|t| t.starts_with("S1 P4")).map_or(0, |t| t.chars().count() as u32));
     e.select_range(p4, end, end, fonts());
     assert!(matches!(e.execute(Command::InsertSectionBreak(SectionBreakKind::NextPage), fonts()), Outcome::Changed(_)));
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let again = Editor::open(&saved, fonts()).expect("reopens");
     assert_eq!(starts(&again), starts(&e));
     assert_eq!(texts(&again), texts(&e));
@@ -181,7 +181,7 @@ fn a_section_break_splits_its_section_and_saves_a_sectpr_of_its_own() {
     e.execute(Command::Undo(Default::default()), fonts());
     e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(starts(&e), before);
-    let back = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    let back = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens");
     assert_eq!(starts(&back), before);
 }
 
@@ -198,7 +198,7 @@ fn a_drop_cap_is_made_saved_as_a_framed_paragraph_and_put_back() {
     assert!(matches!(e.execute(Command::SetDropCap(dropped.clone()), fonts()), Outcome::Changed(_)));
     assert_eq!(e.drop_cap(), Some(dropped.clone()));
     assert!(super::texts(&e).iter().any(|t| *t == first[1..]), "the letter left its paragraph");
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     if let Some(d) = std::env::var_os("TWIP_DROP_CAP_OUT") {
         std::fs::write(std::path::Path::new(&d).join("drop-cap.docx"), &saved).expect("writes");
     }
@@ -256,9 +256,9 @@ fn linking_a_section_to_the_previous_keeps_a_header_part_another_section_shares(
     assert!(matches!(e.execute(Command::SetHeaderFooterLinked(link), fonts()), Outcome::Changed(_)));
     let doc = e.document();
     assert!(doc.sections[1].headers[0].is_none(), "the second section takes the first's");
-    let name = doc.sections[2].headers[0].clone().expect("the third keeps its header");
+    let name = doc.sections[2].headers[0].expect("the third keeps its header");
     assert!(doc.stories.contains_key(&name), "the part the third shows stays");
-    let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    let again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens");
     assert!(again.document().sections[2].headers[0].is_some() && again.document().sections[1].headers[0].is_none());
 }
 
@@ -544,7 +544,8 @@ fn columns_on_selected_text_ending_inside_a_table_are_refused() {
     let two = Columns { count: 2, spacing: None, separator: None, widths: None, apply_to: None, start_new_column: None };
     let out = e.set_columns_in(two, ColumnsScope::SelectedText, false, super::fonts());
     assert!(matches!(out, Outcome::Refused(_)), "{out:?}");
-    assert_eq!(e.document().sections, before, "nothing split or set");
+    let now = &e.document().sections;
+    assert!(now.len() == before.len() && now.iter().zip(&before).all(|(a, b)| crate::docx::page_borders::same_section(a, b)), "nothing split or set");
 }
 
 #[test]

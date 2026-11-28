@@ -8,9 +8,13 @@ use std::rc::Rc;
 use super::model::*;
 use super::numbering::{Level, Numbering};
 use super::props::*;
+#[cfg(test)]
 use super::review::{FormatChange, ParaChange, RunRevisions};
 use super::styles::{Region, Styles, ThemeFonts};
+#[cfg(test)]
 use super::write::props::Cx;
+use crate::docx::char_props::RunXml;
+use crate::docx::para_props::ParaXml;
 
 #[derive(Clone)]
 pub struct Resolver {
@@ -163,7 +167,7 @@ impl Resolver {
             dstrike: p.dstrike.unwrap_or(false),
             hidden: p.toggle(toggle::VANISH),
             no_proof: p.no_proof.unwrap_or(false),
-            underline: p.underline.clone().filter(|u| u != "none"),
+            underline: p.underline.filter(|u| *u != Underline::None),
             underline_color: p.underline_color.flatten(),
             underline_color_theme: p.underline_color_theme.filter(|_| p.underline_color.flatten().is_some()),
             emboss: p.toggle(super::props::toggle::EMBOSS),
@@ -187,12 +191,12 @@ impl Resolver {
                 _ => None,
             },
             highlight: p.highlight.flatten(),
-            em: p.em.clone().filter(|e| e != "none"),
+            em: p.em.filter(|e| *e != Emphasis::None),
             toc: false,
             shading: p.shading.flatten(),
-            shd: p.shd.clone().filter(|s| s.pattern != "nil"),
+            shd: p.shd.clone().filter(|s| s.pattern != ShadingPattern::Nil),
             // A text border of style `none` draws nothing, but its space still counts.
-            border: p.border.clone().filter(|b| b.visible() || &*b.style == "none" && b.space > 0.0),
+            border: p.border.clone().filter(|b| b.visible() || b.style == BorderStyle::None && b.space > 0.0),
             vert_align: p.vert_align.unwrap_or(VertAlign::Baseline),
             position: p.position.unwrap_or(0.0),
             spacing: p.spacing.unwrap_or(0.0),
@@ -205,12 +209,13 @@ impl Resolver {
             lang: p.lang.clone().unwrap_or_default(),
             lang_east_asia: p.lang_east_asia.clone().unwrap_or_default(),
             style_id: p.style.clone(),
-            direct: Raw::default(),
+            direct: Default::default(),
             rev: Default::default(),
             categories,
         })
     }
 
+    #[cfg(test)]
     pub fn para_style(&self, p: &ParaProps) -> ParaStyle {
         let line_rule = p.line_rule.unwrap_or(LineRule::Auto);
         let line = match (p.line, line_rule) {
@@ -258,19 +263,19 @@ impl Resolver {
             border_right: bdr(&p.border_right),
             border_between: bdr(&p.border_between),
             shading: p.shading.flatten(),
-            shd: p.shd.clone().filter(|s| s.pattern != "nil"),
+            shd: p.shd.clone().filter(|s| s.pattern != ShadingPattern::Nil),
             frame: p.frame.clone(),
             text_flow: p.text_flow.unwrap_or(0),
             in_frame: false,
-            text_alignment: p.text_alignment.clone().unwrap_or_else(|| "auto".into()),
+            text_alignment: p.text_alignment.unwrap_or(TextAlignment::Auto),
             outline_lvl: p.outline_lvl,
             collapsed: p.collapsed.unwrap_or(false),
-            list_jc: "left".into(),
+            list_jc: ListJc::Left,
             num: None,
             list_fmt: None,
             list: None,
             mark_size: None,
-            direct: Raw::default(),
+            direct: Default::default(),
             change: None,
             joined: Rc::from([]),
             parts: Rc::from([]),
@@ -287,6 +292,7 @@ impl Resolver {
         p
     }
 
+    #[cfg(test)]
     pub fn paragraph(&self, direct: &ParaProps, region: Option<&Region>) -> ParaResolved {
         let style_id = self.styles.paragraph_style(direct.style.as_deref()).map(str::to_string);
         let style_ppr = self.styles.chain_ppr(style_id.as_deref());
@@ -323,8 +329,8 @@ impl Resolver {
         let mut style = self.para_style(&ppr);
         if let Some(l) = &level {
             // A legacy level places its number itself, in the label.
-            style.list_jc = if l.legacy.is_some() { "left".into() } else { l.jc.clone() };
-            style.num = num_id.map(|id| (id, ilvl));
+            style.list_jc = if l.legacy.is_some() { ListJc::Left } else { super::paragraph::list_jc(&l.jc) };
+            style.num = num_id.map(|id| ListRef { list: ListId(id), level: ilvl });
             style.list_fmt = Some(l.fmt.clone());
             style.list = num_id.and_then(|id| self.numbering.abstract_of(id, &self.styles));
         }
@@ -377,21 +383,24 @@ impl Resolver {
         self.cell_region(t.style_id.as_deref(), look, t.bands, (row, cell), (t.rows.len(), ncols), headers)
     }
 
+    #[cfg(test)]
     /// A run resolved from its direct `w:rPr` as written (namespaces as `cx` names them) over `base`: what an edit of
     /// a run's direct formatting gives.
     pub fn run_from_xml(&self, base: &RunProps, rpr: Option<&str>, cx: &Cx) -> Run {
         let direct = rpr.and_then(|x| cx.parse(x, |_, el| RunProps::parse(Some(el), &self.styles.colours))).unwrap_or_default();
         let mut s = (*self.run_style(&self.run_props(base, &direct))).clone();
-        s.direct = Raw(rpr.map(Rc::from));
+        s.direct = super::char_props::RunDirect::from_xml(rpr, cx);
         Rc::new(s)
     }
 
+    #[cfg(test)]
     /// `run` resolved again from its direct `w:rPr` over `base`, where it is: in a table of contents' result without the
     /// Hyperlink character style, as the reader resolved it, its review marks kept.
     pub fn rerun(&self, base: &RunProps, run: &RunStyle, cx: &Cx) -> Run {
-        self.rerun_xml(base, run, run.direct.0.as_deref(), cx)
+        self.rerun_xml(base, run, run.direct.as_read().map(|x| &**x), cx)
     }
 
+    #[cfg(test)]
     /// `rpr` resolved over `base` in `run`'s place, as reading gives a run with that `w:rPr` there: in a table of
     /// contents' result without the Hyperlink character style, and with `run`'s revisions (a format change's previous
     /// properties resolved again over `base`).
@@ -401,19 +410,20 @@ impl Resolver {
             direct.style = None;
         }
         let mut s = (*self.run_style(&self.run_props(base, &direct))).clone();
-        s.direct = Raw(rpr.map(Rc::from));
+        s.direct = super::char_props::RunDirect::from_xml(rpr, cx);
         s.toc = run.toc;
         s.rev = RunRevisions {
             ins: run.rev.ins.clone(),
             del: run.rev.del.clone(),
             fmt: run.rev.fmt.as_ref().map(|f| {
-                let previous = self.run_from_xml(base, f.previous_raw.0.as_deref(), cx);
+                let previous = self.run_from_xml(base, f.previous.direct.as_read().map(|x| &**x), cx);
                 if previous == f.previous { f.clone() } else { Rc::new(FormatChange { previous, ..(**f).clone() }) }
             }),
         };
         Rc::new(s)
     }
 
+    #[cfg(test)]
     /// `again`, a paragraph's properties resolved again in `region`, with what reading gave `was` beyond them: its
     /// tracked property change (the previous properties resolved again too) and its place in a frame.
     pub fn para_again(&self, was: &ParaStyle, mut again: ParaStyle, region: Option<&Region>, cx: &Cx) -> ParaStyle {
@@ -421,9 +431,9 @@ impl Resolver {
             (again.frame, again.in_frame) = (None, true);
         }
         again.change = was.change.as_ref().map(|c| {
-            let mut previous = match (&c.previous_raw.0, &c.numbering_change.0) {
-                (None, Some(_)) => ParaStyle { change: None, ..again.clone() },
-                (raw, _) => self.para_from_xml(raw.as_deref(), region, cx).style,
+            let mut previous = match (c.properties, &c.numbering_change.0) {
+                (false, Some(_)) => ParaStyle { change: None, ..again.clone() },
+                _ => self.para_from_xml(c.properties.then(|| c.previous.direct.as_read().map(|x| &**x)).flatten(), region, cx).style,
             };
             if was.in_frame {
                 (previous.frame, previous.in_frame) = (None, true);
@@ -433,11 +443,12 @@ impl Resolver {
         again
     }
 
+    #[cfg(test)]
     /// A paragraph resolved from its direct `w:pPr` as written, in `region` when it is in a cell.
     pub fn para_from_xml(&self, ppr: Option<&str>, region: Option<&Region>, cx: &Cx) -> ParaResolved {
         let direct = ppr.and_then(|x| cx.parse(x, |_, el| ParaProps::parse(Some(el), &self.styles.colours))).unwrap_or_default();
         let mut r = self.paragraph(&direct, region);
-        r.style.direct = Raw(ppr.map(Rc::from));
+        r.style.direct = super::para_props::ParaDirect::from_xml(ppr, cx);
         r
     }
 
@@ -499,6 +510,7 @@ mod tests {
     //! Re-resolving every body paragraph, its mark and its text runs from their direct XML gives what the reader
     //! resolved, on every repository fixture and the corpus.
 
+    use crate::docx::origin::ParagraphOrigin;
     use std::path::{Path, PathBuf};
 
     use super::*;
@@ -523,16 +535,16 @@ mod tests {
         for b in blocks {
             match b {
                 Block::Para(p) => {
-                    if p.src.as_ref().is_some_and(|s| s.ranges.len() > 1) {
+                    if p.read_parts() > 1 {
                         continue;
                     }
                     // Revisions aren't formatting: they come from the elements around the direct XML, so they're
                     // carried over before comparing.
-                    let mut r = res.para_from_xml(p.style.direct.0.as_deref(), region, cx);
+                    let mut r = res.para_from_xml(p.style.direct.as_read().map(|x| &**x), region, cx);
                     r.style.change = p.style.change.clone();
                     assert_eq!(*p.style, r.style, "{what}: paragraph {:?}", p.id);
                     let with_rev = |again: Run, read: &Run| RunStyle { rev: read.rev.clone(), ..(*again).clone() };
-                    let mark = with_rev(res.run_from_xml(&r.base, p.mark.direct.0.as_deref(), cx), &p.mark);
+                    let mark = with_rev(res.run_from_xml(&r.base, p.mark.direct.as_read().map(|x| &**x), cx), &p.mark);
                     assert_eq!(*p.mark, mark, "{what}: the mark of {:?}", p.id);
                     for i in &p.inlines {
                         if let Inline::Text(t, run) = i {
@@ -557,11 +569,12 @@ mod tests {
     fn re_resolving_gives_what_reading_resolved() {
         let mut checked = 0;
         for f in docs() {
-            let Ok(doc) = super::super::read_editable(&std::fs::read(&f).expect("readable")) else { continue };
-            let (Some(res), Some(src)) = (&doc.resolver, &doc.source) else { panic!("{}: no resolver", f.display()) };
+            let Ok((doc, docx)) = super::super::read_editable(&std::fs::read(&f).expect("readable")) else { continue };
+            let (Some(_), Some(src)) = (&doc.definitions, &docx.source) else { panic!("{}: no resolver", f.display()) };
+            let res = crate::docx::baseline::Baseline::as_read(&doc, &docx);
             let cx = Cx::of_xml(&src.xml);
             for s in &doc.sections {
-                check(res, &cx, &s.blocks, None, &f.display().to_string(), &mut checked);
+                check(&res, &cx, &s.blocks, None, &f.display().to_string(), &mut checked);
             }
         }
         assert!(checked > 10_000, "only {checked} runs checked");

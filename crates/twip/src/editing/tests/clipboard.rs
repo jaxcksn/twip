@@ -3,6 +3,8 @@
 use super::{blank_body, blank_with, fonts, para_id, texts};
 use crate::api::command::TableSize;
 use crate::api::review::Body;
+use crate::document::paragraph::{ListId, ListRef};
+use crate::docx::para_props::ParaXml;
 use crate::docx::{Block, Inline};
 use crate::editing::Editor;
 use crate::editing::commands::Command;
@@ -34,7 +36,7 @@ fn caret(e: &mut Editor, a: (usize, u32)) {
 }
 
 fn saved(e: &Editor) -> Editor {
-    Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens")
+    Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens")
 }
 
 #[test]
@@ -49,7 +51,7 @@ fn a_pasted_copy_leaves_its_bookmark_with_the_original() {
     assert!(text.starts_with("here") && text.ends_with("See here"), "{text:?}");
     let marks: Vec<(usize, String)> = e.bookmarks().into_iter().map(|b| (b.start.unit.0 as usize, b.name)).collect();
     assert_eq!(marks, [(text.chars().count() - 4, "Target".to_string())], "one Target, at the original");
-    let n = paras(&e)[0].inlines.iter().filter(|i| matches!(i, Inline::Bookmark(n) if n.trim_start_matches('/') == "Target")).count();
+    let n = paras(&e)[0].inlines.iter().filter(|i| i.bookmark().is_some_and(|(n, _)| n == "Target")).count();
     assert_eq!(n, 2, "its start and end only");
 }
 
@@ -60,7 +62,7 @@ fn a_copy_holding_half_a_bookmark_leaves_it_out() {
     select(&mut e, (0, 2), (0, 7));
     let f = e.copy().expect("copies");
     assert!(
-        !f.blocks.iter().any(|b| matches!(b, Block::Para(p) if p.inlines.iter().any(|i| matches!(i, Inline::Bookmark(_))))),
+        !f.blocks.iter().any(|b| matches!(b, Block::Para(p) if p.inlines.iter().any(|i| i.bookmark().is_some()))),
         "no lone bookmark end in the copy"
     );
 }
@@ -120,8 +122,7 @@ fn a_pasted_editing_permission_takes_an_id_of_its_own() {
     let f = e.copy().expect("copies");
     caret(&mut e, (1, 0));
     e.paste_fragment(&f, fonts());
-    let ids: Vec<(bool, i64)> =
-        paras(&e).iter().flat_map(|p| p.inlines.iter()).filter_map(|i| if let Inline::Opaque(o) = i { o.permission() } else { None }).collect();
+    let ids: Vec<(bool, i64)> = paras(&e).iter().flat_map(|p| p.inlines.iter()).filter_map(|i| i.permission()).collect();
     assert_eq!(ids.len(), 4, "{ids:?}");
     assert_eq!(ids[0].1, ids[1].1);
     assert_eq!(ids[2].1, ids[3].1);
@@ -462,7 +463,7 @@ fn paste_callout(style: &str, ns: &str) -> Editor {
         |name, x| if name == "word/styles.xml" { x.replacen("<w:styles ", &format!("<w:styles {ns} "), 1) } else { x },
     );
     let mut a = Editor::open(&src, fonts()).unwrap();
-    assert!(a.document().resolver.as_ref().is_some_and(|r| r.styles.get("Callout").is_some()), "the source has the style");
+    assert!(a.document().definitions.as_ref().is_some_and(|r| r.has_style("Callout")), "the source has the style");
     select(&mut a, (0, 0), (2, 0));
     let frag = a.copy().expect("copies");
     let mut b = ed(&format!("<w:p>{}</w:p>", t("Target")));
@@ -475,7 +476,7 @@ fn paste_callout(style: &str, ns: &str) -> Editor {
 fn a_style_written_under_its_parts_own_prefix_comes_with_a_paste() {
     let style = r#"<s:style s:type="paragraph" s:customStyle="1" s:styleId="Callout"><s:name s:val="Callout"/><s:pPr><s:jc s:val="center"/></s:pPr></s:style>"#;
     let b = paste_callout(style, &format!("xmlns:s=\"{W_NS}\""));
-    assert!(b.document().resolver.as_ref().is_some_and(|r| r.styles.get("Callout").is_some()), "the style came with it");
+    assert!(b.document().definitions.as_ref().is_some_and(|r| r.has_style("Callout")), "the style came with it");
     let again = saved(&b);
     let p = &paras(&again)[1];
     assert_eq!((p.style.style_id.as_deref(), p.style.jc), (Some("Callout"), crate::docx::props::Jc::Center), "and saves");
@@ -485,9 +486,9 @@ fn a_style_written_under_its_parts_own_prefix_comes_with_a_paste() {
 fn a_pasted_default_style_is_not_the_default_here() {
     let style = r#"<w:style w:type="paragraph" w:default="1" w:customStyle="1" w:styleId="Callout"><w:name w:val="Callout"/><w:pPr><w:jc w:val="center"/></w:pPr></w:style>"#;
     let b = paste_callout(style, "");
-    let res = b.document().resolver.clone().expect("styles");
-    assert!(res.styles.get("Callout").is_some(), "the style came");
-    assert_eq!(res.styles.default_paragraph.as_deref(), Some("Normal"), "this document's default stays");
+    let res = b.document().definitions.clone().expect("styles");
+    assert!(res.has_style("Callout"), "the style came");
+    assert_eq!(res.cascade().styles.default_paragraph.as_deref(), Some("Normal"), "this document's default stays");
     assert_eq!(paras(&b)[1].style.style_id.as_deref(), Some("Callout"));
 }
 
@@ -496,7 +497,7 @@ fn a_list_from_a_document_writing_its_own_prefix_comes_with_a_paste() {
     let mut a = Editor::open(&blank_with("One\nTwo\nafter"), fonts()).unwrap();
     select(&mut a, (0, 0), (1, 3));
     a.execute(Command::SetList(Some(crate::api::command::ListKind::Numbered)), fonts());
-    let saved = crate::docx::write::save(a.document()).expect("saves");
+    let saved = crate::docx::write::save(a.document(), a.docx()).expect("saves");
     let src = edited(&saved, |name, x| {
         if name == "word/document.xml" {
             x.replace("<w:", "<v:").replace("</w:", "</v:").replace(" w:", " v:").replace("xmlns:w=", "xmlns:v=")
@@ -511,9 +512,9 @@ fn a_list_from_a_document_writing_its_own_prefix_comes_with_a_paste() {
     let mut b = ed(&format!("<w:p>{}</w:p>", t("Target")));
     caret(&mut b, (0, 0));
     b.paste_fragment(&frag, fonts());
-    let nums: Vec<i64> = b.document().resolver.as_ref().map(|r| r.numbering.nums.keys().copied().collect()).unwrap_or_default();
+    let nums: Vec<i64> = b.document().definitions.as_ref().map(|r| r.cascade().lists.lists.keys().map(|k| k.0).collect()).unwrap_or_default();
     assert_eq!(nums.len(), 1, "the list's definition came: {nums:?}");
-    let direct = paras(&b)[1].style.direct.0.as_deref().unwrap_or_default().to_string();
+    let direct = paras(&b)[1].style.direct.origin_xml().map(|x| x.to_string()).unwrap_or_default();
     assert!(direct.contains(&format!("numId v:val=\"{}\"", nums[0])), "the pasted paragraph is in it: {direct}");
 }
 
@@ -525,12 +526,12 @@ fn content_pasted_in_another_document_brings_the_styles_it_uses() {
     select(&mut a, (0, 0), (2, 0));
     let frag = a.copy().expect("copies");
     let mut b = ed(&format!("<w:p>{}</w:p>", t("Target")));
-    assert!(b.document().resolver.as_ref().is_some_and(|r| r.styles.get("Callout").is_none()));
+    assert!(b.document().definitions.as_ref().is_some_and(|r| !r.has_style("Callout")));
     caret(&mut b, (0, 0));
     b.paste_fragment(&frag, fonts());
     // The first paragraph's text goes into the paragraph at the caret; the styled one is pasted whole.
     assert_eq!(paras(&b)[1].style.style_id.as_deref(), Some("Callout"));
-    assert!(b.document().resolver.as_ref().is_some_and(|r| r.styles.get("Callout").is_some()), "the style came with it");
+    assert!(b.document().definitions.as_ref().is_some_and(|r| r.has_style("Callout")), "the style came with it");
     let again = saved(&b);
     let p = &paras(&again)[1];
     assert_eq!((p.style.style_id.as_deref(), p.style.jc), (Some("Callout"), crate::docx::props::Jc::Center), "and saves");
@@ -548,8 +549,11 @@ fn a_list_pasted_in_another_document_brings_its_definition() {
     caret(&mut b, (0, 0));
     b.paste_fragment(&frag, fonts());
     // The first paragraph's text goes into the paragraph at the caret; the second is pasted whole.
-    let (n, _) = paras(&b)[1].style.num.expect("the pasted paragraph is in a list");
-    assert!(b.document().resolver.as_ref().is_some_and(|r| r.numbering.nums.contains_key(&n)), "its list is defined here");
+    let ListRef { list: ListId(n), level: _ } = paras(&b)[1].style.num.expect("the pasted paragraph is in a list");
+    assert!(
+        b.document().definitions.as_ref().is_some_and(|r| r.cascade().lists.lists.contains_key(&crate::document::paragraph::ListId(n))),
+        "its list is defined here"
+    );
     let again = saved(&b);
     assert_eq!(super::super::text::UnitText::of(paras(&again)[1]).text, "Two");
     assert!(paras(&again)[1].list.is_some(), "and saves numbered");
@@ -561,7 +565,7 @@ fn table_lists(e: &Editor) -> Vec<i64> {
         .rows
         .iter()
         .flat_map(|r| r.cells.iter().flat_map(|c| c.blocks.iter()))
-        .filter_map(|b| if let Block::Para(p) = b { Some(p.style.num?.0) } else { None })
+        .filter_map(|b| if let Block::Para(p) = b { Some(p.style.num?.list.0) } else { None })
         .collect();
     out.sort_unstable();
     out.dedup();
@@ -580,7 +584,7 @@ fn cells_pasted_over_a_larger_block_in_another_document_share_their_lists() {
     assert!(!source.is_empty(), "the cells are numbered");
     let frag = a.copy().expect("a fragment");
     let mut b = grid_table(&[&["w", "x"], &["y", "z"]]);
-    let nums = |e: &Editor| e.document().resolver.as_ref().map_or(0, |r| r.numbering.nums.len());
+    let nums = |e: &Editor| e.document().definitions.as_ref().map_or(0, |r| r.cascade().lists.lists.len());
     let before = nums(&b);
     rect(&mut b, 0, 0, 1, 1, CellShape::Rect);
     b.paste_fragment(&frag, fonts());
@@ -590,11 +594,11 @@ fn cells_pasted_over_a_larger_block_in_another_document_share_their_lists() {
 
 #[test]
 fn a_control_filled_from_a_docx_shows_its_pictures() {
-    let image = super::open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let image = super::open("FX-OBJ.docx").document().images.last().map(|(_, d)| d.to_vec()).expect("an image");
     let mut a = Editor::open(&blank_with(""), fonts()).unwrap();
     let pic = crate::api::command::Picture { data: crate::api::value::Bytes(image.clone()), alt_text: None };
     assert!(matches!(a.execute(Command::InsertPicture(pic), fonts()), crate::editing::commands::Outcome::Changed(_)));
-    let docx = crate::docx::write::save(a.document()).expect("saves");
+    let docx = crate::docx::write::save(a.document(), a.docx()).expect("saves");
     let sdt = format!(
         r#"<w:sdt><w:sdtPr><w:alias w:val="Box"/><w:id w:val="4"/><w:richText/></w:sdtPr><w:sdtContent><w:p>{}</w:p></w:sdtContent></w:sdt><w:p/>"#,
         t("x")
@@ -612,7 +616,7 @@ fn a_control_filled_from_a_docx_shows_its_pictures() {
     };
     let out = b.execute(Command::FillControl(fill), fonts());
     assert!(matches!(out, crate::editing::commands::Outcome::Changed(_)), "{out:?}");
-    let shown: Vec<usize> =
+    let shown: Vec<crate::docx::ResourceId> =
         paras(&b).iter().flat_map(|p| p.inlines.iter().filter_map(|i| if let Inline::Picture(p, _) = i { p.image } else { None })).collect();
     assert_eq!(shown.len(), 1, "the picture is in the control");
     assert!(b.document().images.get(shown[0]).is_some_and(|d| !d.is_empty()), "with its image: {shown:?} of {}", b.document().images.len());
@@ -650,12 +654,7 @@ fn a_pasted_permission_past_the_highest_id_takes_a_free_one() {
     let f = e.copy().expect("copies");
     caret(&mut e, (2, 0));
     e.paste_fragment(&f, fonts());
-    let ids: Vec<i64> = paras(&e)
-        .iter()
-        .flat_map(|p| p.inlines.iter())
-        .filter_map(|i| if let Inline::Opaque(o) = i { o.permission() } else { None })
-        .map(|p| p.1)
-        .collect();
+    let ids: Vec<i64> = paras(&e).iter().flat_map(|p| p.inlines.iter()).filter_map(|i| i.permission()).map(|p| p.1).collect();
     assert_eq!(ids.len(), 6, "{ids:?}");
     assert!(ids.iter().all(|&id| id >= 0), "{ids:?}");
     let mut u = ids.clone();
@@ -800,4 +799,57 @@ fn html_skips_a_merged_cells_drawings_with_it() {
     let html = f.html_with(&[Some(png(1)), Some(png(2))]);
     let src = |b: u8| format!("data:image/png;base64,{}", crate::api::value::base64(&[b; 3]));
     assert!(html.contains(&src(2)) && !html.contains(&src(1)), "the later cell's own drawing: {html}");
+}
+
+/// An element kept as read at the end of a paragraph the selection holds whole (an equation) is copied with it, and
+/// cutting and pasting the paragraphs gives it back.
+#[test]
+fn a_whole_paragraph_copies_what_ends_it() {
+    let math = r#"<m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><m:r><m:t>x</m:t></m:r></m:oMath>"#;
+    let count = |blocks: &[Block]| {
+        let inlines = blocks.iter().filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None }).flat_map(|p| &p.inlines);
+        inlines.filter(|i| matches!(i, Inline::Foreign(o) if o.equation)).count()
+    };
+    let mut e = ed(&format!("<w:p>{}</w:p><w:p>{}{math}</w:p><w:p>{}</w:p>", t("z"), t("a"), t("b")));
+    e.execute(Command::SelectAll, fonts());
+    assert_eq!(count(&e.copy().expect("copies").blocks), 1, "copied");
+    e.execute(Command::Cut, fonts());
+    assert_eq!(count(&e.document().sections[0].blocks), 0, "cut");
+    e.execute(Command::Paste(Default::default()), fonts());
+    assert_eq!(count(&e.document().sections[0].blocks), 1, "pasted back");
+}
+
+#[test]
+fn content_referring_to_its_package_is_left_out_of_another_document() {
+    let body = r#"<w:p><w:r><w:t>a</w:t></w:r><w:subDoc r:id="rId99"/><w:r><w:t>b</w:t></w:r></w:p>"#;
+    let foreign = |e: &Editor| {
+        let mut n = 0;
+        for b in &e.document().sections[0].blocks {
+            if let Block::Para(p) = b {
+                n += p.inlines.iter().filter(|i| matches!(i, crate::docx::Inline::Foreign(f) if f.package_bound)).count();
+            }
+        }
+        n
+    };
+    let mut a = Editor::open(&super::blank_body(body), fonts()).unwrap();
+    assert_eq!(foreign(&a), 1, "read as package-bound foreign content");
+    let p = para_id(&a, 0);
+    a.select_range(p, Unit(0), Unit(2), fonts());
+    let frag = a.copy().expect("a fragment");
+    // Within its own document it stays
+    a.select_range(p, Unit(2), Unit(2), fonts());
+    a.paste_fragment(&frag, fonts());
+    assert_eq!(foreign(&a), 2, "pasted in its own document");
+    // In another it goes, with a warning
+    let mut b = Editor::open(&blank_with("Target"), fonts()).unwrap();
+    let q = para_id(&b, 0);
+    b.select_range(q, Unit(6), Unit(6), fonts());
+    b.take_notices();
+    b.paste_fragment(&frag, fonts());
+    assert!(texts(&b)[0].ends_with("ab"), "the text comes: {:?}", texts(&b));
+    assert_eq!(foreign(&b), 0, "the reference doesn't");
+    let warned = b.take_notices().into_iter().any(|n| {
+        matches!(n, crate::editing::input::Notice::Warning(crate::docx::diagnostics::WarningCode::UnsupportedElement, m) if m.contains("left out"))
+    });
+    assert!(warned, "a warning says so");
 }

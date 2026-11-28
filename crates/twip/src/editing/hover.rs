@@ -85,7 +85,7 @@ impl Editor {
         if self.hover_generation != self.generation {
             return None;
         }
-        let key = HoverKey { at: (x.to_bits(), y.to_bits()), generation: self.generation, view: self.doc.review.view, story: self.editing() };
+        let key = HoverKey { at: (x.to_bits(), y.to_bits()), generation: self.generation, view: self.review.view, story: self.editing() };
         if self.hover_cache.as_ref().is_none_or(|(k, _)| *k != key) {
             #[cfg(test)]
             {
@@ -131,7 +131,7 @@ impl Editor {
             next.is_some_and(|n| under(self, q, n).is_some())
         });
         let over = over.unwrap_or(p);
-        if self.doc.review.view == MarkupView::All
+        if self.review.view == MarkupView::All
             && let Some((a, b, d)) = self.revision_under(over)
             && let Some(rect) = under(self, a, b)
         {
@@ -227,7 +227,7 @@ impl Editor {
     /// The innermost tracked change holding `p` (the one starting last): its range and parts.
     fn revision_under(&mut self, p: Position) -> Option<(Position, Position, HoverDetail)> {
         let (list, _) = self.review_list.get(self.generation, &self.doc, &self.index);
-        let (idx, show) = (&self.index, &self.doc.review.markup.show);
+        let (idx, show) = (&self.index, &self.review.markup.show);
         let r = list
             .iter()
             .filter(|r| r.shown(show) && r.story == p.story && idx.cmp(&r.start, &p).is_le() && idx.cmp(&p, &r.end).is_lt())

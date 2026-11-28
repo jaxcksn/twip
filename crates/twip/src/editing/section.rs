@@ -10,6 +10,7 @@ use super::readback::BorderLine;
 use super::selection::{ObjectRef, Selection};
 use super::step::Step;
 use crate::docx::NoteKind;
+use crate::docx::page_borders::PageBordersXml;
 use crate::layout::Unit;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -55,16 +56,16 @@ impl Editor {
     /// The section header or footer part `k` is edited for: the shown page's when that page shows it, else the first
     /// that refers to it.
     fn part_section(&self, k: u32) -> Option<usize> {
-        let name = self.index.part_name(k)?;
+        let part = self.index.part(k)?;
         let sections = &self.doc.sections;
         if let Some(i) = self.snapshot().info().get(self.near).filter(|i| i.section < sections.len()) {
             let shown =
                 |footer| crate::layout::page::story_ref(sections, self.doc.settings.even_and_odd, i.section, i.section_page, i.number, footer).1;
-            if [false, true].into_iter().any(|footer| shown(footer).is_some_and(|n| n == name)) {
+            if [false, true].into_iter().any(|footer| shown(footer) == Some(part)) {
                 return Some(i.section);
             }
         }
-        sections.iter().position(|s| s.headers.iter().chain(s.footers.iter()).flatten().any(|n| n == name))
+        sections.iter().position(|s| s.headers.contains(&Some(part)) || s.footers.contains(&Some(part)))
     }
 
     /// A section's `gutter` on a `pw` × `ph` page, where layout puts it: its share of the width and of the height.
@@ -336,10 +337,10 @@ impl Editor {
             bottom: edge(b.map(|b| &b.bottom)),
             right: edge(b.map(|b| &b.right)),
             offset_from: if b.is_none_or(|b| b.offset_from_page) { PageBorderOffset::Page } else { PageBorderOffset::Text },
-            display: match b.map(|b| b.display.as_str()) {
-                Some("firstPage") => PageBorderDisplay::FirstPage,
-                Some("notFirstPage") => PageBorderDisplay::NotFirstPage,
-                _ => PageBorderDisplay::AllPages,
+            display: match b.map(|b| b.display) {
+                Some(crate::docx::PageBorderDisplay::FirstPage) => PageBorderDisplay::FirstPage,
+                Some(crate::docx::PageBorderDisplay::NotFirstPage) => PageBorderDisplay::NotFirstPage,
+                Some(crate::docx::PageBorderDisplay::AllPages) | None => PageBorderDisplay::AllPages,
             },
             surround_header: !self.doc.settings.borders_do_not_surround_header,
             surround_footer: !self.doc.settings.borders_do_not_surround_footer,
@@ -366,7 +367,7 @@ impl Editor {
             v
         };
         let cx = self.cx();
-        let w = cx.w.clone();
+        let theme = self.doc.definitions.as_deref().map_or_else(crate::docx::props::ThemeColours::default, |r| r.cascade().colours);
         let mut tx = self.begin("Page Borders");
         let mut changed = false;
         for section in 0..self.doc.sections.len() {
@@ -377,7 +378,7 @@ impl Editor {
                 let Some(b) = page.page_borders.as_mut().map(std::rc::Rc::make_mut) else { continue };
                 b.surround_header = c.surround_header.unwrap_or(b.surround_header);
                 b.surround_footer = c.surround_footer.unwrap_or(b.surround_footer);
-                if page == s.page() {
+                if crate::docx::page_borders::same_page(&page, &s.page()) {
                     continue;
                 }
                 let change = s.change.clone();
@@ -389,7 +390,6 @@ impl Editor {
                 continue;
             }
             let mut b = page.page_borders.as_deref().cloned().unwrap_or(crate::docx::PageBorders {
-                display: "allPages".into(),
                 offset_from_page: true,
                 surround_header: !self.doc.settings.borders_do_not_surround_header,
                 surround_footer: !self.doc.settings.borders_do_not_surround_footer,
@@ -400,11 +400,10 @@ impl Editor {
             }
             if let Some(d) = c.display {
                 b.display = match d {
-                    PageBorderDisplay::AllPages => "allPages",
-                    PageBorderDisplay::FirstPage => "firstPage",
-                    PageBorderDisplay::NotFirstPage => "notFirstPage",
-                }
-                .into();
+                    PageBorderDisplay::AllPages => crate::docx::PageBorderDisplay::AllPages,
+                    PageBorderDisplay::FirstPage => crate::docx::PageBorderDisplay::FirstPage,
+                    PageBorderDisplay::NotFirstPage => crate::docx::PageBorderDisplay::NotFirstPage,
+                };
             }
             if let Some(on) = c.surround_header {
                 b.surround_header = on;
@@ -438,7 +437,7 @@ impl Editor {
                 }),
                 Some(None) => None,
                 Some(Some(l)) => Some(crate::docx::props::Border {
-                    style: l.style.val().into(),
+                    style: super::readback::border_style(l.style),
                     width: l.width.0,
                     space: match own(k).0 {
                         false => old.as_ref().map_or_else(|| space(side, b.offset_from_page), |o| o.space),
@@ -458,23 +457,13 @@ impl Editor {
             b.bottom = set(&b.bottom, &c.bottom, 2, "bottom", true);
             b.right = set(&b.right, &c.right, 3, "right", true);
             let any = [&b.top, &b.left, &b.bottom, &b.right].iter().any(|x| x.is_some());
-            let line = |side: &str, x: &Option<crate::docx::props::Border>| {
-                x.as_ref().map_or(String::new(), |x| super::readback::border_element(&w, side, x))
-            };
-            let xml = any.then(|| {
-                let z = if b.behind_text { format!(" {w}zOrder=\"back\"") } else { String::new() };
-                let offset = if b.offset_from_page { format!(" {w}offsetFrom=\"page\"") } else { String::new() };
-                let display = if b.display == "allPages" { String::new() } else { format!(" {w}display=\"{}\"", b.display) };
-                format!(
-                    "<{w}pgBorders{offset}{display}{z}>{}{}{}{}</{w}pgBorders>",
-                    line("top", &b.top),
-                    line("left", &b.left),
-                    line("bottom", &b.bottom),
-                    line("right", &b.right)
-                )
-            });
-            (page.page_borders, page.page_borders_xml) = (any.then(|| std::rc::Rc::new(b)), xml);
-            if page == s.page() {
+            // Written alike: the borders as they are
+            let set = crate::docx::page_borders::PageBordersDirect::typed(any.then(|| std::rc::Rc::new(authored(&b))));
+            if set.xml(&theme, &cx) != page.page_borders_direct.xml(&theme, &cx) {
+                page.page_borders_direct = set;
+            }
+            page.page_borders = any.then(|| std::rc::Rc::new(b));
+            if crate::docx::page_borders::same_page(&page, &s.page()) {
                 continue;
             }
             let change = s.change.clone();
@@ -530,6 +519,35 @@ impl Editor {
                 self.set_page("Size", |p| (p.page_w, p.page_h) = size(p.page_w, p.page_h), fonts)
             }
         }
+    }
+}
+
+/// Page borders `b` as authored: each edge's width in whole eighths of a point and its distance in whole points,
+/// automatic where it has no colour; placed from the text, on every page and in front unless otherwise.
+fn authored(b: &crate::docx::PageBorders) -> crate::format::PageBorderProps {
+    use crate::format::{Color, PageBorderOffset, PageBorderProps, PageBorderZOrder, TextBorder};
+    let edge = |x: &Option<crate::docx::props::Border>| {
+        x.as_ref().map(|x| TextBorder {
+            style: x.style,
+            width: ((x.width * 8.0).round() as i64) as f64 / 8.0,
+            space: x.space.round() as i64 as f64,
+            shadow: x.shadow,
+            color: Some(match (x.color, x.color_theme) {
+                (None, _) => Color::Auto,
+                (Some(_), Some(r)) => Color::Theme(r),
+                (Some(rgb), None) => Color::Rgb(rgb),
+            }),
+        })
+    };
+    PageBorderProps {
+        top: edge(&b.top),
+        left: edge(&b.left),
+        bottom: edge(&b.bottom),
+        right: edge(&b.right),
+        offset_from: b.offset_from_page.then_some(PageBorderOffset::Page),
+        display: (b.display != crate::docx::PageBorderDisplay::AllPages).then_some(b.display),
+        z_order: b.behind_text.then_some(PageBorderZOrder::Back),
+        foreign: None,
     }
 }
 

@@ -1,54 +1,48 @@
 //! Font rewrite
 
 use crate::api::command::{CommandResult, ReplaceFont, ReplaceScope};
-use crate::docx::font_table::{FontRename, rename_tables};
-use crate::docx::write::props::{Cx, Props};
+use crate::docx::char_props::RunXml;
+use crate::docx::definitions::DefinitionsXml;
+use crate::docx::font_table::FontRename;
 use crate::docx::{Inline, RunStyle};
 use crate::font::Fonts;
+use crate::format::{CharEdit, CharProps, FontRef, Prop};
 use crate::layout::{ParaId, Unit};
 
 use super::Editor;
 use super::commands::Outcome;
 use super::format::with_run;
 use super::step::Step;
+use crate::docx::run_xml;
 
-const W: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
-
-/// Family slots of `w:rFonts`: the name attribute, its theme attribute, and the resolved family.
-fn slots(run: &RunStyle) -> [(&'static str, &'static str, &str); 4] {
-    [
-        ("ascii", "asciiTheme", &run.ascii),
-        ("hAnsi", "hAnsiTheme", &run.h_ansi),
-        ("eastAsia", "eastAsiaTheme", &run.east_asia),
-        ("cs", "cstheme", &run.cs),
-    ]
-}
-
-/// Rewrites `from` to `to` in `p`, a run's direct `w:rPr`: each slot that names `from`, and, when `inherited`, each
-/// slot whose family is `from` through a style or the theme (it gets `to` as its own, without its theme attribute).
-/// Returns whether any slot changed.
-fn patch(p: &mut Props, run: &RunStyle, r: &ReplaceFont, inherited: bool, cx: &Cx) -> bool {
-    let written: [(Option<String>, bool); 4] = p
-        .get("rFonts")
-        .and_then(|x| {
-            cx.parse(x, |_, el| slots(run).map(|(name, theme, _)| (el.attribute((W, name)).map(str::to_string), el.attribute((W, theme)).is_some())))
-        })
-        .unwrap_or_default();
-    let mut set: Vec<(&str, Option<String>)> = Vec::new();
-    for ((name, theme, resolved), (own, themed)) in slots(run).into_iter().zip(written) {
-        let named = !themed && own.as_deref().is_some_and(|f| f.eq_ignore_ascii_case(&r.from));
+/// Rewrites `from` to `to` in `p`, a run's authored properties: each script class whose own font names `from`, and,
+/// when `inherited`, each whose family is `from` through a style or the theme (it gets `to` as its own, in place of its
+/// theme font). Returns whether any changed.
+fn patch(e: &mut CharEdit, run: &RunStyle, r: &ReplaceFont, inherited: bool) -> bool {
+    use crate::format::ScriptClass as S;
+    let mut changed = false;
+    for (slot, resolved) in [(S::Latin, &run.ascii), (S::LatinExtended, &run.h_ansi), (S::EastAsian, &run.east_asia), (S::Complex, &run.cs)] {
+        let f = &mut e.fonts;
+        let own = match slot {
+            S::Latin => &mut f.latin,
+            S::LatinExtended => &mut f.latin_extended,
+            S::EastAsian => &mut f.east_asian,
+            S::Complex => &mut f.complex,
+        };
+        let named = matches!(own, Some(FontRef::Family(n)) if n.eq_ignore_ascii_case(&r.from));
         let through = inherited && !named && resolved.eq_ignore_ascii_case(&r.from);
         if named || through {
-            set.push((name, Some(r.to.clone())));
-            if themed {
-                set.push((theme, None));
-            }
+            *own = Some(FontRef::Family(r.to.as_str().into()));
+            e.part(Prop::Font(slot));
+            changed = true;
         }
     }
-    if !set.is_empty() {
-        p.attrs("rFonts", &set, cx);
-    }
-    !set.is_empty()
+    changed
+}
+
+/// `run`'s authored properties, to edit.
+fn authored(run: &RunStyle) -> CharEdit {
+    CharEdit::new(run.direct.props().map_or_else(CharProps::default, |p| (**p).clone()))
 }
 
 /// The run's style matches the rewrite's bold and italic filters.
@@ -73,7 +67,6 @@ impl Editor {
         if self.refuse_locked_content() {
             return Outcome::Unchanged("locked");
         }
-        let cx = self.cx();
         // What the rewrite would change, before a transaction exists: nothing to change leaves no undo step.
         let mut changed = 0;
         for (para, a, b) in self.selected_ranges().into_iter().filter(|x| x.1 < x.2) {
@@ -84,18 +77,18 @@ impl Editor {
                 let overlaps = n > 0 && at < b.0 && at + n > a.0;
                 at += n;
                 if let Some(run) = i.run().filter(|run| overlaps && styled(run, r)) {
-                    changed += u32::from(patch(&mut Props::parse(run.direct.0.as_deref(), "rPr", &cx), run, r, true, &cx));
+                    changed += u32::from(patch(&mut authored(run), run, r, true));
                 }
             }
         }
         if changed == 0 {
             return Outcome::Unchanged("nothing matched");
         }
-        let outcome = self.format_runs(
+        let outcome = self.format_runs_typed(
             "Replace Font",
-            &|p, _, run| {
+            &|p, run| {
                 if styled(run, r) {
-                    patch(p, run, r, true, &cx);
+                    patch(p, run, r, true);
                 }
             },
             fonts,
@@ -105,7 +98,7 @@ impl Editor {
     }
 
     fn replace_font_in_document(&mut self, r: &ReplaceFont, filtered: bool, fonts: &Fonts) -> Outcome {
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let cx = self.cx();
         let (mut changed, mut skipped) = (0u32, 0u32);
         let mut steps: Vec<Step> = Vec::new();
@@ -124,9 +117,10 @@ impl Editor {
                 }
             };
             if styled(&p.mark, r) {
-                let mut props = Props::parse(p.mark.direct.0.as_deref(), "rPr", &cx);
-                if patch(&mut props, &p.mark, r, filtered, &cx) && tally(1, para_locked) {
-                    let mark = res.rerun_xml(again.mark_base(), &p.mark, props.xml().as_deref(), &cx);
+                let mut props = authored(&p.mark);
+                if patch(&mut props, &p.mark, r, filtered) && tally(1, para_locked) {
+                    let direct = p.mark.direct.edit(props);
+                    let mark = run_xml::again(&res, again.mark_base(), &p.mark, direct);
                     steps.push(Step::Para { para, style: p.style.clone(), mark, list: p.list.clone() });
                 }
             }
@@ -148,17 +142,14 @@ impl Editor {
                 let own = styled(run, r);
                 let restyled = own
                     .then(|| {
-                        let mut props = Props::parse(run.direct.0.as_deref(), "rPr", &cx);
-                        patch(&mut props, run, r, filtered, &cx).then(|| res.rerun_xml(base, run, props.xml().as_deref(), &cx))
+                        let mut props = authored(run);
+                        patch(&mut props, run, r, filtered).then(|| run_xml::again(&res, base, run, run.direct.edit(props)))
                     })
                     .flatten();
                 let symbol = matches!(i, Inline::Sym { font, .. } if own && font.eq_ignore_ascii_case(&r.from));
                 let ruby = match i {
                     Inline::Ruby(ruby, _) => {
-                        let edit = |xml: Option<&str>, run: &RunStyle| {
-                            let mut props = Props::parse(xml, "rPr", &cx);
-                            if styled(run, r) && patch(&mut props, run, r, filtered, &cx) { props.xml() } else { xml.map(str::to_string) }
-                        };
+                        let edit = super::format::ruby_edit(|p, run| styled(run, r) && patch(p, run, r, filtered));
                         super::format::ruby_again(ruby, base, Some((&edit, true)), &res, &cx)
                     }
                     _ => None,
@@ -188,13 +179,13 @@ impl Editor {
         if !filtered {
             let rename = FontRename { from: r.from.clone(), to: r.to.clone() };
             let mut renamed = (*res).clone();
-            let mut n = rename_tables(&mut renamed, &rename);
+            let mut n = renamed.rename_fonts(&rename);
             n += u32::from(self.doc.font_descriptions.contains_key(&r.from.to_lowercase()));
             if n > 0 {
                 changed += n;
-                let mut renames = self.doc.font_renames.clone();
+                let mut renames = self.docx.font_renames.clone();
                 renames.push(rename);
-                steps.push(Step::Fonts { resolver: Some(std::rc::Rc::new(renamed)), renames });
+                steps.push(Step::Fonts { definitions: Some(std::rc::Rc::new(renamed)), renames });
             }
         }
         self.made = Some(CommandResult::FontReplaced { changed, skipped });

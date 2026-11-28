@@ -14,7 +14,7 @@ use crate::docx::{Block, Document, Table};
 /// [`crate::docx::xml::MAX_DEPTH`] elements, three a table level.
 const DEPTH: usize = 30;
 
-fn deep_document() -> Document {
+fn deep_document() -> (Document, crate::docx::Session) {
     let base = open("FX-NEST-2.docx");
     let mut doc = base.document().clone();
     let Some(Block::Table(outer)) = doc.sections[0].blocks.iter().find(|b| matches!(b, Block::Table(_))).cloned() else {
@@ -23,8 +23,7 @@ fn deep_document() -> Document {
     let para = |text: &str| {
         let Some(Block::Para(p)) = outer.rows[0].cells[0].blocks.first().cloned() else { panic!("a first paragraph") };
         let mut p = p;
-        p.id = crate::docx::next_para_id();
-        p.src = None;
+        p.renew_identity();
         let run = p.mark.clone();
         p.inlines = vec![crate::docx::Inline::Text(text.to_string(), run)];
         p
@@ -35,8 +34,7 @@ fn deep_document() -> Document {
         t.rows[0].cells.truncate(1);
         t.rows[0].cells[0].span = 1;
         t.rows[0].cells[0].blocks = content;
-        t.src = None;
-        t.id = crate::docx::next_para_id();
+        t.renew_identity();
         t
     };
     let mut t = one_cell(vec![Block::Para(para("deep"))]);
@@ -44,7 +42,7 @@ fn deep_document() -> Document {
         t = one_cell(vec![Block::Para(para(&format!("level {}", DEPTH - level))), Block::Table(t), Block::Para(para(""))]);
     }
     doc.sections[0].blocks = vec![Block::Para(para("Before.")), Block::Table(t), Block::Para(para("After."))];
-    doc
+    (doc, base.docx().clone())
 }
 
 fn state(e: &mut Editor) -> Value {
@@ -59,7 +57,8 @@ fn thirty_levels_of_nesting_edit_undo_save_and_reopen() {
 }
 
 fn run() {
-    let mut e = Editor::with_document(deep_document(), fonts());
+    let (doc, docx) = deep_document();
+    let mut e = Editor::with_session(doc, docx, fonts());
     e.complete(fonts());
     let original = state(&mut e)["dump"].clone();
     let deep = original["paragraphs"].as_array().expect("paragraphs").iter().position(|p| p["text"] == "deep").expect("the innermost paragraph");
@@ -111,7 +110,7 @@ fn run() {
     }
     assert_eq!(state(&mut e)["dump"], tabbed, "redo-all restores the edits");
 
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut again = Editor::open(&bytes, fonts()).expect("reopens");
     again.complete(fonts());
     assert_eq!(state(&mut again)["dump"], tabbed, "the saved document reopens as edited");
@@ -130,7 +129,7 @@ fn find_para(doc: &Document, text: &str) -> u64 {
 #[test]
 fn a_groups_text_boxes_count_towards_the_nesting() {
     use crate::docx::{GroupPart, Inline, TextBox};
-    let doc = deep_document();
+    let (doc, _) = deep_document();
     let Some(Block::Table(t)) = doc.sections[0].blocks.iter().find(|b| matches!(b, Block::Table(_))).cloned() else { panic!("a table") };
     let Some(Block::Para(mut p)) = doc.sections[0].blocks.first().cloned() else { panic!("a paragraph") };
     let e = open("FX-OBJ.docx");

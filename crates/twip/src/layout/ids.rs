@@ -2,14 +2,7 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct ParaId(pub u64);
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct TableId(pub u64);
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct FloatId(pub u64);
+pub use crate::document::ident::{FloatId, HeaderFooterId, ParaId, TableId, Unit};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct FragmentId(u64);
@@ -26,9 +19,6 @@ pub struct Revision(pub u64);
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct LayoutRevision(pub u64);
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct Unit(pub u32);
 
 #[cfg(test)]
 mod tests {

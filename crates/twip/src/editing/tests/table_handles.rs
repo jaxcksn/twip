@@ -341,7 +341,7 @@ fn set_table_position_saves_reopens_and_undoes() {
     want.wrap_distance = Some(crate::api::state::TextDistance { top: Points(0.0), bottom: Points(0.0), left: Points(9.0), right: Points(9.0) });
     want.allow_overlap = Some(true);
     assert_eq!(e.table_position(), Some(want), "the state's value");
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut xml = String::new();
     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&bytes[..])).expect("a package");
     std::io::Read::read_to_string(&mut zip.by_name("word/document.xml").expect("the document part"), &mut xml).expect("text");
@@ -548,8 +548,8 @@ fn the_resize_handle_stops_a_row_at_the_longest_height() {
     let d = Drawn::of(&mut e);
     let r = d.rows[0];
     drag(&mut e, (r[2] + 2.25, r[3] + 2.25), (0.0, 2000.0), NONE, true);
-    let (h, rule) = first_table(&e).rows[0].height.clone().expect("a height");
-    assert_eq!(rule, "exact");
+    let (h, rule) = first_table(&e).rows[0].height.expect("a height");
+    assert_eq!(rule, crate::docx::HeightRule::Exact);
     assert!(h > 300.0 && h <= 1584.0, "{h}");
 }
 
@@ -819,7 +819,7 @@ fn a_text_box_tables_border_drag_lays_it_out_live() {
 #[test]
 fn a_live_table_preview_is_not_the_document_as_printed() {
     let mut e = page();
-    e.doc.review.view = crate::docx::review::MarkupView::NoMarkup;
+    e.set_markup_view(crate::docx::review::MarkupView::NoMarkup);
     assert!(e.lays_out_as_printed(false));
     let d = Drawn::of(&mut e);
     let from = (d.edges[1], (d.rows[1][1] + d.rows[1][3]) / 2.0);

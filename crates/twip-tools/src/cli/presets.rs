@@ -1,12 +1,12 @@
 //! `twip presets <presetShapeDefinitions.xml> <out.rs>`: the engine's preset geometry table
-//! (`crates/twip/src/drawing/geom/presets.rs`) generated from the standard's definitions (ECMA-376 Part 1, the
+//! (`crates/twip-document/src/graphic/geom/presets.rs`) generated from the standard's definitions (ECMA-376 Part 1, the
 //! `OfficeOpenXML-DrawingMLGeometries.zip` insert). Each preset is compiled as a custom geometry is
-//! (`CustomGeom::parse`) and written as a static `GeomDef`.
+//! (`custom_geom`) and written as a static `GeomDef`.
 
 use std::fmt::Write;
 use std::path::Path;
 
-use twip::internal::drawing::geom::CustomGeom;
+use twip::internal::docx::drawing::geom::custom_geom;
 
 /// `rect` → `Rect`, `flowChartAlternateProcess` → `FlowChartAlternateProcess`.
 fn variant(name: &str) -> String {
@@ -65,7 +65,7 @@ pub fn run(xml: &Path, out: &Path) -> Result<(), String> {
         .filter(|c| c.is_element())
         .map(|el| {
             let name = el.tag_name().name().to_string();
-            let def = CustomGeom::parse(el).to_bytes();
+            let def = custom_geom(el).to_bytes();
             (name, def)
         })
         .collect();
@@ -73,7 +73,7 @@ pub fn run(xml: &Path, out: &Path) -> Result<(), String> {
     // where it would): keep one `upDownArrow`, and make `upArrow` as `downArrow` mirrored top to bottom.
     if !presets.iter().any(|p| p.0 == "upArrow") {
         let up = roxmltree::Document::parse(UP_ARROW).map_err(|e| format!("upArrow: {e}"))?;
-        presets.push(("upArrow".into(), CustomGeom::parse(up.root_element()).to_bytes()));
+        presets.push(("upArrow".into(), custom_geom(up.root_element()).to_bytes()));
     }
     presets.sort();
     presets.dedup_by(|a, b| a.0 == b.0);
@@ -84,19 +84,22 @@ pub fn run(xml: &Path, out: &Path) -> Result<(), String> {
          //! mirrored). Do not edit: regenerate.\n\n\
          use super::GeomDef;\n\n",
     );
-    s.push_str("#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]\npub enum Preset {\n");
+    s.push_str(
+        "/// A preset shape geometry, by its ECMA-376 name (`ST_ShapeType`).\n\
+         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]\npub enum Preset {\n",
+    );
     for (n, _) in &presets {
-        let _ = writeln!(s, "    {},", variant(n));
+        let _ = writeln!(s, "    /// `{n}`.\n    {},", variant(n));
     }
-    s.push_str("}\n\nimpl Preset {\n    pub const ALL: &'static [Preset] = &[\n");
+    s.push_str("}\n\nimpl Preset {\n    /// Every preset, in name order.\n    pub const ALL: &'static [Preset] = &[\n");
     for (n, _) in &presets {
         let _ = writeln!(s, "        Preset::{},", variant(n));
     }
-    s.push_str("    ];\n\n    pub fn name(self) -> &'static str {\n        match self {\n");
+    s.push_str("    ];\n\n    /// Its ECMA-376 name.\n    pub fn name(self) -> &'static str {\n        match self {\n");
     for (n, _) in &presets {
         let _ = writeln!(s, "            Preset::{} => {n:?},", variant(n));
     }
-    s.push_str("        }\n    }\n\n    pub fn from_name(s: &str) -> Option<Preset> {\n        Some(match s {\n");
+    s.push_str("        }\n    }\n\n    /// The preset named `s`.\n    pub fn from_name(s: &str) -> Option<Preset> {\n        Some(match s {\n");
     for (n, _) in &presets {
         let _ = writeln!(s, "            {n:?} => Preset::{},", variant(n));
     }

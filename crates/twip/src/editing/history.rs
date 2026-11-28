@@ -1,11 +1,15 @@
 //! Undo and redo
 
+use crate::docx::definitions::TypedDefsXml;
+use crate::docx::list_xml::NumberingXml;
+use crate::docx::origin::ControlOrigin;
 use std::collections::VecDeque;
 
-use crate::docx::numbering::{AbstractNum, Level as NumLevel, Num};
-use crate::docx::resolve::Resolver;
-use crate::docx::styles::Style;
+use crate::docx::definitions::Definitions;
+use crate::docx::list_xml::ListXml;
 use crate::docx::{Block, Inline};
+use crate::format::cascade::Cascade;
+use crate::format::{List, ListDef, ListLevel, Style, StyleEntry};
 use crate::layout::{ParaId, Unit};
 
 use super::index::Level;
@@ -328,11 +332,11 @@ pub fn step_bytes(s: &Step) -> usize {
         | Step::Info(_)
         | Step::Protection(_)
         | Step::SectionBreak { .. } => 32,
-        Step::Resolver { resolver, added } => {
-            32 + resolver.as_deref().map_or(0, resolver_bytes)
+        Step::Definitions { definitions, added } => {
+            32 + definitions.as_deref().map_or(0, definitions_bytes)
                 + added.iter().map(|a| std::mem::size_of::<crate::docx::AddedList>() + a.abstract_xml.len()).sum::<usize>()
         }
-        Step::Fonts { resolver, .. } => 32 + resolver.as_deref().map_or(0, resolver_bytes),
+        Step::Fonts { definitions, .. } => 32 + definitions.as_deref().map_or(0, definitions_bytes),
         Step::PageBackground(_) => 64,
         Step::ImageData { data, .. } => 32 + data.len(),
         Step::AddImage { data, .. } => 32 + data.as_ref().map_or(0, Vec::len),
@@ -343,26 +347,34 @@ pub fn step_bytes(s: &Step) -> usize {
         Step::Sections { split, .. } => 32 + split.stories().map(blocks).sum::<usize>(),
         Step::BuildingBlock { part, .. } => 64 + part.as_ref().map_or(0, |p| p.name.len() + blocks(&p.body)),
         Step::Rows { with, .. } => 32 + with.iter().flat_map(|r| r.cells.iter()).map(|c| 64 + blocks(&c.blocks)).sum::<usize>(),
-        Step::Control { control, .. } => 32 + control.as_ref().map_or(0, |c| c.open.len() + c.close.len() + 128),
+        Step::Control { control, .. } => 32 + control.as_ref().map_or(0, |c| c.origin_bytes() + 128),
         Step::DataPart { part, .. } => 32 + part.as_ref().map_or(0, |p| p.xml.len()),
         Step::Comment { after, .. } => 128 + after.as_ref().map_or(0, |c| blocks(&c.body)),
     }
 }
 
-/// What a retained style, numbering and theme table holds: its entries and the XML each keeps as read.
-fn resolver_bytes(r: &Resolver) -> usize {
+/// What retained definitions hold: each style, definition, list and picture bullet with the XML it is written as,
+/// and the style links.
+fn definitions_bytes(r: &Definitions) -> usize {
     use std::mem::size_of;
-    let styles = r.styles.by_id.values().map(|s| size_of::<Style>() + s.raw.len()).sum::<usize>();
-    let n = &r.numbering;
-    let abstracts =
-        n.abstracts.values().map(|a| size_of::<AbstractNum>() + a.raw.len() + a.levels.len() * size_of::<Option<NumLevel>>()).sum::<usize>();
-    let nums = n.nums.values().map(|m| size_of::<Num>() + m.raw.len() + m.level_overrides.len() * size_of::<NumLevel>()).sum::<usize>();
-    let bullets = n.pic_bullets.values().map(|b| 64 + b.raw.len()).sum::<usize>();
-    size_of::<Resolver>() + styles + abstracts + nums + bullets + n.root.len() + r.style_links.len() * 48
+    let t = r.typed();
+    let (c, n) = (&*t.cascade, &*t.numbering);
+    let len = |x: Option<std::borrow::Cow<'_, str>>| x.map_or(0, |x| x.len());
+    let styles = c.styles.styles.keys().map(|id| size_of::<StyleEntry>() + size_of::<Style>() + len(t.style_xml(id))).sum::<usize>();
+    let abstracts = c.lists.defs.keys().map(|id| size_of::<ListDef>() + len(t.def_xml(id.0)) + 9 * size_of::<Option<ListLevel>>()).sum::<usize>();
+    let nums = c
+        .lists
+        .lists
+        .iter()
+        .map(|(id, l)| size_of::<List>() + len(t.list_xml(id.0)) + l.overrides.iter().filter(|o| o.def.is_some()).count() * size_of::<ListLevel>())
+        .sum::<usize>();
+    let cx = n.cx();
+    let bullets = n.pictures.values().map(|b| 64 + b.xml(&c.colours, &cx).len()).sum::<usize>();
+    size_of::<Cascade>() + styles + abstracts + nums + bullets + n.root().len() + c.style_links.len() * 48
 }
 
 #[test]
 fn added_lists_count_towards_the_budget() {
     let list = crate::docx::AddedList { abstract_id: 1, num_id: 1, abstract_xml: "x".repeat(10_000) };
-    assert!(step_bytes(&Step::Resolver { resolver: None, added: vec![list] }) > 10_000);
+    assert!(step_bytes(&Step::Definitions { definitions: None, added: vec![list] }) > 10_000);
 }

@@ -7,6 +7,7 @@ use super::fonts;
 use crate::api::command::{ShadingChange, ShadingPattern, ShadingTarget};
 use crate::api::services::BordersTab;
 use crate::api::value::{AutoOr, Color, NoneOr, Points};
+use crate::docx::definitions::DefinitionsXml;
 use crate::layout::Unit;
 
 /// A 2 x 2 table in `Striped` (red stripes over yellow in its cells) with red double 2 pt borders of its own, then a
@@ -98,7 +99,7 @@ fn a_table_shading_the_style_already_has_is_still_written() {
     select(&mut e, 5, 5);
     let out = e.execute(shade(ShadingTarget::Table, 0xD9E2F3), fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let doc = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("document");
     assert!(doc.contains("D9E2F3"), "the table's own shading is written: {doc}");
 }
@@ -108,8 +109,9 @@ fn a_table_style_takes_cell_and_table_shading_in_its_own_xml_and_the_document_st
     let mut e = open();
     select(&mut e, 0, 0);
     let (revision, before) = (e.revision(), tables(&e)[0].rows[0].cells[0].shading);
-    let raw = e.document().resolver.as_ref().expect("styles").styles.get("Striped").expect("the style").raw.clone();
-    let xml = e.format_style(&raw, vec![shade(ShadingTarget::Cell, 0x00B050), shade(ShadingTarget::Table, 0x112233)], fonts()).expect("formats it");
+    let raw = e.document().definitions.as_ref().expect("styles").style_xml("Striped").expect("the style");
+    let xml =
+        e.format_style_xml(&raw, vec![shade(ShadingTarget::Cell, 0x00B050), shade(ShadingTarget::Table, 0x112233)], fonts()).expect("formats it");
     assert!(xml.contains("00B050") && xml.contains("112233") && xml.contains("<w:tblPr>"), "{xml}");
     // A table style however its type is written.
     let w = r#"xmlns:x="http://schemas.openxmlformats.org/wordprocessingml/2006/main""#;
@@ -119,12 +121,12 @@ fn a_table_style_takes_cell_and_table_shading_in_its_own_xml_and_the_document_st
         .replacen(r#"w:type="table""#, r#"x:type="table""#, 1)
         .replace("</w:style>", "</x:style>");
     for raw in [quoted, prefixed] {
-        let xml = e.format_style(&raw, vec![shade(ShadingTarget::Cell, 0x00B050)], fonts()).expect("formats it");
+        let xml = e.format_style_xml(&raw, vec![shade(ShadingTarget::Cell, 0x00B050)], fonts()).expect("formats it");
         assert!(xml.contains("00B050"), "{xml}");
     }
     assert_eq!((e.revision(), tables(&e)[0].rows[0].cells[0].shading), (revision, before), "the document's table didn't change");
-    let para = e.document().resolver.as_ref().expect("styles").styles.get("Normal").expect("Normal").raw.clone();
-    assert!(e.format_style(&para, vec![shade(ShadingTarget::Cell, 0x00B050)], fonts()).is_err(), "a paragraph style has no cell shading");
+    let para = e.document().definitions.as_ref().expect("styles").style_xml("Normal").expect("Normal");
+    assert!(e.format_style_xml(&para, vec![shade(ShadingTarget::Cell, 0x00B050)], fonts()).is_err(), "a paragraph style has no cell shading");
     assert_eq!(e.revision(), revision);
 }
 
@@ -173,7 +175,7 @@ fn a_fill_alone_keeps_the_pattern_the_style_gives() {
         let out = e.execute(fill(target), fonts());
         assert!(matches!(out, Outcome::Changed(_)), "{target:?}: {out:?}");
     }
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let xml = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("document");
     for pattern in ["horzStripe", "thinHorzStripe", "diagStripe"] {
         assert!(xml.contains(&format!(r#"<w:shd w:val="{pattern}" w:color="auto" w:fill="00B050"/>"#)), "{pattern}: {xml}");

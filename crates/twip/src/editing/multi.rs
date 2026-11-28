@@ -1020,10 +1020,11 @@ impl Editor {
         let Some(paragraph) = self.style_kind(id) else { return Outcome::invalid("no such style") };
         let story = self.editing_sub_template().map_or(StoryId::Body, StoryId::BuildingBlock);
         let ranges = if paragraph {
+            let default = self.default_paragraph();
             let mut out: Vec<(Position, Position)> = Vec::new();
             for para in self.paras_of(story) {
                 let Some(p) = self.index.para(&self.doc, para) else { continue };
-                if self.para_style_id(p) != Some(id) {
+                if Self::para_style_id(p, default.as_deref()) != Some(id) {
                     continue;
                 }
                 let end = self.after_mark(Position::text(story, para, para_len(p)));
@@ -1047,9 +1048,10 @@ impl Editor {
     /// character style (a stretch opens on text, as [`Editor::story_runs`] opens one). One walk of the body.
     pub fn style_use_counts(&self) -> HashMap<String, usize> {
         let mut out: HashMap<String, usize> = HashMap::new();
+        let default = self.default_paragraph();
         for para in self.story_paras(Stories::default()) {
             let Some(p) = self.index.para(&self.doc, para) else { continue };
-            if let Some(s) = self.para_style_id(p) {
+            if let Some(s) = Self::para_style_id(p, default.as_deref()) {
                 *out.entry(s.to_string()).or_default() += 1;
             }
             let mut open: Option<&str> = None;
@@ -1072,15 +1074,20 @@ impl Editor {
     }
 
     /// A paragraph's style: its own, else the document's default paragraph style.
-    fn para_style_id<'a>(&'a self, p: &'a crate::docx::Paragraph) -> Option<&'a str> {
-        p.style.style_id.as_deref().or_else(|| self.doc.resolver.as_ref()?.styles.default_paragraph.as_deref())
+    fn para_style_id<'a>(p: &'a crate::docx::Paragraph, default: Option<&'a str>) -> Option<&'a str> {
+        p.style.style_id.as_deref().or(default)
+    }
+
+    /// The document's default paragraph style.
+    fn default_paragraph(&self) -> Option<std::rc::Rc<str>> {
+        self.doc.definitions.as_ref()?.cascade().styles.default_paragraph.clone()
     }
 
     /// Whether style `id` is a paragraph style (else a character style); none when the document has no such style.
     fn style_kind(&self, id: &str) -> Option<bool> {
-        match self.doc.resolver.as_ref()?.styles.by_id.get(id)?.kind {
-            crate::docx::styles::StyleKind::Paragraph => Some(true),
-            crate::docx::styles::StyleKind::Character => Some(false),
+        match self.doc.definitions.as_ref()?.style_kind(id)? {
+            crate::format::StyleKind::Paragraph => Some(true),
+            crate::format::StyleKind::Character => Some(false),
             _ => None,
         }
     }

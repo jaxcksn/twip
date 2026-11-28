@@ -1,6 +1,6 @@
 //! Lossless save: the package as read, with only the edited paragraphs of the main part, headers and footers rewritten.
 //!
-//! Every body paragraph and table remembers where it was read from ([`ParaSrc`], [`Table::src`]). Saving compares the
+//! Every body paragraph and table remembers where it was read from (its [`Origin`]). Saving compares the
 //! edited body with the body as read ([`Source::blocks`]), block list by block list: a paragraph or table still there
 //! anchors a group with the new paragraphs after it and the vanished ones it absorbed. Unchanged groups keep their
 //! bytes. A changed group's units (and paragraph marks) are diffed against its source's, and the source XML is walked
@@ -9,6 +9,10 @@
 //! and new or deleted marks split or join paragraphs. Everything that isn't text (bookmarks, comments, field codes,
 //! hidden runs, ...) is copied where it was.
 
+use crate::docx::origin::ControlOrigin;
+use crate::docx::origin::{
+    EdgeOrigin, FloatOrigin, FormFieldOrigin, ParagraphOrigin, PermissionOrigin, PictureOrigin, RowOrigin, RubyOrigin, SectionOrigin, TableOrigin,
+};
 use std::collections::HashMap;
 use std::io::{Cursor, Write};
 use std::ops::Range;
@@ -16,42 +20,55 @@ use std::rc::Rc;
 
 use roxmltree::Node;
 
+use super::origin::ParaSrc;
 use super::review::{CommentId, People, RangeKind, RangeMark, RevisionMark, SectionChange};
 use super::xml::{MC, W, W14, attr, child, is, is_w};
 use super::*;
+use crate::docx::char_props::RunXml;
+use crate::docx::page_borders::PageBordersXml;
+use crate::docx::para_props::ParaXml;
+use crate::docx::table_props::TableXml;
 
 mod comments;
+pub(crate) mod controls;
 pub(crate) mod drawing;
 mod fonts;
+mod generate;
 mod glossary;
 mod numbering;
 pub mod props;
 mod revisions;
 mod styles;
 
-use super::props::{Border, Jc, Width};
+use super::anchor;
+use super::props::{Border, Jc, ThemeColours, Width};
 use props::{Cx, Props};
 
+pub use generate::{GenerateError, generate};
+
 /// The edited document as package bytes: the original package when nothing changed.
-pub fn save(doc: &Document) -> Result<Vec<u8>, String> {
-    let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
-    let parts = edited_parts(doc)?;
-    if parts.is_empty() && doc.removed_data.is_empty() {
+pub fn save(doc: &Document, session: &Session) -> Result<Vec<u8>, String> {
+    let src = session.source.as_ref().ok_or("the document was not read for editing")?;
+    let parts = edited_parts(doc, session)?;
+    if parts.is_empty() && session.removed_data.is_empty() {
         return Ok(src.package.clone());
     }
-    repackage_without(&src.package, &parts, &removed_data_files(doc), zip::CompressionMethod::Deflated)
+    repackage_without(&src.package, &parts, &removed_data_files(session), zip::CompressionMethod::Deflated)
 }
 
 /// The parts the edits changed, with their new XML: the main part, headers and footers, and the notes parts.
-pub fn edited_parts(doc: &Document) -> Result<Vec<(String, Vec<u8>)>, String> {
-    let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
+pub fn edited_parts(doc: &Document, session: &Session) -> Result<Vec<(String, Vec<u8>)>, String> {
+    let src = session.source.as_ref().ok_or("the document was not read for editing")?;
     let mut parts = Vec::new();
-    if let Some(xml) = main_xml(doc)? {
+    if let Some(xml) = main_xml(doc, session)? {
         parts.push((src.main.clone(), xml.into_bytes()));
     }
-    for (name, (xml, orig)) in &src.stories {
-        let now = doc.stories.get(name).map_or(&[][..], Vec::as_slice);
-        if let Some(xml) = part_xml(xml, &boxes(&[orig], &[now]), &[(orig, now)], &doc.controls, &gone_controls(doc), &doc.people)? {
+    for (id, (xml, orig)) in &src.stories {
+        let Some(name) = src.story_parts.get(id) else { continue };
+        let now = doc.stories.get(id).map_or(&[][..], Vec::as_slice);
+        if let Some(xml) =
+            part_xml(xml, &boxes(&[orig], &[now]), &[(orig, now)], &doc.controls, &gone_controls(doc, src), &doc.people, &colours_of(doc))?
+        {
             parts.push((name.clone(), xml.into_bytes()));
         }
     }
@@ -69,7 +86,7 @@ pub fn edited_parts(doc: &Document) -> Result<Vec<(String, Vec<u8>)>, String> {
         let tag = if *foot { "footnote" } else { "endnote" };
         let seps = separator_edits(doc, src, tag);
         let edits = NoteEdits { tag, added: &added, removed: &removed, separators: &seps };
-        let (out, listing) = notes_xml(xml, &boxes(&o, &n), &lists, &edits, doc)?;
+        let (out, listing) = notes_xml(xml, &boxes(&o, &n), &lists, &edits, doc, src)?;
         if let Some(xml) = out {
             parts.push((name.clone(), xml.into_bytes()));
         }
@@ -92,19 +109,19 @@ pub fn edited_parts(doc: &Document) -> Result<Vec<(String, Vec<u8>)>, String> {
             .collect();
         list_notes(doc, src, &mut parts, tag, &listing)?;
     }
-    section_pages(doc, &mut parts)?;
-    new_stories(doc, &mut parts)?;
-    numbering::numbering(doc, &mut parts)?;
-    styles::styles(doc, &mut parts)?;
-    fonts::font_renames(doc, &mut parts)?;
-    filled_placeholders(doc, &mut parts)?;
-    review_parts(doc, &mut parts)?;
-    settings_part(doc, &mut parts)?;
-    page_background(doc, &mut parts)?;
+    section_pages(doc, session, &mut parts)?;
+    new_stories(doc, session, &mut parts)?;
+    numbering::numbering(doc, session, &mut parts)?;
+    styles::styles(doc, session, &mut parts)?;
+    fonts::font_renames(session, &mut parts)?;
+    filled_placeholders(doc, session, &mut parts)?;
+    review_parts(doc, session, &mut parts)?;
+    settings_part(doc, session, &mut parts)?;
+    page_background(doc, session, &mut parts)?;
     add_images(&src.package, &doc.images, &mut parts)?;
     unique_ids(src, &mut parts)?;
-    data_parts(doc, &mut parts)?;
-    property_parts(doc, &mut parts)?;
+    data_parts(doc, session, &mut parts)?;
+    property_parts(doc, session, &mut parts)?;
     Ok(parts)
 }
 
@@ -129,7 +146,7 @@ fn unique_ids(src: &Source, parts: &mut [(String, Vec<u8>)]) -> Result<(), Strin
     };
     // The parts kept as read: those the source holds, else from the package.
     let mut held: HashMap<&str, &str> = HashMap::from([(src.main.as_str(), src.xml.as_str())]);
-    held.extend(src.stories.iter().map(|(n, (x, _))| (n.as_str(), x.as_str())));
+    held.extend(src.stories.iter().filter_map(|(id, (x, _))| Some((src.story_parts.get(id)?.as_str(), x.as_str()))));
     held.extend(src.notes.iter().map(|(n, x, _)| (n.as_str(), x.as_str())));
     if let Some(g) = &src.glossary {
         held.insert(g.part.as_str(), g.xml.as_str());
@@ -276,9 +293,9 @@ fn tag_ids(xml: &str, (ns, names, id_ns): IdTags) -> Vec<(Range<usize>, i64)> {
 
 /// The document properties parts, when the properties changed or anything else did: an edited document's last saved
 /// time and revision follow.
-fn property_parts(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
+fn property_parts(doc: &Document, session: &Session, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
     use super::properties as p;
-    let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
+    let src = session.source.as_ref().ok_or("the document was not read for editing")?;
     let part = |rel: &str, parts: &[(String, Vec<u8>)]| package::related(&src.package, parts, "", rel);
     let (core, app, custom) = (part(p::CORE, parts)?, part(p::APP, parts)?, part(p::CUSTOM, parts)?);
     let read_of =
@@ -333,8 +350,8 @@ const SETTINGS: &str = "http://schemas.openxmlformats.org/officeDocument/2006/re
 /// document read again from its package, so a part the reader can't make the same again is never rewritten.
 // shortcut: the package is read again to compare (only for documents with comment or people parts, review content, or
 // a tracking setting that seems changed); keeping the review as read on `Source` would save the read.
-fn review_parts(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
-    let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
+fn review_parts(doc: &Document, session: &Session, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
+    let src = session.source.as_ref().ok_or("the document was not read for editing")?;
     let settings = package::related(&src.package, parts, &src.main, SETTINGS)?;
     let settings_xml = match &settings {
         Some(n) => package::read(&src.package, parts, n)?,
@@ -352,7 +369,7 @@ fn review_parts(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<()
     if !has_parts && !review && doc.settings.track_revisions == tracking {
         return Ok(());
     }
-    let read = super::read_editable(&src.package)?;
+    let (read, _) = super::read_editable(&src.package)?;
     if doc.settings.track_revisions != read.settings.track_revisions
         && let (Some(name), Some(xml)) = (settings, settings_xml)
     {
@@ -450,8 +467,8 @@ const TAB_AND_HYPHENATION: &[&str] = &[
 
 /// The settings part with the default tab spacing and the hyphenation settings, where they changed since reading; a
 /// document without one gets one when a setting is written.
-fn settings_part(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
-    let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
+fn settings_part(doc: &Document, session: &Session, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
+    let src = session.source.as_ref().ok_or("the document was not read for editing")?;
     let existing = package::related(&src.package, parts, &src.main, SETTINGS)?;
     let xml = match &existing {
         Some(n) => package::read(&src.package, parts, n)?.unwrap_or_default(),
@@ -515,7 +532,7 @@ fn settings_part(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
         (a, b) => a.is_none() && b.is_none(),
     };
     if !same {
-        set_setting(&mut out, "documentProtection", now.protection.as_ref().map(|p| p.xml(&w)))?;
+        set_setting(&mut out, "documentProtection", now.protection.as_ref().map(|p| super::review::protection_xml(p, &w)))?;
     }
     if read.variables != now.variables {
         let vars: String =
@@ -580,8 +597,8 @@ fn add_settings_part(src: &Source, parts: &mut Vec<(String, Vec<u8>)>) -> Result
 /// The fill's markup as read is kept when it still reads as the model's fill under the new colour (a gradient or
 /// pattern that names no colour of its own takes the page's); else the fill is written from the model, as Word writes
 /// it. An untouched background keeps its markup.
-fn page_background(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
-    let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
+fn page_background(doc: &Document, session: &Session, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
+    let src = session.source.as_ref().ok_or("the document was not read for editing")?;
     if src.page_background.0 == doc.page_colour && src.page_background.1 == doc.page_fill && src.page_theme == doc.page_colour_theme {
         return Ok(());
     }
@@ -600,7 +617,7 @@ fn page_background(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result
         _ => None,
     };
     let kept = old
-        .filter(|b| doc.page_fill.is_some() && crate::drawing::vml::background_fill(*b, doc.page_colour, &mut |_| image) == doc.page_fill)
+        .filter(|b| doc.page_fill.is_some() && crate::docx::drawing::vml::background_fill(*b, doc.page_colour, &mut |_| image) == doc.page_fill)
         .and_then(|b| b.children().find(|c| c.is_element() && c.tag_name().name() == "background" && c.tag_name().namespace() == Some(VML)))
         .map(|v| xml[v.range()].to_string());
     // The prefixes the kept markup has from its `w:background` and not from the root, declared on the new one.
@@ -747,7 +764,7 @@ fn vml_background(
             };
             let (first, last) = (&stops[0], &stops[stops.len() - 1]);
             // Two colours as Word blends them are written as the two; any other stops as a list.
-            let two = crate::drawing::vml::is_two_colour(g);
+            let two = crate::drawing::paint::is_two_colour(g);
             let colors = if two {
                 String::new()
             } else {
@@ -767,7 +784,7 @@ fn vml_background(
             let (o1, o2) = (opacity("opacity", first.2), opacity(&format!("{o}:opacity2"), last.2));
             // One colour darkened or lightened is written as the fill's own, as Word writes it.
             let rgb = |c: &crate::drawing::colour::Colour| c.resolve(palette.theme, palette.map, None).to_rgb();
-            let color2 = match two.then(|| crate::drawing::vml::shade_of(rgb(&g.stops[0].1), rgb(&g.stops[g.stops.len() - 1].1))).flatten() {
+            let color2 = match two.then(|| crate::drawing::colour::shade_of(rgb(&g.stops[0].1), rgb(&g.stops[g.stops.len() - 1].1))).flatten() {
                 Some((light, n)) => format!("fill {}({n})", if light { "lighten" } else { "darken" }),
                 None => last.1.clone(),
             };
@@ -775,7 +792,7 @@ fn vml_background(
             format!(r#"<{v}:fill type="{kind}" color="{}" color2="{color2}"{colors} angle="{angle}"{focus}{o1}{o2}/>"#, first.1)
         }
         Fill::Blip(b) => {
-            let image = b.image?;
+            let image = b.image?.0;
             let (kind, colours) = match (&b.mode, b.adjust.iter().find_map(|a| if let BlipAdjust::Duotone(d) = a { Some(d) } else { None })) {
                 (BlipMode::Tile { .. }, Some([fg, bg])) => ("pattern", format!(r#" color2="{}" color="{}""#, hex(fg).0, hex(bg).0)),
                 (BlipMode::Tile { .. }, None) => ("tile", String::new()),
@@ -863,10 +880,10 @@ fn with_track_revisions(xml: &str, on: bool) -> Result<String, String> {
 }
 
 /// The files of the data parts removed since reading: each item, its properties and its relationships.
-fn removed_data_files(doc: &Document) -> Vec<String> {
-    let Some(src) = doc.source.as_ref() else { return Vec::new() };
+fn removed_data_files(session: &Session) -> Vec<String> {
+    let Some(src) = session.source.as_ref() else { return Vec::new() };
     let mut out = Vec::new();
-    for item in &doc.removed_data {
+    for item in &session.removed_data {
         out.push(item.clone());
         if let Some((props, rels)) = item_parts(&src.package, item) {
             out.push(props);
@@ -892,10 +909,10 @@ fn item_parts(package: &[u8], item: &str) -> Option<(String, String)> {
 /// the main part's relationship and their content type; removed ones lose the main part's relationship and their
 /// content type (their files go in [`removed_data_files`]).
 // shortcut: its relationship and content-type edits are its own; they move to `package::add_part` when next changed.
-fn data_parts(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
-    let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
+fn data_parts(doc: &Document, session: &Session, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
+    let src = session.source.as_ref().ok_or("the document was not read for editing")?;
     let changed: Vec<&DataPart> = doc.data_parts.iter().filter(|p| p.changed).collect();
-    if changed.is_empty() && doc.removed_data.is_empty() {
+    if changed.is_empty() && session.removed_data.is_empty() {
         return Ok(());
     }
     let mut zin = zip::ZipArchive::new(Cursor::new(&src.package)).map_err(|e| e.to_string())?;
@@ -920,7 +937,7 @@ fn data_parts(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), 
     let main_dir = src.main.rsplit_once('/').map_or("", |(d, _)| d);
     let target_of = |item: &str| if main_dir.is_empty() { item.to_string() } else { format!("../{item}") };
     let props_type = "application/vnd.openxmlformats-officedocument.customXmlProperties+xml";
-    for item in &doc.removed_data {
+    for item in &session.removed_data {
         let t = target_of(item);
         if let Some(k) = rels.find(&format!("Target=\"{t}\"")) {
             let a = rels[..k].rfind("<Relationship").unwrap_or(k);
@@ -1007,13 +1024,13 @@ fn section_props(dom: &roxmltree::Document) -> Vec<Range<usize>> {
     out
 }
 
-/// Sections whose page was edited ([`Document::edited_sections`]): their `w:sectPr` with the page size, margins,
+/// Sections whose page was edited ([`Session::edited_sections`]): their `w:sectPr` with the page size, margins,
 /// columns and different first page set, everything else in it kept.
-fn section_pages(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
-    if doc.edited_sections.is_empty() {
+fn section_pages(doc: &Document, session: &Session, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
+    if session.edited_sections.is_empty() {
         return Ok(());
     }
-    let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
+    let src = session.source.as_ref().ok_or("the document was not read for editing")?;
     let mut xml = match parts.iter().find(|(n, _)| *n == src.main) {
         Some((_, b)) => String::from_utf8(b.clone()).map_err(|e| e.to_string())?,
         None => src.xml.clone(),
@@ -1025,12 +1042,14 @@ fn section_pages(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
     };
     let sects = section_props(&dom);
     drop(dom);
-    let mut edited: Vec<usize> = doc.edited_sections.iter().copied().filter(|&k| k < sects.len().min(doc.sections.len())).collect();
+    let (cx, colours) = (Cx::of_xml(&xml), colours_of(doc));
+    let mut edited: Vec<usize> = session.edited_sections.iter().copied().filter(|&k| k < sects.len().min(doc.sections.len())).collect();
     edited.sort_unstable_by(|a, b| b.cmp(a));
     for k in edited {
         let r = sects[k].clone();
         let s = &doc.sections[k];
-        let new = sect_with_page(&xml[r.clone()], &w, &s.page(), s.read.as_deref(), s.change.as_deref(), &doc.people);
+        let page = SectPage { page: &s.page(), was: s.read_page(), grid: Some((s.line_grid, s.rtl_gutter)) };
+        let new = sect_with_page(&xml[r.clone()], &w, page, s.change.as_deref(), &doc.people, &cx, &colours);
         xml.replace_range(r, &new);
     }
     match parts.iter_mut().find(|(n, _)| *n == src.main) {
@@ -1040,9 +1059,30 @@ fn section_pages(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
     Ok(())
 }
 
-/// A `w:sectPr` with `p`'s page size, margins, columns and different first page, and `change` as its tracked change.
-/// Only those differing from `was` (the page as read) when given.
-fn sect_with_page(sect: &str, w: &str, p: &SectionPage, was: Option<&SectionPage>, change: Option<&SectionChange>, people: &People) -> String {
+/// The page a `w:sectPr` is written with: its settings, those as read, and its line grid and right-to-left gutter.
+#[derive(Clone, Copy)]
+struct SectPage<'a> {
+    page: &'a SectionPage,
+    was: Option<&'a SectionPage>,
+    /// The line grid ([`Section::line_grid`]) and right-to-left gutter, written where the `w:sectPr` as read has others.
+    grid: Option<(Option<i32>, bool)>,
+}
+
+/// The `w:docGrid` line pitch (twentieths of a point) that reads as line grid `g`.
+pub(super) fn line_pitch(g: i32) -> i64 {
+    (i64::from(g) * 10 + 2047) / 2048
+}
+
+/// The line grid a `w:docGrid` with line pitch `pitch` reads as.
+pub(super) fn line_grid_of(pitch: i64) -> i32 {
+    (pitch.max(1) * 2048 / 10) as i32
+}
+
+/// A `w:sectPr` with the page size, margins, columns and different first page of `page`, and `change` as its tracked
+/// change. Only those differing from the page as read when given. Typed page borders are written in the part `cx`
+/// describes, a theme colour's value as `colours` resolve it.
+fn sect_with_page(sect: &str, w: &str, page: SectPage, change: Option<&SectionChange>, people: &People, cx: &Cx, colours: &ThemeColours) -> String {
+    let (p, was) = (page.page, page.was);
     // CT_SectPr's children in schema order.
     const ORDER: [&str; 22] = [
         "headerReference",
@@ -1099,12 +1139,12 @@ fn sect_with_page(sect: &str, w: &str, p: &SectionPage, was: Option<&SectionPage
                 put(&mut base, local, None);
             }
         }
-        Raw(Some(sect_with_page(&base, w, &c.previous, None, None, people).into()))
+        Raw(Some(sect_with_page(&base, w, SectPage { page: &c.previous, was: None, grid: None }, None, people, cx, colours).into()))
     });
     let existing = |s: &str, local: &str| find_tag(s, local, open_end).map(|(a, e)| s[a..e].to_string());
     let changed = |f: &dyn Fn(&SectionPage) -> bool| was.is_none_or(f);
     if changed(&|q| q.page_borders != p.page_borders) {
-        put(&mut s, "pgBorders", p.page_borders_xml.clone());
+        put(&mut s, "pgBorders", p.page_borders_direct.xml(colours, cx).map(std::borrow::Cow::into_owned));
     }
     let mut sz = existing(&s, "pgSz").unwrap_or_else(|| format!("<{w}pgSz/>"));
     sz = set_attr(&sz, &format!("{w}w"), &twips(p.page_w).to_string());
@@ -1178,12 +1218,18 @@ fn sect_with_page(sect: &str, w: &str, p: &SectionPage, was: Option<&SectionPage
         if was.line_numbers != p.line_numbers {
             let tag = p.line_numbers.as_ref().map(|l| {
                 let distance = if l.distance > 0.0 { format!(" {w}distance=\"{}\"", twips(l.distance)) } else { String::new() };
-                format!("<{w}lnNumType {w}countBy=\"{}\" {w}start=\"{}\"{distance} {w}restart=\"{}\"/>", l.count_by, l.start, props::esc(&l.restart))
+                format!(
+                    "<{w}lnNumType {w}countBy=\"{}\" {w}start=\"{}\"{distance} {w}restart=\"{}\"/>",
+                    l.count_by,
+                    l.start,
+                    super::section::line_numbering_restart_literal(l.restart)
+                )
             });
             put(&mut s, "lnNumType", tag);
         }
         if was.v_align != p.v_align {
-            put(&mut s, "vAlign", (p.v_align != "top").then(|| format!("<{w}vAlign {w}val=\"{}\"/>", props::esc(&p.v_align))));
+            let v = super::section::v_align_literal(p.v_align);
+            put(&mut s, "vAlign", (p.v_align != VerticalAlignment::Top).then(|| format!("<{w}vAlign {w}val=\"{v}\"/>")));
         }
         if was.text_flow != p.text_flow {
             let v = match p.text_flow {
@@ -1260,6 +1306,27 @@ fn sect_with_page(sect: &str, w: &str, p: &SectionPage, was: Option<&SectionPage
             }
         }
     }
+    if let Some((line_grid, rtl_gutter)) = page.grid {
+        let read = cx.parse(sect, |_, el| {
+            let grid = child(el, "docGrid")
+                .filter(|g| matches!(attr(*g, "type"), Some("lines" | "linesAndChars" | "snapToChars")))
+                .map(|g| line_grid_of(crate::docx::xml::int(attr(g, "linePitch")).unwrap_or(0)));
+            (grid, crate::docx::xml::flag(el, "rtlGutter").unwrap_or(false))
+        });
+        if let Some((grid, rtl)) = read {
+            if grid != line_grid {
+                let g = existing(&s, "docGrid").unwrap_or_else(|| format!("<{w}docGrid/>"));
+                let g = match line_grid {
+                    Some(v) => set_attr(&set_attr(&g, &format!("{w}type"), "lines"), &format!("{w}linePitch"), &line_pitch(v).to_string()),
+                    None => set_attr(&g, &format!("{w}type"), "default"),
+                };
+                put(&mut s, "docGrid", Some(g));
+            }
+            if rtl != rtl_gutter {
+                put(&mut s, "rtlGutter", rtl_gutter.then(|| format!("<{w}rtlGutter/>")));
+            }
+        }
+    }
     put(
         &mut s,
         "sectPrChange",
@@ -1272,11 +1339,11 @@ fn sect_with_page(sect: &str, w: &str, p: &SectionPage, was: Option<&SectionPage
 /// relationships pointing there and its content type added, when the image type changed), and in every part showing
 /// it, the picture's extents as fitted and its content control without `w:showingPlcHdr`.
 // shortcut: its relationship and content-type edits are its own; they move to `package::add_part` when next changed.
-fn filled_placeholders(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
+fn filled_placeholders(doc: &Document, session: &Session, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
     if doc.filled.is_empty() {
         return Ok(());
     }
-    let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
+    let src = session.source.as_ref().ok_or("the document was not read for editing")?;
     let mut zin = zip::ZipArchive::new(Cursor::new(&src.package[..])).map_err(|e| e.to_string())?;
     let mut read = |parts: &[(String, Vec<u8>)], n: &str| -> Result<Option<String>, String> {
         if let Some((_, b)) = parts.iter().find(|(m, _)| m == n) {
@@ -1287,7 +1354,7 @@ fn filled_placeholders(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Re
     };
     let base = |p: &str| p.rsplit('/').next().unwrap_or(p).to_string();
     // A filled image's size as shown: its first picture's.
-    fn size_of(blocks: &[Block], image: usize) -> Option<(f64, f64)> {
+    fn size_of(blocks: &[Block], image: ResourceId) -> Option<(f64, f64)> {
         blocks.iter().find_map(|b| match b {
             Block::Para(p) => p.inlines.iter().find_map(|i| match i {
                 Inline::Picture(pic, _) if pic.image == Some(image) => Some((pic.w, pic.h)),
@@ -1299,17 +1366,17 @@ fn filled_placeholders(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Re
     let all: Vec<&Vec<Block>> = doc.sections.iter().map(|s| &s.blocks).chain(doc.stories.values()).collect();
     let mut types = read(parts, "[Content_Types].xml")?.ok_or("no content types")?;
     let mut xml_parts: Vec<String> = vec![src.main.clone()];
-    xml_parts.extend(src.stories.keys().cloned());
-    let mut filled: Vec<usize> = doc.filled.iter().copied().collect();
+    xml_parts.extend(src.stories.keys().filter_map(|id| src.story_parts.get(id)).cloned());
+    let mut filled: Vec<ResourceId> = doc.filled.iter().copied().collect();
     filled.sort_unstable();
     for idx in filled {
-        let (Some(old), Some(data)) = (src.image_parts.get(idx).filter(|p| !p.is_empty()), doc.images.get(idx)) else { continue };
+        let (Some(old), Some(data)) = (src.image_parts.get(&idx), doc.images.get(idx)) else { continue };
         let Some((_, ext)) = super::image::image_type(data) else { continue };
         let old_ext = old.rsplit_once('.').map_or("", |(_, e)| e).to_ascii_lowercase();
         let same = old_ext == ext || (old_ext == "jpg" && ext == "jpeg");
         let new = if same { old.clone() } else { format!("{}.{ext}", old.rsplit_once('.').map_or(old.as_str(), |(s, _)| s)) };
         parts.retain(|(n, _)| n != &new);
-        parts.push((new.clone(), data.clone()));
+        parts.push((new.clone(), data.to_vec()));
         if !same && !types.to_ascii_lowercase().contains(&format!("extension=\"{ext}\"")) {
             let at = types.rfind("</Types>").ok_or("content types without their end tag")?;
             let mime = super::image::image_type(data).map_or("application/octet-stream", |(m, _)| m);
@@ -1384,24 +1451,73 @@ fn filled_placeholders(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Re
     Ok(())
 }
 
+/// The part name of header or footer `id`: as read, else [`story_parts`]'s.
+pub fn story_part(doc: &Document, session: &Session, id: HeaderFooterId) -> Option<String> {
+    match session.source.as_ref().and_then(|s| s.story_parts.get(&id)) {
+        Some(name) => Some(name.clone()),
+        None => story_parts(doc, session).remove(&id),
+    }
+}
+
+/// Each header's and footer's part name. A part read keeps its own; one made since reading (a footer when a section
+/// shows it as one) is named beside the main part, in id order, with a number no other part's name has: no part
+/// made before it, read, a section referred to as read (a part that didn't load), or the package holds (a removed
+/// part's name names that part's relationship).
+pub fn story_parts(doc: &Document, session: &Session) -> HashMap<HeaderFooterId, String> {
+    let src = session.source.as_deref();
+    let mut out: HashMap<HeaderFooterId, String> = src.map(|s| s.story_parts.clone()).unwrap_or_default();
+    let refs = || doc.sections.iter().flat_map(|s| s.headers.iter().chain(&s.footers)).flatten();
+    let mut made: Vec<HeaderFooterId> = doc.stories.keys().chain(refs()).filter(|id| !out.contains_key(id)).copied().collect();
+    if made.is_empty() {
+        return out;
+    }
+    made.sort_unstable();
+    made.dedup();
+    let dir = src.and_then(|s| s.main.rsplit_once('/')).map_or(String::new(), |(d, _)| format!("{d}/"));
+    let package = src.and_then(|s| zip::ZipArchive::new(Cursor::new(&s.package[..])).ok());
+    let mut taken: std::collections::HashSet<String> = out.values().cloned().collect();
+    let free = |taken: &std::collections::HashSet<String>, name: &str| {
+        !taken.contains(name) && package.as_ref().is_none_or(|z| z.index_for_name(name).is_none())
+    };
+    let mut from = 1usize;
+    for id in made {
+        let footer = doc.sections.iter().any(|s| s.footers.contains(&Some(id)));
+        let kind = if footer { "footer" } else { "header" };
+        let n = (from..).find(|n| free(&taken, &format!("{dir}header{n}.xml")) && free(&taken, &format!("{dir}footer{n}.xml"))).unwrap_or(from);
+        from = n + 1;
+        let name = format!("{dir}{kind}{n}.xml");
+        taken.insert(name.clone());
+        out.insert(id, name);
+    }
+    out
+}
+
 /// Headers and footers made since reading: each part, its relationship from the main part, its content type, and
 /// the section references to it (inserted first in their sections' `w:sectPr`, where CT_SectPr has them). A section
 /// whose slot shows another part read than it did gets a reference to that part's relationship too.
 // shortcut: its relationship and content-type edits are its own; they move to `package::add_part` when next changed.
-fn new_stories(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
-    let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
-    let made: Vec<&String> = doc.stories.keys().filter(|n| !src.stories.contains_key(*n)).collect();
+fn new_stories(doc: &Document, session: &Session, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
+    let src = session.source.as_ref().ok_or("the document was not read for editing")?;
+    let names = story_parts(doc, session);
+    // In part name order
+    let mut made: Vec<(HeaderFooterId, &String)> =
+        doc.stories.keys().filter(|id| !src.stories.contains_key(*id)).filter_map(|id| Some((*id, names.get(id)?))).collect();
+    made.sort_unstable_by_key(|(_, name)| *name);
     // Each slot that needs a reference written: one showing a part made, or a part read it didn't show as read.
-    fn wants<'d>(src: &Source, s: &'d Section, footer: bool, slot: usize) -> Option<&'d String> {
-        let now = if footer { &s.footers } else { &s.headers }[slot].as_ref()?;
-        match s.read.as_deref() {
-            _ if !src.stories.contains_key(now) => Some(now),
-            Some(r) => (if footer { &r.footers } else { &r.headers }[slot].as_ref() != Some(now)).then_some(now),
+    fn wants(src: &Source, s: &Section, footer: bool, slot: usize) -> Option<HeaderFooterId> {
+        let now = if footer { &s.footers } else { &s.headers }[slot]?;
+        match s.read_page() {
+            _ if !src.stories.contains_key(&now) => Some(now),
+            Some(r) => (if footer { &r.footers } else { &r.headers }[slot] != Some(now)).then_some(now),
             None => None,
         }
     }
-    let relinked: Vec<&String> =
-        doc.sections.iter().flat_map(|s| (0..6).filter_map(move |k| wants(src, s, k >= 3, k % 3))).filter(|n| src.stories.contains_key(*n)).collect();
+    let relinked: Vec<HeaderFooterId> = doc
+        .sections
+        .iter()
+        .flat_map(|s| (0..6).filter_map(move |k| wants(src, s, k >= 3, k % 3)))
+        .filter(|id| src.stories.contains_key(id))
+        .collect();
     if made.is_empty() && relinked.is_empty() {
         return Ok(());
     }
@@ -1418,19 +1534,19 @@ fn new_stories(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(),
     let mut rels = read(parts, &rels_name)?;
     let mut types = read(parts, "[Content_Types].xml")?;
     let mut xml = read(parts, &main)?;
-    let mut ids: HashMap<&String, String> = HashMap::new();
+    let mut ids: HashMap<HeaderFooterId, String> = HashMap::new();
     const NS: &str = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships""#;
-    for name in &made {
-        let footer = doc.sections.iter().any(|s| s.footers.iter().flatten().any(|f| f == *name));
+    for &(id, name) in &made {
+        let footer = doc.sections.iter().any(|s| s.footers.contains(&Some(id)));
         let (tag, kind) = if footer { ("ftr", "footer") } else { ("hdr", "header") };
         let shell = format!(
             r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:{tag} {NS}></w:{tag}>"#
         );
-        let body = new_blocks_xml(&shell, &doc.stories[*name], &doc.controls, &doc.people)?;
+        let body = new_blocks_xml(&shell, &doc.stories[&id], &doc.controls, &doc.people, &colours_of(doc))?;
         let end = shell.rfind("</").ok_or("story shell")?;
-        parts.retain(|(n, _)| n != *name);
-        parts.push(((*name).clone(), format!("{}{body}{}", &shell[..end], &shell[end..]).into_bytes()));
+        parts.retain(|(n, _)| n != name);
+        parts.push((name.clone(), format!("{}{body}{}", &shell[..end], &shell[end..]).into_bytes()));
         let mut k = 1;
         while rels.contains(&format!("Id=\"rId{k}\"")) {
             k += 1;
@@ -1449,14 +1565,15 @@ fn new_stories(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(),
             close,
             &format!(r#"<Override PartName="/{name}" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.{kind}+xml"/>"#),
         );
-        ids.insert(name, format!("rId{k}"));
+        ids.insert(id, format!("rId{k}"));
     }
     if !relinked.is_empty() {
         let dom = roxmltree::Document::parse(&rels).map_err(|e| e.to_string())?;
-        for name in relinked {
+        for story in relinked {
+            let Some(name) = names.get(&story) else { continue };
             let id = dom.root_element().children().find(|r| r.attribute("Target").is_some_and(|t| crate::docx::package::resolve(&main, t) == *name));
             if let Some(id) = id.and_then(|r| r.attribute("Id")) {
-                ids.insert(name, id.to_string());
+                ids.insert(story, id.to_string());
             }
         }
     }
@@ -1480,7 +1597,7 @@ fn new_stories(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(),
         let mut refs = String::new();
         for footer in [false, true] {
             for slot in 0..3 {
-                if let Some(id) = wants(src, s, footer, slot).and_then(|n| ids.get(n)) {
+                if let Some(id) = wants(src, s, footer, slot).and_then(|n| ids.get(&n)) {
                     let t = ["default", "first", "even"][slot];
                     let el = if footer { "footerReference" } else { "headerReference" };
                     refs.push_str(&format!(
@@ -1523,7 +1640,7 @@ fn new_notes_part(
     parts: &mut Vec<(String, Vec<u8>)>,
     doc: &Document,
 ) -> Result<(), String> {
-    let (controls, people) = (&doc.controls, &doc.people);
+    let (controls, people, colours) = (&doc.controls, &doc.people, &colours_of(doc));
     let (tag, file, rel) = if foot { ("footnote", "footnotes.xml", "footnotes") } else { ("endnote", "endnotes.xml", "endnotes") };
     let ns = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships""#;
     let empty = format!(
@@ -1533,7 +1650,7 @@ fn new_notes_part(
     // Word's separator notes, or those set since reading
     let sep = |id: i64, kind: &str| -> Result<String, String> {
         let body = match doc.separators.get(&format!("{tag}:{kind}")) {
-            Some(b) => new_blocks_xml(&empty, b, controls, people)?,
+            Some(b) => new_blocks_xml(&empty, b, controls, people, colours)?,
             None => format!(r#"<w:p><w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:r><w:{kind}/></w:r></w:p>"#),
         };
         Ok(format!(r#"<w:{tag} w:type="{kind}" w:id="{id}">{body}</w:{tag}>"#))
@@ -1552,7 +1669,7 @@ fn new_notes_part(
     ids.sort();
     let mut body = String::new();
     for id in ids {
-        body.push_str(&format!(r#"<w:{tag} w:id="{id}">{}</w:{tag}>"#, new_blocks_xml(&shell, &notes[id], controls, people)?));
+        body.push_str(&format!(r#"<w:{tag} w:id="{id}">{}</w:{tag}>"#, new_blocks_xml(&shell, &notes[id], controls, people, colours)?));
     }
     let end = shell.rfind("</").ok_or("notes shell")?;
     let xml = format!("{}{body}{}", &shell[..end], &shell[end..]);
@@ -1596,8 +1713,9 @@ fn notes_xml(
     lists: &[(&[Block], &[Block])],
     e: &NoteEdits,
     doc: &Document,
+    src: &Source,
 ) -> Result<(Option<String>, Vec<(i64, bool)>), String> {
-    let (controls, gone, people) = (&doc.controls, &gone_controls(doc), &doc.people);
+    let (controls, gone, people, colours) = (&doc.controls, &gone_controls(doc, src), &doc.people, &colours_of(doc));
     let tag = e.tag;
     let dom = roxmltree::Document::parse(xml).map_err(|e| e.to_string())?;
     let root = dom.root_element();
@@ -1614,7 +1732,7 @@ fn notes_xml(
     }
     let mut text = String::new();
     for (id, blocks) in e.added {
-        let body = new_blocks_xml(xml, blocks, controls, people)?;
+        let body = new_blocks_xml(xml, blocks, controls, people, colours)?;
         text.push_str(&format!("<{w}{tag} {w}id=\"{id}\">{body}</{w}{tag}>"));
     }
     // Separator stories: in place, else as a new note under a negative id no other note has
@@ -1635,7 +1753,7 @@ fn notes_xml(
         match (had, blocks) {
             (Some(n), Some(b)) => {
                 let id = id_of(n).unwrap_or_else(&mut free);
-                let body = new_blocks_xml(xml, b, controls, people)?;
+                let body = new_blocks_xml(xml, b, controls, people, colours)?;
                 splices.push((n.range(), format!("<{w}{tag} {w}type=\"{t}\" {w}id=\"{id}\">{body}</{w}{tag}>")));
                 listing.push((id, true));
                 // The type's other listed stories go: only this one is listed
@@ -1656,7 +1774,7 @@ fn notes_xml(
                 }
             }
             (None, Some(b)) => {
-                let body = new_blocks_xml(xml, b, controls, people)?;
+                let body = new_blocks_xml(xml, b, controls, people, colours)?;
                 let id = free();
                 text.push_str(&format!("<{w}{tag} {w}type=\"{t}\" {w}id=\"{id}\">{body}</{w}{tag}>"));
                 listing.push((id, true));
@@ -1676,7 +1794,7 @@ fn notes_xml(
     }
     // One pass: the kept notes' edits and these whole-note splices never overlap (removed notes and separators
     // aren't in `lists`).
-    Ok((part_xml_with(xml, inner, lists, &splices, &SectionEdits::default(), controls, gone, people)?, listing))
+    Ok((part_xml_with(xml, inner, lists, &splices, &SectionEdits::default(), controls, gone, people, colours)?, listing))
 }
 
 /// The settings' list of the notes `tag` separator notes (`w:footnotePr/w:footnote`) with `listing`'s changes: each
@@ -1748,18 +1866,29 @@ fn list_notes(doc: &Document, src: &Source, parts: &mut Vec<(String, Vec<u8>)>, 
 }
 
 /// The controls read that the document no longer has (removed, or emptied of every member).
-fn gone_controls(doc: &Document) -> Vec<Control> {
-    doc.source.as_ref().map_or(Vec::new(), |s| s.controls.iter().filter(|(id, _)| !doc.controls.contains_key(id)).map(|(_, c)| c.clone()).collect())
+fn gone_controls(doc: &Document, src: &Source) -> Vec<Control> {
+    src.controls.iter().filter(|(id, _)| !doc.controls.contains_key(id)).map(|(_, c)| c.clone()).collect()
+}
+
+/// The theme colours `doc`'s styles resolve with.
+pub(super) fn colours_of(doc: &Document) -> ThemeColours {
+    doc.definitions.as_deref().map_or_else(ThemeColours::default, |r| r.cascade().colours)
 }
 
 /// Blocks with no source written from the model, for a part (new notes).
-fn new_blocks_xml(xml: &str, blocks: &[Block], controls: &HashMap<ControlId, Control>, people: &People) -> Result<String, String> {
+fn new_blocks_xml(
+    xml: &str,
+    blocks: &[Block],
+    controls: &HashMap<ControlId, Control>,
+    people: &People,
+    colours: &ThemeColours,
+) -> Result<String, String> {
     let dom = roxmltree::Document::parse(xml).map_err(|e| e.to_string())?;
     let w = match dom.root_element().lookup_prefix(W) {
         Some(p) if !p.is_empty() => format!("{p}:"),
         _ => String::new(),
     };
-    blocks_in(xml, w, blocks, controls, people, Default::default())
+    blocks_in(xml, w, blocks, controls, people, colours, Default::default())
 }
 
 /// Blocks with no source written from the model, for a part (its WordprocessingML prefix `w`), with bookmark ids
@@ -1770,6 +1899,7 @@ fn blocks_in(
     blocks: &[Block],
     controls: &HashMap<ControlId, Control>,
     people: &People,
+    colours: &ThemeColours,
     bookmarks: Bookmarks,
 ) -> Result<String, String> {
     let made = HashMap::new();
@@ -1785,6 +1915,7 @@ fn blocks_in(
         controls: controls.clone(),
         ids: std::cell::Cell::new(DRAWING_IDS),
         people,
+        colours: *colours,
         dropped: &[],
         made: &made,
         bookmarks,
@@ -1868,10 +1999,10 @@ fn filled(el: &str, text: &str) -> Option<String> {
 }
 
 /// Takes the paragraphs the reader made to close their story out of `qs`, with the place of the last
-/// ([`ParaSrc::closing`]).
+/// (`ParaSrc::closing`).
 fn take_closing(qs: &mut Vec<&Paragraph>) -> Option<Range<usize>> {
     let mut at = None;
-    qs.retain(|q| match q.src.as_deref() {
+    qs.retain(|q| match q.src() {
         Some(s) if s.closing => {
             at = s.ranges.first().cloned();
             false
@@ -1882,10 +2013,10 @@ fn take_closing(qs: &mut Vec<&Paragraph>) -> Option<Range<usize>> {
 }
 
 /// The main part's XML after the edits; `None` when nothing changed.
-pub fn main_xml(doc: &Document) -> Result<Option<String>, String> {
+pub fn main_xml(doc: &Document, session: &Session) -> Result<Option<String>, String> {
     use std::borrow::Cow;
-    let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
-    let sources = if doc.section_sources.is_empty() { vec![1; doc.sections.len()] } else { doc.section_sources.clone() };
+    let src = session.source.as_ref().ok_or("the document was not read for editing")?;
+    let sources = if session.section_sources.is_empty() { vec![1; doc.sections.len()] } else { session.section_sources.clone() };
     if sources.len() != doc.sections.len() || sources.iter().sum::<usize>() != src.blocks.len() || sources.last() == Some(&0) {
         return Err("the sections don't match the source's".into());
     }
@@ -1898,6 +2029,7 @@ pub fn main_xml(doc: &Document) -> Result<Option<String>, String> {
         (section_props(&dom), w)
     };
     let sect = |k: usize| sects.get(k).cloned().ok_or("a section without its sectPr");
+    let (cx, colours) = (Cx::of_xml(&src.xml), colours_of(doc));
     // A section holding several as read (their breaks deleted) is compared with their blocks together, and the
     // `w:sectPr`s of the breaks deleted go. A section made since reading is compared with the one after it, its last
     // paragraph taking a `w:sectPr` made from that one's as read.
@@ -1926,7 +2058,8 @@ pub fn main_xml(doc: &Document) -> Result<Option<String>, String> {
             for j in made.drain(..) {
                 let new = &doc.sections[j];
                 let Some(Block::Para(last)) = new.blocks.last() else { return Err("a new section that doesn't end in a paragraph".into()) };
-                edits.made.insert(last.id, sect_with_page(base, &w, &new.page(), s.read.as_deref(), None, &doc.people));
+                let page = SectPage { page: &new.page(), was: s.read_page(), grid: None };
+                edits.made.insert(last.id, sect_with_page(base, &w, page, None, &doc.people, &cx, &colours));
                 blocks.extend(new.blocks.iter().cloned());
             }
             blocks.extend(s.blocks.iter().cloned());
@@ -1936,7 +2069,7 @@ pub fn main_xml(doc: &Document) -> Result<Option<String>, String> {
     }
     let lists: Vec<(&[Block], &[Block])> = orig.iter().zip(&now).map(|(a, b)| (a.as_ref(), b.as_ref())).collect();
     let (o, n): (Vec<&[Block]>, Vec<&[Block]>) = lists.iter().copied().unzip();
-    part_xml_with(&src.xml, &boxes(&o, &n), &lists, &[], &edits, &doc.controls, &gone_controls(doc), &doc.people)
+    part_xml_with(&src.xml, &boxes(&o, &n), &lists, &[], &edits, &doc.controls, &gone_controls(doc, src), &doc.people, &colours_of(doc))
 }
 
 /// A part's XML with its block lists (as read, now) written back; `None` when none changed.
@@ -1947,8 +2080,9 @@ fn part_xml(
     controls: &HashMap<ControlId, Control>,
     gone: &[Control],
     people: &People,
+    colours: &ThemeColours,
 ) -> Result<Option<String>, String> {
-    part_xml_with(xml, inner, lists, &[], &SectionEdits::default(), controls, gone, people)
+    part_xml_with(xml, inner, lists, &[], &SectionEdits::default(), controls, gone, people, colours)
 }
 
 /// [`part_xml`] with `extra` splices of the original part added (whole notes in and out), and the section breaks
@@ -1963,6 +2097,7 @@ fn part_xml_with<'a>(
     controls: &HashMap<ControlId, Control>,
     gone: &[Control],
     people: &'a People,
+    colours: &ThemeColours,
 ) -> Result<Option<String>, String> {
     let dom = roxmltree::Document::parse(xml).map_err(|e| e.to_string())?;
     let paras = dom.descendants().filter(|n| is_w(*n, "p")).map(|n| (n.range().start, n)).collect();
@@ -1977,7 +2112,7 @@ fn part_xml_with<'a>(
                 Block::Para(p) => {
                     for i in &p.inlines {
                         if let Inline::Float(f, _) = i {
-                            if let Some(r) = &f.src {
+                            if let Some(r) = f.src() {
                                 out.insert(f.id, (r.clone(), (**f).clone()));
                             }
                             if let Some(tb) = &f.text_box {
@@ -2004,6 +2139,7 @@ fn part_xml_with<'a>(
         controls: controls.clone(),
         ids: std::cell::Cell::new(DRAWING_IDS),
         people,
+        colours: *colours,
         dropped: &sections.dropped,
         made: &sections.made,
         bookmarks: Default::default(),
@@ -2080,8 +2216,10 @@ pub fn repackage_without(package: &[u8], parts: &[(String, Vec<u8>)], removed: &
             None => zout.raw_copy_file(f).map_err(err)?,
         }
     }
-    for (k, (name, bytes)) in parts.iter().enumerate().filter(|(k, _)| !done[*k]) {
-        let _ = k;
+    // New parts by name, so the package's bytes don't depend on the order they were gathered in.
+    let mut added: Vec<&(String, Vec<u8>)> = parts.iter().zip(&done).filter(|(_, d)| !**d).map(|(p, _)| p).collect();
+    added.sort_by(|a, b| a.0.cmp(&b.0));
+    for (name, bytes) in added {
         zout.start_file(name.as_str(), opts).map_err(err)?;
         zout.write_all(bytes).map_err(|e| e.to_string())?;
     }
@@ -2112,6 +2250,8 @@ struct Saver<'a, 'i> {
     ids: std::cell::Cell<u32>,
     /// Who made the revisions written (their names as `w:author`).
     people: &'a People,
+    /// The theme's colours: a theme colour's value is written as they resolve it.
+    colours: ThemeColours,
     /// The `w:sectPr`s of section breaks deleted: a paragraph written again doesn't keep one.
     dropped: &'a [Range<usize>],
     /// The `w:sectPr`s new sections' last paragraphs take, by paragraph id.
@@ -2127,15 +2267,15 @@ type Bookmarks = Rc<std::cell::RefCell<Option<HashMap<String, i64>>>>;
 
 fn block_src(b: &Block) -> Option<*const ()> {
     match b {
-        Block::Para(p) => p.src.as_ref().map(|s| Rc::as_ptr(s) as *const ()),
-        Block::Table(t) => t.src.as_ref().map(|s| Rc::as_ptr(s) as *const ()),
+        Block::Para(p) => p.src().map(|s| s as *const ParaSrc as *const ()),
+        Block::Table(t) => t.src().map(|s| s as *const Range<usize> as *const ()),
     }
 }
 
 fn block_range(b: &Block) -> Option<Range<usize>> {
     match b {
-        Block::Para(p) => p.src.as_ref().map(|s| s.ranges[0].start..s.ranges.last().unwrap().end),
-        Block::Table(t) => t.src.as_deref().cloned(),
+        Block::Para(p) => p.src().map(|s| s.ranges[0].start..s.ranges.last().unwrap().end),
+        Block::Table(t) => t.src().cloned(),
     }
 }
 
@@ -2151,10 +2291,10 @@ impl<'a, 'i> Saver<'a, 'i> {
         let inline = |at: usize| self.paras.values().any(|n| n.range().start < at && at < n.range().end);
         let free = |r: &Range<usize>| !self.splices.iter().any(|(x, _)| x.start < r.end && r.start < x.end);
         for c in gone {
-            let Some((a, b)) = c.at else { continue };
-            let (open, close) = (a..a + c.open.len(), b..b + c.close.len());
-            if self.xml.get(open.clone()) == Some(c.open.as_str())
-                && self.xml.get(close.clone()) == Some(c.close.as_str())
+            let Some((a, b)) = c.at() else { continue };
+            let (open, close) = (a..a + c.open().len(), b..b + c.close().len());
+            if self.xml.get(open.clone()) == Some(c.open())
+                && self.xml.get(close.clone()) == Some(c.close())
                 && !inline(a)
                 && free(&open)
                 && free(&close)
@@ -2164,9 +2304,9 @@ impl<'a, 'i> Saver<'a, 'i> {
             }
         }
         for (id, c) in &self.controls {
-            let Some((at, _)) = c.at else { continue };
-            let r = at..at + c.open.len();
-            if c.as_read() || self.xml.get(r.clone()) != Some(c.open.as_str()) {
+            let Some((at, _)) = c.at() else { continue };
+            let r = at..at + c.open().len();
+            if c.as_read() || self.xml.get(r.clone()) != Some(c.open()) {
                 continue;
             }
             let inline = self.paras.values().any(|n| n.range().start < at && at < n.range().end);
@@ -2183,7 +2323,9 @@ impl<'a, 'i> Saver<'a, 'i> {
         p.inlines.iter().any(|i| match i {
             Inline::ControlStart(c) | Inline::Sym { control: Some(c), .. } => self.controls.get(c).is_some_and(|k| !k.as_read()),
             // A floating picture control is written without the fallback copy beside it.
-            Inline::Float(f, _) => f.picture_control(&self.controls).is_some() && f.src.clone().is_some_and(|r| self.alternate_content(r).is_some()),
+            Inline::Float(f, _) => {
+                f.picture_control(&self.controls).is_some() && f.src().cloned().is_some_and(|r| self.alternate_content(r).is_some())
+            }
             _ => false,
         })
     }
@@ -2197,7 +2339,7 @@ impl<'a, 'i> Saver<'a, 'i> {
         // shortcut: a table among them still starts a group of its own (the control is written once per group).
         let new_ctl = |b: &Block| -> Vec<ControlId> {
             match b {
-                Block::Para(p) => p.controls.iter().copied().filter(|c| self.controls.get(c).is_some_and(|k| k.open.is_empty())).collect(),
+                Block::Para(p) => p.controls.iter().copied().filter(|c| self.controls.get(c).is_some_and(|k| k.open().is_empty())).collect(),
                 Block::Table(_) => Vec::new(),
             }
         };
@@ -2229,62 +2371,42 @@ impl<'a, 'i> Saver<'a, 'i> {
             && block_src(&q[0]) == block_src(&p[0])
         {
             self.table(a, b)?;
-            return self.paragraphs(&q[1..], &p[1..], a.src.as_ref().map(|r| r.end));
+            return self.paragraphs(&q[1..], &p[1..], a.src().map(|r| r.end));
         }
         self.paragraphs(q, p, at)
     }
 
     /// The table's own default cell margins, as its properties hold them.
     fn direct_cell_margins(&self, t: &Table) -> Option<String> {
-        Props::parse(t.direct.0.as_deref(), "tblPr", &self.cx).get("tblCellMar").map(str::to_string)
+        Props::parse(t.direct.xml(&self.colours, &self.cx).as_deref(), "tblPr", &self.cx).get("tblCellMar").map(str::to_string)
     }
 
     /// A table's own `w:shd` as written in its `w:tblPr` (not its style's).
     fn direct_shd(&self, t: &Table) -> Option<String> {
-        Props::parse(t.direct.0.as_deref(), "tblPr", &self.cx).get("shd").map(str::to_string)
+        Props::parse(t.direct.xml(&self.colours, &self.cx).as_deref(), "tblPr", &self.cx).get("shd").map(str::to_string)
     }
 
     /// A table's own band sizes as written in its `w:tblPr` (not its style's).
     fn direct_bands(&self, t: &Table) -> [Option<String>; 2] {
-        let p = Props::parse(t.direct.0.as_deref(), "tblPr", &self.cx);
+        let p = Props::parse(t.direct.xml(&self.colours, &self.cx).as_deref(), "tblPr", &self.cx);
         ["tblStyleRowBandSize", "tblStyleColBandSize"].map(|n| p.get(n).map(str::to_string))
     }
 
     fn table(&mut self, a: &Table, b: &Table) -> Result<(), String> {
         let same_rows = a.rows.len() == b.rows.len()
             && a.rows.iter().zip(&b.rows).all(|(x, y)| {
-                x.cells.len() == y.cells.len()
+                x.authored_eq(y)
                     && x.controls == y.controls
                     && x.cells.iter().zip(&y.cells).all(|(c, d)| c.controls == d.controls)
-                    && same_src(&x.src, &y.src)
-                    && x.height == y.height
-                    && (x.header, x.cant_split, x.hidden, x.jc) == (y.header, y.cant_split, y.hidden, y.jc)
-                    && (&x.direct.0, &x.exceptions.0) == (&y.direct.0, &y.exceptions.0)
-                    && (x.grid_before, x.grid_after) == (y.grid_before, y.grid_after)
-                    && x.rev == y.rev
-                    && x.cells.iter().zip(&y.cells).all(|(c, d)| {
-                        c.width == d.width
-                            && c.span == d.span
-                            && c.direct.0 == d.direct.0
-                            && c.v_merge == d.v_merge
-                            && c.rev == d.rev
-                            && c.ids == d.ids
-                    })
+                    && same_src(x.src(), y.src())
+                    && (x.hidden, x.jc) == (y.hidden, y.jc)
             })
-            && a.grid == b.grid
-            && (&a.change, &a.grid_change) == (&b.change, &b.grid_change)
-            && a.width == b.width
-            && (a.cell_spacing, &a.alt) == (b.cell_spacing, &b.alt)
-            && self.direct_shd(a) == self.direct_shd(b)
-            && self.direct_bands(a) == self.direct_bands(b)
-            && self.direct_cell_margins(a) == self.direct_cell_margins(b)
-            && (&a.style_id, a.look, a.jc, a.ind, a.ind_pct, a.floating) == (&b.style_id, b.look, b.jc, b.ind, b.ind_pct, b.floating)
-            && (a.fixed, a.cell_spacing, &a.alt) == (b.fixed, b.cell_spacing, &b.alt);
+            && a.authored_eq(b);
         // Tables read as one (nothing between them) are written as one.
-        let joined = a.src.as_ref().is_some_and(|r| self.tables.get(&r.start).is_some_and(|n| n.range().end != r.end));
+        let joined = a.src().is_some_and(|r| self.tables.get(&r.start).is_some_and(|n| n.range().end != r.end));
         if !same_rows || joined {
             // Rows or cells came or went: the table is written again, its kept rows from their source.
-            let range = (**a.src.as_ref().ok_or("a table without its source")?).clone();
+            let range = a.src().ok_or("a table without its source")?.clone();
             let text = self.table_xml(Some(a), b)?;
             self.splices.push((range, text));
             return Ok(());
@@ -2305,7 +2427,7 @@ impl<'a, 'i> Saver<'a, 'i> {
             match b {
                 Block::Para(x) => qs.push(x),
                 Block::Table(t) => {
-                    let r = (**t.src.as_ref().ok_or("a table without its source")?).clone();
+                    let r = t.src().ok_or("a table without its source")?.clone();
                     at = Some(at.map_or(r.start, |a| a.min(r.start)));
                     self.splices.push((r, String::new()));
                 }
@@ -2339,7 +2461,7 @@ impl<'a, 'i> Saver<'a, 'i> {
         for q in &qs {
             for i in &q.inlines {
                 if let Inline::Float(f, _) = i
-                    && let Some(r) = &f.frame_src
+                    && let Some(r) = f.frame_src()
                     && !kept.contains(&f.id)
                 {
                     self.splices.push((r.clone(), String::new()));
@@ -2347,7 +2469,7 @@ impl<'a, 'i> Saver<'a, 'i> {
             }
         }
         let closing = take_closing(&mut qs);
-        let srcs: Vec<&ParaSrc> = qs.iter().map(|x| x.src.as_deref().ok_or("a paragraph without its source")).collect::<Result<_, _>>()?;
+        let srcs: Vec<&ParaSrc> = qs.iter().map(|x| x.src().ok_or("a paragraph without its source")).collect::<Result<_, _>>()?;
         if ps.is_empty() {
             // Every paragraph of the group went (with the blocks around them).
             for r in srcs.iter().flat_map(|s| s.ranges.iter()) {
@@ -2404,7 +2526,7 @@ impl<'a, 'i> Saver<'a, 'i> {
             .collect();
         let block = |n: &Node| is_w(*n, "p") || is_w(*n, "tbl") || is_w(*n, "sdt") || is_w(*n, "customXml") || is(*n, MC, "AlternateContent");
         let mut gone = Vec::new();
-        for s in qs.iter().filter_map(|q| q.src.as_ref()) {
+        for s in qs.iter().filter_map(|q| q.src()) {
             let first = s.ranges.first().and_then(|r| self.paras.get(&r.start)).copied();
             let last = s.ranges.last().and_then(|r| self.paras.get(&r.start)).copied();
             let before = first.into_iter().flat_map(|n| n.prev_siblings().skip(1).filter(Node::is_element).take_while(|n| !block(n)));
@@ -2431,10 +2553,10 @@ impl<'a, 'i> Saver<'a, 'i> {
     /// read, its placeholder taken out of `ps`.
     fn take_chunks(&mut self, qs: &mut Vec<&Paragraph>, mut ps: Option<&mut Vec<&Paragraph>>) -> Option<Range<usize>> {
         let mut chunks = Vec::new();
-        qs.retain(|q| match q.src.as_ref().filter(|s| !s.closing).and_then(|s| Some((s, s.ranges.first()?))) {
+        qs.retain(|q| match q.src().filter(|s| !s.closing).and_then(|s| Some((s, s.ranges.first()?))) {
             Some((s, r)) if !self.paras.contains_key(&r.start) => {
                 let held = ps.as_deref_mut().and_then(|ps| {
-                    let k = ps.iter().position(|x| x.inlines.is_empty() && x.src.as_ref().is_some_and(|x| Rc::ptr_eq(x, s)))?;
+                    let k = ps.iter().position(|x| x.inlines.is_empty() && x.src().is_some_and(|x| std::ptr::eq(x, s)))?;
                     Some(ps.remove(k))
                 });
                 if held.is_none() {
@@ -2496,9 +2618,8 @@ impl<'a, 'i> Saver<'a, 'i> {
                 Block::Table(_) => runs.push(Vec::new()),
             }
         }
-        let run_of = |q: &Paragraph| {
-            runs.iter().position(|r| r.iter().any(|x| x.src.as_ref().zip(q.src.as_ref()).is_some_and(|(a, b)| Rc::ptr_eq(a, b)))).unwrap_or(0)
-        };
+        let run_of =
+            |q: &Paragraph| runs.iter().position(|r| r.iter().any(|x| x.src().zip(q.src()).is_some_and(|(a, b)| std::ptr::eq(a, b)))).unwrap_or(0);
         let mut text = String::new();
         let mut k = 0;
         for b in p.iter().map(Some).chain(std::iter::once(None)) {
@@ -2506,8 +2627,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                 Some(Block::Para(_)) => continue,
                 _ => {
                     let mine: Vec<&Paragraph> = qs.iter().copied().filter(|q| run_of(q) == k).collect();
-                    let srcs: Vec<&ParaSrc> =
-                        mine.iter().map(|x| x.src.as_deref().ok_or("a paragraph without its source")).collect::<Result<_, _>>()?;
+                    let srcs: Vec<&ParaSrc> = mine.iter().map(|x| x.src().ok_or("a paragraph without its source")).collect::<Result<_, _>>()?;
                     if !runs[k].is_empty() || !mine.is_empty() {
                         text.push_str(&emit(self, &mine, &srcs, &runs[k])?);
                     }
@@ -2517,7 +2637,7 @@ impl<'a, 'i> Saver<'a, 'i> {
             if let Some(Block::Table(t)) = b {
                 // shortcut: a new table's new block controls wrap it alone, not the paragraphs around it with it.
                 let new: Vec<(ControlId, &Control)> =
-                    t.controls.iter().filter_map(|c| self.controls.get(c).filter(|k| k.open.is_empty()).map(|k| (*c, k))).collect();
+                    t.controls.iter().filter_map(|c| self.controls.get(c).filter(|k| k.open().is_empty()).map(|k| (*c, k))).collect();
                 let opens: String = new.iter().map(|(id, c)| control_open(&self.w, *id, c)).collect();
                 let closes: String = new.iter().rev().map(|(_, c)| control_close(&self.w, c)).collect();
                 text.push_str(&opens);
@@ -2525,7 +2645,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                 text.push_str(&closes);
             }
         }
-        let mut ranges = qs.iter().filter_map(|q| q.src.as_ref()).flat_map(|s| s.ranges.iter().cloned());
+        let mut ranges = qs.iter().filter_map(|q| q.src()).flat_map(|s| s.ranges.iter().cloned());
         match ranges.next() {
             Some(first) => {
                 self.splices.push((first, text));
@@ -2543,7 +2663,7 @@ impl<'a, 'i> Saver<'a, 'i> {
     /// paragraphs from their sources where they have one.
     fn table_xml(&mut self, orig: Option<&Table>, t: &Table) -> Result<String, String> {
         let w = self.w.clone();
-        let node = orig.and_then(|a| a.src.as_ref()).and_then(|r| self.tables.get(&r.start).copied());
+        let node = orig.and_then(|a| a.src()).and_then(|r| self.tables.get(&r.start).copied());
         let mut out = String::new();
         let close = match node {
             Some(n) => {
@@ -2628,7 +2748,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                             fix.push(("tblLook", tag, before("tblLook")));
                         }
                         if a.change != t.change {
-                            let tag = t.change.as_ref().map_or(String::new(), |c| revisions::table_change(&w, "tblPrChange", "tblPr", c, self.people));
+                            let tag = t.change.as_ref().map_or(String::new(), |c| revisions::table_change(&w, "tblPrChange", "tblPr", c, &self.colours, &self.cx, self.people));
                             fix.push(("tblPrChange", tag, before("tblPrChange")));
                         }
                         // One rewrite of them all: a self-closing `w:tblPr` is rewritten whole, in schema order.
@@ -2637,14 +2757,23 @@ impl<'a, 'i> Saver<'a, 'i> {
                         if fix.is_empty() { self.xml[p.range()].to_string() } else { self.spliced(p.range(), fix)? }
                     }
                     (Some(p), None) => self.xml[p.range()].to_string(),
-                    (None, _) => tbl_pr(&w, t, self.direct_shd(t).as_deref(), &self.direct_bands(t), self.direct_cell_margins(t).as_deref(), self.people),
+                    (None, _) => tbl_pr(&w, t, self.direct_shd(t).as_deref(), &self.direct_bands(t), self.direct_cell_margins(t).as_deref(), self.people, &self.colours, &self.cx),
                 });
                 close
             }
             None => {
                 out.push_str(&format!("<{w}tbl>"));
                 let shd = self.direct_shd(t);
-                out.push_str(&tbl_pr(&w, t, shd.as_deref(), &self.direct_bands(t), self.direct_cell_margins(t).as_deref(), self.people));
+                out.push_str(&tbl_pr(
+                    &w,
+                    t,
+                    shd.as_deref(),
+                    &self.direct_bands(t),
+                    self.direct_cell_margins(t).as_deref(),
+                    self.people,
+                    &self.colours,
+                    &self.cx,
+                ));
                 format!("</{w}tbl>")
             }
         };
@@ -2661,7 +2790,7 @@ impl<'a, 'i> Saver<'a, 'i> {
         // What the source tables (those read as one) hold between their rows besides rows: bookmarks, permissions and
         // the like, written again before the kept row they came before.
         let mut loose: Vec<Range<usize>> = Vec::new();
-        if let (Some(n), Some(end)) = (node, orig.and_then(|a| a.src.as_ref()).map(|r| r.end)) {
+        if let (Some(n), Some(end)) = (node, orig.and_then(|a| a.src()).map(|r| r.end)) {
             let tables = std::iter::successors(Some(n), |t| t.next_sibling_element()).take_while(|t| is_w(*t, "tbl") && t.range().end <= end);
             for tbl in tables {
                 self.loose(tbl, &["tblPr", "tblGrid", "tr"], &|_| true, &mut loose);
@@ -2694,11 +2823,11 @@ impl<'a, 'i> Saver<'a, 'i> {
             }
         };
         for row in &t.rows {
-            let kept = row.src.as_ref().and_then(|r| old_rows.iter().find(|o| o.src.as_ref().is_some_and(|s| Rc::ptr_eq(s, r))).copied());
+            let kept = row.src().and_then(|r| old_rows.iter().find(|o| o.src().is_some_and(|s| std::ptr::eq(s, r))).copied());
             // The source row it was read as (by its cells' paragraphs when a structural edit made it again), its
             // markup written once.
             let from = kept
-                .and_then(|k| k.src.as_ref())
+                .and_then(|k| k.src())
                 .and_then(|r| self.tables.get(&r.start).copied())
                 .or_else(|| row.cells.iter().find_map(|c| self.cell_node(c)).and_then(|tc| tc.ancestors().skip(1).find(|a| is_w(*a, "tr"))));
             let from = from.filter(|tr| rows_seen.insert(tr.range().start));
@@ -2709,7 +2838,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                 }
             }
             wrap(&mut out, &row.controls, &mut open, self);
-            let row_node = kept.and_then(|k| k.src.as_ref()).and_then(|r| self.tables.get(&r.start).copied());
+            let row_node = kept.and_then(|k| k.src()).and_then(|r| self.tables.get(&r.start).copied());
             match (kept, row_node) {
                 (Some(k), Some(n)) if k.cells.len() == row.cells.len() => {
                     let outer = std::mem::take(&mut self.splices);
@@ -2745,7 +2874,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                         }
                         wrap(&mut out, &c.controls, &mut cells_open, self);
                         let id = c.ids.as_ref().and_then(|i| i.id.as_deref()).map(|id| format!(" {w}id=\"{}\"", props::esc(id))).unwrap_or_default();
-                        out.push_str(&format!("<{w}tc{id}>{}", tc_pr(&w, c, self.people, &self.cx)));
+                        out.push_str(&format!("<{w}tc{id}>{}", tc_pr(&w, c, self.people, &self.colours, &self.cx)));
                         let mut cell_loose = Vec::new();
                         if let Some(tc) = tc {
                             let mut paras = Vec::new();
@@ -2789,9 +2918,9 @@ impl<'a, 'i> Saver<'a, 'i> {
         controls
             .iter()
             .take_while(|id| {
-                self.controls.get(id).is_some_and(|c| {
-                    c.at.is_some_and(|(a, b)| a < r.start && r.end <= b && self.xml.get(a..a + c.open.len()) == Some(c.open.as_str()))
-                })
+                self.controls
+                    .get(id)
+                    .is_some_and(|c| c.at().is_some_and(|(a, b)| a < r.start && r.end <= b && self.xml.get(a..a + c.open().len()) == Some(c.open())))
             })
             .count()
     }
@@ -2800,8 +2929,8 @@ impl<'a, 'i> Saver<'a, 'i> {
     fn cell_node(&self, c: &Cell) -> Option<Node<'a, 'i>> {
         fn first(blocks: &[Block]) -> Option<usize> {
             blocks.iter().find_map(|b| match b {
-                Block::Para(p) => p.src.as_ref().map(|s| s.ranges[0].start),
-                Block::Table(t) => t.src.as_ref().map(|r| r.start),
+                Block::Para(p) => p.src().map(|s| s.ranges[0].start),
+                Block::Table(t) => t.src().map(|r| r.start),
             })
         }
         let at = first(&c.blocks)?;
@@ -2832,13 +2961,10 @@ impl<'a, 'i> Saver<'a, 'i> {
     /// A marker's key: a bookmark's start (0) or end (1) by its id in the part, a comment's or move's range by its
     /// kind and id. A start's and its end's differ in the lowest bit only.
     fn mark_key(&self, i: &Inline) -> Option<(u8, i64)> {
-        match i {
-            Inline::Bookmark(n) => {
-                let (name, end) = n.strip_prefix('/').map_or((n.as_str(), false), |n| (n, true));
-                Some((u8::from(end), self.bookmark_id(name)))
-            }
-            Inline::Range(r) => Some((2 + r.kind as u8, r.id)),
-            _ => None,
+        let Inline::Range(r) = i else { return None };
+        match r.bookmark() {
+            Some((name, start)) => Some((u8::from(!start), self.bookmark_id(name))),
+            None => r.is_review().then_some((2 + r.kind as u8, r.id)),
         }
     }
 
@@ -2874,9 +3000,9 @@ impl<'a, 'i> Saver<'a, 'i> {
     fn carriers<'p>(&self, paras: impl Iterator<Item = &'p Paragraph>) -> HashMap<(u8, i64), *const ParaSrc> {
         let mut out = HashMap::new();
         for q in paras {
-            let Some(s) = &q.src else { continue };
+            let Some(s) = q.src() else { continue };
             for k in q.inlines.iter().filter_map(|i| self.mark_key(i)) {
-                out.insert(k, Rc::as_ptr(s));
+                out.insert(k, s as *const ParaSrc);
             }
         }
         out
@@ -2892,8 +3018,8 @@ impl<'a, 'i> Saver<'a, 'i> {
     ) -> std::collections::HashSet<(u8, i64)> {
         let mut out = std::collections::HashSet::new();
         for p in paras {
-            let Some(s) = &p.src else { continue };
-            out.extend(p.inlines.iter().filter_map(|i| self.mark_key(i)).filter(|k| carriers.get(k) == Some(&Rc::as_ptr(s))));
+            let Some(s) = p.src() else { continue };
+            out.extend(p.inlines.iter().filter_map(|i| self.mark_key(i)).filter(|k| carriers.get(k) == Some(&(s as *const ParaSrc))));
         }
         out
     }
@@ -2902,16 +3028,16 @@ impl<'a, 'i> Saver<'a, 'i> {
     /// as [`Saver::table_xml`]; each in the block-level controls read around it (tables in their new ones too), and
     /// `loose` (the source markup between the blocks, in order) before the block it came before.
     fn blocks_xml(&mut self, orig: Option<&Table>, blocks: &[Block], loose: &[Range<usize>]) -> Result<String, String> {
-        fn find<'t>(blocks: &'t [Block], src: &Rc<ParaSrc>) -> Option<&'t Paragraph> {
+        fn find<'t>(blocks: &'t [Block], src: &ParaSrc) -> Option<&'t Paragraph> {
             blocks.iter().find_map(|b| match b {
-                Block::Para(p) => p.src.as_ref().is_some_and(|s| Rc::ptr_eq(s, src)).then_some(p),
+                Block::Para(p) => p.src().is_some_and(|s| std::ptr::eq(s, src)).then_some(p),
                 Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).find_map(|c| find(&c.blocks, src)),
             })
         }
-        fn find_table<'t>(blocks: &'t [Block], src: &Rc<Range<usize>>) -> Option<&'t Table> {
+        fn find_table<'t>(blocks: &'t [Block], src: &Range<usize>) -> Option<&'t Table> {
             blocks.iter().find_map(|b| match b {
                 Block::Para(_) => None,
-                Block::Table(t) if t.src.as_ref().is_some_and(|s| Rc::ptr_eq(s, src)) => Some(t),
+                Block::Table(t) if t.src().is_some_and(|s| std::ptr::eq(s, src)) => Some(t),
                 Block::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).find_map(|c| find_table(&c.blocks, src)),
             })
         }
@@ -2925,11 +3051,11 @@ impl<'a, 'i> Saver<'a, 'i> {
         let mut open: Vec<ControlId> = Vec::new();
         for b in blocks {
             let (controls, at) = match b {
-                Block::Para(p) => (&p.controls, p.src.as_ref().map(|s| s.ranges[0].start)),
-                Block::Table(t) => (&t.controls, t.src.as_ref().map(|r| r.start)),
+                Block::Para(p) => (&p.controls, p.src().map(|s| s.ranges[0].start)),
+                Block::Table(t) => (&t.controls, t.src().map(|r| r.start)),
             };
             let want: Vec<ControlId> = match b {
-                Block::Para(_) => controls.iter().copied().filter(|c| self.controls.get(c).is_some_and(|k| !k.open.is_empty())).collect(),
+                Block::Para(_) => controls.iter().copied().filter(|c| self.controls.get(c).is_some_and(|k| !k.open().is_empty())).collect(),
                 Block::Table(_) => controls.clone(),
             };
             let keep = open.iter().zip(&want).take_while(|(a, b)| a == b).count();
@@ -2950,17 +3076,17 @@ impl<'a, 'i> Saver<'a, 'i> {
                 open.push(*c);
             }
             match b {
-                Block::Para(p) => match p.src.as_ref().and_then(|s| cells().find_map(|c| find(&c.blocks, s))) {
+                Block::Para(p) => match p.src().and_then(|s| cells().find_map(|c| find(&c.blocks, s))) {
                     Some(q) => {
                         out.push_str(&emit(self, &[], &[], &std::mem::take(&mut new))?);
-                        let src = q.src.as_deref().ok_or("a paragraph without its source")?;
+                        let src = q.src().ok_or("a paragraph without its source")?;
                         out.push_str(&emit(self, &[q], &[src], &[p])?);
                     }
                     None => new.push(p),
                 },
                 Block::Table(t) => {
                     out.push_str(&emit(self, &[], &[], &std::mem::take(&mut new))?);
-                    let o = t.src.as_ref().and_then(|s| cells().find_map(|c| find_table(&c.blocks, s))).cloned();
+                    let o = t.src().and_then(|s| cells().find_map(|c| find_table(&c.blocks, s))).cloned();
                     out.push_str(&self.table_xml(o.as_ref(), t)?);
                 }
             }
@@ -2982,17 +3108,14 @@ impl<'a, 'i> Saver<'a, 'i> {
         let same = was.is_some_and(|k| k.rev == row.rev);
         let later = n.map(|n| self.later_table_ex(n, row, table)).unwrap_or_default();
         // Exceptions the API set are the row's, whole.
-        let set_ex = was.is_some_and(|k| k.exceptions.0 != row.exceptions.0);
+        let set_ex = was.is_some_and(|k| !k.exceptions.authored_eq(&row.exceptions));
+        let (own_ex, own_tr) = (row.exceptions.xml(&self.colours, &self.cx), row.direct.xml(&self.colours, &self.cx));
         // A row rewritten from the model (its cells changed) patches the properties it was read with.
         let src = |name: &str| {
             if name == "tblPrEx" && set_ex {
-                return row.exceptions.0.as_deref();
+                return own_ex.as_deref();
             }
-            n.and_then(|n| child(n, name)).map(|p| &self.xml[p.range()]).or(if name == "trPr" {
-                row.direct.0.as_deref()
-            } else {
-                row.exceptions.0.as_deref()
-            })
+            n.and_then(|n| child(n, name)).map(|p| &self.xml[p.range()]).or(if name == "trPr" { own_tr.as_deref() } else { own_ex.as_deref() })
         };
         let mut out = String::new();
         match src("tblPrEx") {
@@ -3006,7 +3129,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                     }
                 }
                 p.remove("tblPrExChange");
-                let change = revisions::ex_change(w, &row.rev, self.people);
+                let change = revisions::ex_change(w, &row.rev, self.people, &self.colours, &self.cx);
                 if !change.is_empty() {
                     p.set("tblPrExChange", change);
                 }
@@ -3023,7 +3146,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                 for (name, tag) in fixes {
                     p.set(name, tag);
                 }
-                for (name, tag) in revisions::row_marks(w, &row.rev, self.people).into_iter().filter(|_| !same) {
+                for (name, tag) in revisions::row_marks(w, &row.rev, self.people, &self.colours, &self.cx).into_iter().filter(|_| !same) {
                     p.remove(name);
                     if !tag.is_empty() {
                         p.set(name, tag);
@@ -3031,7 +3154,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                 }
                 out.push_str(&p.xml().unwrap_or_default());
             }
-            None => out.push_str(&tr_pr(w, row, self.people)),
+            None => out.push_str(&tr_pr(w, row, self.people, &self.colours, &self.cx)),
         }
         out
     }
@@ -3056,7 +3179,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                 None if first_own => {
                     let w = &self.w;
                     let hex = |c: Option<u32>| c.map_or("auto".to_string(), |c| format!("{c:06X}"));
-                    let pattern = hatch.map_or("clear", |h| h.stripe.val());
+                    let pattern = hatch.map_or("clear", |h| super::line_style::stripe_val(h.stripe));
                     Some(format!("<{w}shd {w}val=\"{pattern}\" {w}color=\"{}\" {w}fill=\"{}\"/>", hex(hatch.map(|h| h.colour)), hex(fill)))
                 }
                 None => None,
@@ -3079,11 +3202,15 @@ impl<'a, 'i> Saver<'a, 'i> {
         let mut later = self.later_table_ex(n, now, table);
         later.retain(|(name, _, _)| ex.is_none_or(|e| child(e, name).is_none()));
         // The table exceptions' tracked change.
-        let change = if was.rev.ex_change != now.rev.ex_change { Some(revisions::ex_change(&w, &now.rev, self.people)) } else { None };
+        let change = if was.rev.ex_change != now.rev.ex_change {
+            Some(revisions::ex_change(&w, &now.rev, self.people, &self.colours, &self.cx))
+        } else {
+            None
+        };
         match ex {
             // Exceptions the API set: the row's, whole.
-            _ if was.exceptions.0 != now.exceptions.0 => {
-                let mut p = Props::parse(now.exceptions.0.as_deref(), "tblPrEx", &self.cx);
+            _ if !was.exceptions.authored_eq(&now.exceptions) => {
+                let mut p = Props::parse(now.exceptions.xml(&self.colours, &self.cx).as_deref(), "tblPrEx", &self.cx);
                 p.reorder(revisions::TBLPREX);
                 for (name, tag, _) in later {
                     if p.get(name).is_none() {
@@ -3091,7 +3218,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                     }
                 }
                 p.remove("tblPrExChange");
-                let change = revisions::ex_change(&w, &now.rev, self.people);
+                let change = revisions::ex_change(&w, &now.rev, self.people, &self.colours, &self.cx);
                 if !change.is_empty() {
                     p.set("tblPrExChange", change);
                 }
@@ -3123,7 +3250,7 @@ impl<'a, 'i> Saver<'a, 'i> {
             tr_changes(&w, Some(grid_gaps(child(n, "trPr"))), Some(was), now).into_iter().map(|(name, tag)| (name, tag, BASE)).collect();
         // The row's insertion, deletion and property change, after its base properties.
         if was.rev != now.rev {
-            for (name, tag) in revisions::row_marks(&w, &now.rev, self.people) {
+            for (name, tag) in revisions::row_marks(&w, &now.rev, self.people, &self.colours, &self.cx) {
                 tr.push((name, tag, revisions::before(revisions::TRPR, name)));
             }
         }
@@ -3161,7 +3288,10 @@ impl<'a, 'i> Saver<'a, 'i> {
                 }
                 // Shading and vertical alignment that table formatting set as direct properties (resolved values that
                 // a style region gives aren't written).
-                let (da, db) = (Props::parse(a.direct.0.as_deref(), "tcPr", &self.cx), Props::parse(b.direct.0.as_deref(), "tcPr", &self.cx));
+                let (da, db) = (
+                    Props::parse(a.direct.xml(&self.colours, &self.cx).as_deref(), "tcPr", &self.cx),
+                    Props::parse(b.direct.xml(&self.colours, &self.cx).as_deref(), "tcPr", &self.cx),
+                );
                 for name in ["tcBorders", "shd", "noWrap", "tcMar", "textDirection", "tcFitText", "vAlign", "hideMark"] {
                     if da.get(name) != db.get(name) {
                         fix.push((name, db.get(name).unwrap_or("").to_string(), revisions::before(revisions::TCPR, name)));
@@ -3183,7 +3313,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                 }
                 // The cell's insertion, deletion or merge, and its property change.
                 if a.rev != b.rev {
-                    for (name, tag) in revisions::cell_marks(&w, &b.rev, self.people) {
+                    for (name, tag) in revisions::cell_marks(&w, &b.rev, self.people, &self.colours, &self.cx) {
                         fix.push((name, tag, revisions::before(revisions::TCPR, name)));
                     }
                 }
@@ -3214,13 +3344,13 @@ impl<'a, 'i> Saver<'a, 'i> {
         for i in &p.inlines {
             let Inline::Float(f, run) = i else { continue };
             // A new frame is written as its paragraphs, before this one.
-            if here(f.id, run) || (f.frame_src.is_none() && f.is_frame()) {
+            if here(f.id, run) || (!f.read_as_frame() && f.is_frame()) {
                 continue;
             }
             let (open, close) = revisions::wrappers(&self.w, run.rev.ins.as_deref(), run.rev.del.as_deref(), self.people);
             let mut push = |x: &str| out.push_str(&format!("{open}<{w}r>{x}</{w}r>{close}", w = self.w));
             // A pasted copy (a new id) is found by where it was read from, and gets drawing ids of its own.
-            let copied = f.src.as_ref().and_then(|s| self.float_src.values().find(|(r, _)| r == s)).filter(|_| !self.float_src.contains_key(&f.id));
+            let copied = f.src().and_then(|s| self.float_src.values().find(|(r, _)| r == s)).filter(|_| !self.float_src.contains_key(&f.id));
             let Some((r, was)) = self.float_src.get(&f.id).or(copied) else {
                 if let Some(x) = self.new_float_xml(f, run) {
                     push(&x);
@@ -3267,13 +3397,13 @@ impl<'a, 'i> Saver<'a, 'i> {
     }
 
     /// The source element at exactly `r`, inside one of the part's paragraphs.
-    /// A marker's element in the group's source paragraphs: a range or comment reference by its name and id, opaque
+    /// A marker's element in the group's source paragraphs: a range or comment reference by its name and id, foreign
     /// content by its text.
     fn marker_range(&self, m: &Marker, srcs: &[&ParaSrc]) -> Option<Range<usize>> {
         let mut nodes = srcs.iter().flat_map(|x| x.ranges.iter()).filter_map(|r| self.paras.get(&r.start));
         match m {
-            Marker::Bookmark(n) => {
-                let (name, start) = n.strip_prefix('/').map_or((n.as_str(), true), |n| (n, false));
+            Marker::Bookmark(name, start) => {
+                let (name, start) = (&**name, *start);
                 let id = self.bookmark_id(name);
                 let (el, by) = if start { ("bookmarkStart", None) } else { ("bookmarkEnd", Some(id.to_string())) };
                 nodes.find_map(|p| {
@@ -3288,9 +3418,17 @@ impl<'a, 'i> Saver<'a, 'i> {
                         .map(|d| d.range())
                 })
             }
-            Marker::Opaque(o) => {
-                let raw = o.xml.0.as_deref()?;
+            Marker::Foreign(o) => {
+                let raw = &*o.payload;
                 srcs.iter().flat_map(|x| x.ranges.iter()).find_map(|r| self.xml[r.clone()].find(raw).map(|k| r.start + k..r.start + k + raw.len()))
+            }
+            Marker::Edge(e, _) => {
+                let raw = edge_xml(&self.w, e);
+                srcs.iter().flat_map(|x| x.ranges.iter()).find_map(|r| self.xml[r.clone()].find(&*raw).map(|k| r.start + k..r.start + k + raw.len()))
+            }
+            Marker::Permission(p) => {
+                let raw = permission_xml(&self.w, p);
+                srcs.iter().flat_map(|x| x.ranges.iter()).find_map(|r| self.xml[r.clone()].find(&raw).map(|k| r.start + k..r.start + k + raw.len()))
             }
             _ => {
                 let (name, id) = m.element()?;
@@ -3323,7 +3461,7 @@ impl<'a, 'i> Saver<'a, 'i> {
     /// Content with no source (a new text box's) written from the model in this part: its bookmarks' ids are the
     /// part's.
     fn nested_blocks(&self, blocks: &[Block]) -> Result<String, String> {
-        blocks_in(self.xml, self.w.clone(), blocks, &self.controls, self.people, self.bookmarks.clone())
+        blocks_in(self.xml, self.w.clone(), blocks, &self.controls, self.people, &self.colours, self.bookmarks.clone())
     }
 
     /// A bookmark's id: the part's for its name, else a new one, the same for its start and end.
@@ -3489,14 +3627,14 @@ impl<'a, 'i> Saver<'a, 'i> {
     fn edited_ppr(&self, node: Option<Node>, p: &Paragraph, mark: bool, sect: Option<&str>) -> String {
         let base = match node {
             Some(n) => child(n, "pPr").map(|x| self.xml[x.range()].to_string()),
-            None => p.style.direct.0.as_deref().map(str::to_string),
+            None => p.style.direct.xml(&self.colours, &self.cx).map(std::borrow::Cow::into_owned),
         };
         let mut pr = Props::parse(base.as_deref(), "pPr", &self.cx);
         if mark {
             let rpr = if p.mark.rev.is_empty() {
-                p.mark.direct.0.as_deref().map(str::to_string)
+                p.mark.direct.xml(&self.colours, &self.cx).map(std::borrow::Cow::into_owned)
             } else {
-                revisions::mark_rpr(&p.mark, &self.cx, self.people)
+                revisions::mark_rpr(&p.mark, &self.colours, &self.cx, self.people)
             };
             match rpr {
                 Some(r) => pr.set("rPr", r),
@@ -3507,7 +3645,9 @@ impl<'a, 'i> Saver<'a, 'i> {
             // Its own properties (not its source's): its tracked change is the model's.
             pr.remove("pPrChange");
             if let Some(c) = &p.style.change {
-                pr.set("pPrChange", revisions::change(&self.w, "pPrChange", "pPr", &c.mark, &c.previous_raw, self.people));
+                let earlier = c.properties.then(|| c.previous.direct.xml(&self.colours, &self.cx)).flatten();
+                let earlier = super::model::Raw(earlier.map(|x| Rc::from(&*x)));
+                pr.set("pPrChange", revisions::change(&self.w, "pPrChange", "pPr", &c.mark, &earlier, self.people));
                 if let (Some(nc), Some(num)) = (c.numbering_change.0.as_deref(), pr.get("numPr")) {
                     let mut n = Props::parse(Some(num), "numPr", &self.cx);
                     n.set("numberingChange", nc.to_string());
@@ -3565,17 +3705,21 @@ enum Marker {
     Range(RangeMark),
     /// A comment's reference mark, in its run's formatting.
     Comment(CommentId, Run),
-    /// Content kept as read ([`Inline::Opaque`]).
-    Opaque(Rc<super::model::Opaque>),
-    /// A bookmark's start, or (`/` and its name) end.
-    Bookmark(String),
+    /// Content kept as read ([`Inline::Foreign`]).
+    Foreign(Rc<super::model::Foreign>),
+    /// A field edge ([`Inline::FieldEdge`]) in its markers' run.
+    Edge(Rc<super::model::Edge>, Run),
+    /// An editing permission's start or end.
+    Permission(RangeMark),
+    /// A bookmark's start (`true`) or end, by its name.
+    Bookmark(Rc<str>, bool),
 }
 
 impl Marker {
     /// The element it is in the source, and the id that names it there.
     fn element(&self) -> Option<(&'static str, i64)> {
         match self {
-            Marker::Control(..) | Marker::Opaque(_) | Marker::Bookmark(_) => None,
+            Marker::Control(..) | Marker::Foreign(_) | Marker::Edge(..) | Marker::Permission(_) | Marker::Bookmark(..) => None,
             Marker::Range(r) => Some((range_element(r.kind), r.id)),
             Marker::Comment(id, _) => Some(("commentReference", id.0)),
         }
@@ -3589,11 +3733,13 @@ impl Marker {
             Marker::Control(id, start) => (u8::from(*start), id.0 as i64),
             Marker::Range(r) => (2 + r.kind as u8, r.id),
             Marker::Comment(id, _) => (u8::MAX, id.0),
-            Marker::Opaque(o) => (u8::MAX - 1, Rc::as_ptr(o) as usize as i64),
-            Marker::Bookmark(n) => {
+            Marker::Foreign(o) => (u8::MAX - 1, Rc::as_ptr(o) as usize as i64),
+            Marker::Edge(e, _) => (u8::MAX - 1, Rc::as_ptr(e) as usize as i64),
+            Marker::Permission(p) => (u8::MAX - 1, permission_ptr(p) as usize as i64),
+            Marker::Bookmark(n, start) => {
                 use std::hash::{Hash, Hasher};
                 let mut h = std::hash::DefaultHasher::new();
-                n.hash(&mut h);
+                (n, start).hash(&mut h);
                 (u8::MAX - 2, h.finish() as i64)
             }
         }
@@ -3619,7 +3765,47 @@ fn range_element(k: RangeKind) -> &'static str {
         RangeKind::MoveFromEnd => "moveFromRangeEnd",
         RangeKind::MoveToStart => "moveToRangeStart",
         RangeKind::MoveToEnd => "moveToRangeEnd",
+        RangeKind::BookmarkStart => "bookmarkStart",
+        RangeKind::BookmarkEnd => "bookmarkEnd",
+        RangeKind::PermissionStart => "permStart",
+        RangeKind::PermissionEnd => "permEnd",
     }
+}
+
+/// What names an editing permission marker in a save: its settings' allocation, which its copies share.
+fn permission_ptr(r: &RangeMark) -> *const () {
+    r.permission.as_ref().map_or(std::ptr::null(), |p| Rc::as_ptr(p).cast())
+}
+
+/// An editing permission marker's element in the main namespace's prefix `w`: as read, with the marker's id; one
+/// made since from its settings.
+fn permission_xml(w: &str, r: &RangeMark) -> String {
+    let p = r.permission.as_deref();
+    if let Some(x) = p.and_then(|p| p.origin_xml()) {
+        return with_perm_id(x, r.id).unwrap_or_else(|| x.to_string());
+    }
+    let el = range_element(r.kind);
+    let mut a = format!(" {w}id=\"{}\"", r.id);
+    match p.and_then(|p| p.editor.as_ref()) {
+        Some(super::review::RangeEditor::Group(g)) => a += &format!(" {w}edGrp=\"{}\"", props::esc(g)),
+        Some(super::review::RangeEditor::User(u)) => a += &format!(" {w}ed=\"{}\"", props::esc(u)),
+        None => {}
+    }
+    let (first, last) = p.map_or((None, None), |p| p.columns);
+    if let Some(c) = first {
+        a += &format!(" {w}colFirst=\"{c}\"");
+    }
+    if let Some(c) = last {
+        a += &format!(" {w}colLast=\"{c}\"");
+    }
+    format!("<{w}{el}{a}/>")
+}
+
+/// A permission marker's XML with its id `to`; `None` when it has it already, or no id.
+fn with_perm_id(x: &str, to: i64) -> Option<String> {
+    let at = x.find(":id=\"").map(|k| k + 5).or_else(|| x.find(" id=\"").map(|k| k + 5))?;
+    let end = at + x[at..].find('"')?;
+    (x[at..end].trim().parse::<i64>().ok() != Some(to)).then(|| format!("{}{to}{}", &x[..at], &x[end..]))
 }
 
 /// An inline's marker (a control's, a range's, a comment reference), onto the markers waiting for the next unit.
@@ -3627,52 +3813,59 @@ fn marker(i: &Inline, pend: &mut Vec<Marker>) {
     match i {
         Inline::ControlStart(c) => pend.push(Marker::Control(*c, true)),
         Inline::ControlEnd(c) => pend.push(Marker::Control(*c, false)),
-        Inline::Range(r) => pend.push(Marker::Range(r.clone())),
+        Inline::Range(r) => pend.push(match (r.bookmark(), &r.name) {
+            (Some((_, start)), Some(name)) => Marker::Bookmark(name.clone(), start),
+            _ if r.is_review() => Marker::Range(r.clone()),
+            _ => Marker::Permission(r.clone()),
+        }),
         Inline::CommentRef { id, run } => pend.push(Marker::Comment(*id, run.clone())),
-        Inline::Opaque(o) => pend.push(Marker::Opaque(o.clone())),
-        Inline::Bookmark(n) => pend.push(Marker::Bookmark(n.clone())),
+        Inline::Foreign(o) => pend.push(Marker::Foreign(o.clone())),
+        Inline::FieldEdge { edge, run } => pend.push(Marker::Edge(edge.clone(), run.clone())),
         _ => {}
     }
 }
 
 fn same_inline(x: &Inline, y: &Inline) -> bool {
     match (x, y) {
-        (Inline::Text(s, r), Inline::Text(t, q)) => s == t && Rc::ptr_eq(r, q),
-        (Inline::Bookmark(a), Inline::Bookmark(b)) => a == b,
-        (Inline::Opaque(a), Inline::Opaque(b)) => Rc::ptr_eq(a, b),
+        (Inline::Text(s, r), Inline::Text(t, q)) => s == t && as_read(r, q),
+        (Inline::Foreign(a), Inline::Foreign(b)) => Rc::ptr_eq(a, b),
+        (Inline::FieldEdge { edge: a, run: r }, Inline::FieldEdge { edge: b, run: q }) => Rc::ptr_eq(a, b) && as_read(r, q),
         (Inline::NoteRef { kind: k, id: a, custom: c, run: r }, Inline::NoteRef { kind: l, id: b, custom: d, run: q }) => {
-            (k, a, c) == (l, b, d) && Rc::ptr_eq(r, q)
+            (k, a, c) == (l, b, d) && as_read(r, q)
         }
-        (Inline::Range(a), Inline::Range(b)) => a == b,
-        (Inline::CommentRef { id: a, run: r }, Inline::CommentRef { id: b, run: q }) => a == b && Rc::ptr_eq(r, q),
+        (Inline::Range(a), Inline::Range(b)) => a == b && permission_ptr(a) == permission_ptr(b),
+        (Inline::CommentRef { id: a, run: r }, Inline::CommentRef { id: b, run: q }) => a == b && as_read(r, q),
         (Inline::ControlStart(a), Inline::ControlStart(b)) | (Inline::ControlEnd(a), Inline::ControlEnd(b)) => a == b,
         // A toggled checkbox keeps its run and changes its face.
-        (Inline::Sym { ch: a, font: f, run: r, .. }, Inline::Sym { ch: b, font: g, run: q, .. }) => a == b && f == g && Rc::ptr_eq(r, q),
+        (Inline::Sym { ch: a, font: f, run: r, .. }, Inline::Sym { ch: b, font: g, run: q, .. }) => a == b && f == g && as_read(r, q),
         // Moved or resized floats are written patched (their text boxes' content is its own container).
-        (Inline::Float(a, r), Inline::Float(b, q)) => {
-            a.id == b.id && Placement::changed(a, b).is_none() && !drawing::differs(a, b) && Rc::ptr_eq(r, q)
-        }
+        (Inline::Float(a, r), Inline::Float(b, q)) => a.id == b.id && Placement::changed(a, b).is_none() && !drawing::differs(a, b) && as_read(r, q),
         (Inline::FieldBegin { form: a, run: r, .. }, Inline::FieldBegin { form: b, run: q, .. }) => {
-            a.as_ref().map(|f| &f.data) == b.as_ref().map(|f| &f.data) && Rc::ptr_eq(r, q)
+            a.as_ref().map(|f| &f.data) == b.as_ref().map(|f| &f.data) && as_read(r, q)
         }
         // A resized or reformatted picture is written patched (its text's content is its own container).
-        (Inline::Picture(a, r), Inline::Picture(b, q)) => a.same_but_story(b) && Rc::ptr_eq(r, q),
+        (Inline::Picture(a, r), Inline::Picture(b, q)) => a.same_but_story(b) && as_read(r, q),
         // A ruby whose text was formatted is written anew.
-        (Inline::Ruby(a, r), Inline::Ruby(b, q)) => (Rc::ptr_eq(a, b) || a.xml.0.as_deref() == b.xml.0.as_deref()) && Rc::ptr_eq(r, q),
+        (Inline::Ruby(a, r), Inline::Ruby(b, q)) => (Rc::ptr_eq(a, b) || a.origin_xml() == b.origin_xml()) && as_read(r, q),
         _ => {
             std::mem::discriminant(x) == std::mem::discriminant(y)
                 && match (x.run(), y.run()) {
-                    (Some(r), Some(q)) => Rc::ptr_eq(r, q),
+                    (Some(r), Some(q)) => as_read(r, q),
                     _ => false,
                 }
         }
     }
 }
 
-/// Unchanged since reading (the same formatting objects, the same text).
+/// Authored equality of two run formats, the same allocation first: re-resolved formatting is as read.
+fn as_read(a: &Run, b: &Run) -> bool {
+    Rc::ptr_eq(a, b) || a.authored_eq(b)
+}
+
+/// Unchanged since reading: the same authored formatting, the same text and objects.
 fn same_para(a: &Paragraph, b: &Paragraph) -> bool {
-    Rc::ptr_eq(&a.style, &b.style)
-        && Rc::ptr_eq(&a.mark, &b.mark)
+    (Rc::ptr_eq(&a.style, &b.style) || a.style.authored_eq(&b.style))
+        && as_read(&a.mark, &b.mark)
         && a.inlines.len() == b.inlines.len()
         && a.inlines.iter().zip(&b.inlines).all(|(x, y)| same_inline(x, y))
 }
@@ -3696,8 +3889,8 @@ fn unit_keys(i: &Inline, out: &mut Vec<(u64, char)>) {
         Inline::Break(BreakKind::ClearAll, _) => out.push((ATOM | BreakKind::ClearAll as u64, '\u{3}')),
         Inline::Break(BreakKind::Column, _) => out.push((ATOM | BreakKind::Column as u64, '\u{e}')),
         Inline::Break(k, _) => out.push((ATOM | *k as u64, '\u{c}')),
-        Inline::Bookmark(_)
-        | Inline::Opaque(_)
+        Inline::Foreign(_)
+        | Inline::FieldEdge { .. }
         | Inline::Range(_)
         | Inline::CommentRef { .. }
         | Inline::Float(..)
@@ -3709,7 +3902,7 @@ fn unit_keys(i: &Inline, out: &mut Vec<(u64, char)>) {
             std::mem::discriminant(other).hash(&mut h);
             match other {
                 // By its drawing as read, else its image: a resized or refilled picture is kept, patched (`Emit::seg`).
-                Inline::Picture(p, _) => match &p.src.0 {
+                Inline::Picture(p, _) => match p.origin_xml() {
                     Some(src) => (Rc::as_ptr(src) as *const u8 as usize).hash(&mut h),
                     None => p.image.hash(&mut h),
                 },
@@ -3719,10 +3912,10 @@ fn unit_keys(i: &Inline, out: &mut Vec<(u64, char)>) {
                 Inline::Sym { ch, font, .. } => (ch, font).hash(&mut h),
                 Inline::PTab(t, _) => t.hash(&mut h),
                 // A ruby by its XML: formatting its text writes it anew.
-                Inline::Ruby(r, _) => r.xml.0.as_deref().hash(&mut h),
+                Inline::Ruby(r, _) => r.origin_xml().map(|x| &**x).hash(&mut h),
                 // A field's markers by their field: editing its code keeps them; a form field's changed data is
                 // written anew.
-                Inline::FieldBegin { id, form, .. } => (id, form.as_ref().is_some_and(|f| f.data != f.read)).hash(&mut h),
+                Inline::FieldBegin { id, form, .. } => (id, form.as_ref().is_some_and(|f| f.changed())).hash(&mut h),
                 Inline::FieldSep { id, .. } | Inline::FieldEnd { id, .. } => id.hash(&mut h),
                 _ => {}
             }
@@ -4003,9 +4196,9 @@ struct Emit<'s, 'a, 'i> {
     marker_src: HashMap<(&'static str, i64), Range<usize>>,
     /// Those the group's paragraphs were read with that sit outside them (between blocks): kept there.
     marker_outside: Vec<(&'static str, i64)>,
-    /// Bookmarks (`/` and its name for an end) and kept content the group's paragraphs were read with that sit
-    /// outside them: kept there too.
-    marks_outside: (Vec<String>, Vec<*const super::model::Opaque>),
+    /// Bookmarks (by name, and whether a start) and kept content and editing permissions (by allocation) the group's
+    /// paragraphs were read with that sit outside them: kept there too.
+    marks_outside: (Vec<(Rc<str>, bool)>, Vec<*const ()>),
     /// The move marks of the group's runs, for new move ranges' authors and dates.
     moves: Vec<Rc<RevisionMark>>,
     /// Gaps whose insertions split by the markers in them: how many go before the unit before's end (see `split`).
@@ -4022,9 +4215,38 @@ struct Emit<'s, 'a, 'i> {
     fresh_written: usize,
 }
 
+/// The main namespace prefix an edge's runs were written in (`w:`).
+fn edge_prefix(xml: &str) -> &str {
+    xml.strip_prefix('<')
+        .and_then(|x| x.split(|c: char| c.is_whitespace() || c == '>' || c == '/').next())
+        .and_then(|name| name.strip_suffix('r'))
+        .filter(|w| w.is_empty() || w.ends_with(':'))
+        .unwrap_or("w:")
+}
+
+/// A field edge's markers' runs: as read, else written from the edge in the main namespace's prefix `w` (`w:`).
+fn edge_xml<'e>(w: &str, e: &'e super::model::Edge) -> std::borrow::Cow<'e, str> {
+    use super::model::FieldEdge;
+    if let Some(s) = e.src() {
+        return std::borrow::Cow::Borrowed(&s.xml);
+    }
+    std::borrow::Cow::Owned(match &e.kind {
+        FieldEdge::Start { code, lock, dirty, .. } => {
+            let lock = if *lock { format!(" {w}fldLock=\"1\"") } else { String::new() };
+            let dirty = if *dirty { format!(" {w}dirty=\"1\"") } else { String::new() };
+            let code = code.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+            format!(
+                "<{w}r><{w}fldChar {w}fldCharType=\"begin\"{lock}{dirty}/></{w}r><{w}r><{w}instrText xml:space=\"preserve\">{code}</{w}instrText></{w}r><{w}r><{w}fldChar {w}fldCharType=\"separate\"/></{w}r>"
+            )
+        }
+        FieldEdge::End => format!("<{w}r><{w}fldChar {w}fldCharType=\"end\"/></{w}r>"),
+        FieldEdge::Code | FieldEdge::Fold => String::new(),
+    })
+}
+
 /// A field edge's runs `xml` with their code as deleted (`w:delInstrText`) or not, in the prefix the runs are in.
 fn edge_runs(xml: &str, deleted: bool) -> String {
-    let w = crate::docx::fields::edge_prefix(xml);
+    let w = edge_prefix(xml);
     let (from, to) = if deleted { ("instrText", "delInstrText") } else { ("delInstrText", "instrText") };
     xml.replace(&format!("<{w}{from}"), &format!("<{w}{to}")).replace(&format!("</{w}{from}>"), &format!("</{w}{to}>"))
 }
@@ -4032,10 +4254,11 @@ fn edge_runs(xml: &str, deleted: bool) -> String {
 /// Where the runs are of the field edges ([`super::model::FieldEdge`]) paragraphs `qs` were read with that paragraphs
 /// `ps` don't hold now.
 fn gone_edges<'q>(qs: &'q [&Paragraph], ps: &'q [&Paragraph]) -> impl Iterator<Item = Range<usize>> + 'q {
-    let held =
-        move |o: &Rc<super::model::Opaque>| ps.iter().flat_map(|p| p.inlines.iter()).any(|i| matches!(i, Inline::Opaque(x) if Rc::ptr_eq(x, o)));
+    let held = move |e: &Rc<super::model::Edge>| {
+        ps.iter().flat_map(|p| p.inlines.iter()).any(|i| matches!(i, Inline::FieldEdge { edge, .. } if Rc::ptr_eq(edge, e)))
+    };
     qs.iter().flat_map(|p| p.inlines.iter()).filter_map(move |i| match i {
-        Inline::Opaque(o) if o.field.is_some() && !held(o) => o.src.clone(),
+        Inline::FieldEdge { edge, .. } if !held(edge) => edge.src().map(|s| s.at.clone()),
         _ => None,
     })
 }
@@ -4169,7 +4392,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                 sdts.insert(d.range().start, (child(d, "sdtContent").map(|c| c.range().start), child(d, "sdtPr").map(|p| p.range())));
             }
         }
-        let sdt_of = |id: &ControlId| s.controls.get(id).and_then(|k| k.at).map(|a| a.0).filter(|a| sdts.contains_key(a));
+        let sdt_of = |id: &ControlId| s.controls.get(id).and_then(|k| k.at()).map(|a| a.0).filter(|a| sdts.contains_key(a));
         let mut now_ids = Vec::new();
         for m in cur.iter().flat_map(|c| c.ctl.iter()) {
             if let Marker::Control(id, _) = m
@@ -4204,7 +4427,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
         }
         let fresh_count: usize = cur.iter().map(|c| c.fresh.len()).sum();
         now_ids.retain(|id| !fresh_ids.contains(id));
-        // Markers gone since reading (a deleted comment's range and reference, deleted opaque content), their source
+        // Markers gone since reading (a deleted comment's range and reference, deleted foreign content), their source
         // elements left out of the walk; controls go as `gone`.
         let mut removed = Vec::new();
         if fresh {
@@ -4312,7 +4535,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                 let last = m + 1 == ps.len();
                 // The paragraph it continues: same formatting, else the one it came from, else the group's first.
                 let by_style = qs.iter().position(|q| Rc::ptr_eq(&q.style, &p.style));
-                let by_src = qs.iter().position(|q| q.src.as_ref().zip(p.src.as_ref()).is_some_and(|(a, b)| Rc::ptr_eq(a, b)));
+                let by_src = qs.iter().position(|q| q.src().zip(p.src()).is_some_and(|(a, b)| std::ptr::eq(a, b)));
                 let sect = s.made.get(&p.id).map(String::as_str).or(sect.filter(|_| last));
                 match by_style.or(by_src).or((!qs.is_empty()).then_some(0)) {
                     Some(k) => {
@@ -4337,7 +4560,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
         let mut heads: Vec<(String, String)> = heads;
         let new_ctl = |m: Option<usize>| -> Vec<ControlId> {
             m.and_then(|m| ps.get(m))
-                .map(|p| p.controls.iter().copied().filter(|c| s.controls.get(c).is_some_and(|k| k.open.is_empty())).collect())
+                .map(|p| p.controls.iter().copied().filter(|c| s.controls.get(c).is_some_and(|k| k.open().is_empty())).collect())
                 .unwrap_or_default()
         };
         for (m, head) in heads.iter_mut().enumerate() {
@@ -4352,7 +4575,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
         let floats = |ps: &[&Paragraph]| -> Vec<(u64, Option<Range<usize>>, Run)> {
             ps.iter()
                 .flat_map(|p| p.inlines.iter())
-                .filter_map(|i| if let Inline::Float(f, r) = i { Some((f.id, f.src.clone(), r.clone())) } else { None })
+                .filter_map(|i| if let Inline::Float(f, r) = i { Some((f.id, f.src().cloned(), r.clone())) } else { None })
                 .collect()
         };
         // A float whose insertion or deletion changed is written again, in its wrappers (`moved_in`).
@@ -4373,7 +4596,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
             .iter()
             .filter_map(|a| {
                 let b = is.iter().find(|b| b.id == a.id)?;
-                let src = a.src.clone()?;
+                let src = a.src().cloned()?;
                 // A VML float's edits patch its VML (`style`, fill and stroke attributes).
                 let text = s.src_text(src.clone());
                 if drawing::is_vml(&text) {
@@ -4437,11 +4660,13 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
             qs.iter().flat_map(|q| q.inlines.iter()).for_each(|i| marker(i, &mut read));
             marker_outside = read.iter().filter_map(Marker::element).filter(|k| !marker_src.contains_key(k)).collect();
             // A field edge the reader made (not its source's) is its paragraph's.
-            let made = |m: &Marker| matches!(m, Marker::Opaque(o) if o.field.is_some() && o.src.is_none());
+            let made = |m: &Marker| matches!(m, Marker::Edge(e, _) if e.origin.is_none());
             for m in read.iter().filter(|m| !made(m) && s.marker_range(m, srcs).is_none()) {
                 match m {
-                    Marker::Bookmark(n) => marks_outside.0.push(n.clone()),
-                    Marker::Opaque(o) => marks_outside.1.push(Rc::as_ptr(o)),
+                    Marker::Bookmark(n, start) => marks_outside.0.push((n.clone(), *start)),
+                    Marker::Foreign(o) => marks_outside.1.push(Rc::as_ptr(o).cast()),
+                    Marker::Edge(e, _) => marks_outside.1.push(Rc::as_ptr(e).cast()),
+                    Marker::Permission(p) => marks_outside.1.push(permission_ptr(p)),
                     _ => {}
                 }
             }
@@ -4463,7 +4688,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                 p.inlines
                     .iter()
                     .filter_map(|i| match i {
-                        Inline::Float(f, _) if f.frame_src.is_none() && f.is_frame() => f.text_box.as_ref(),
+                        Inline::Float(f, _) if !f.read_as_frame() && f.is_frame() => f.text_box.as_ref(),
                         _ => None,
                     })
                     .map(|tb| s.nested_blocks(&tb.blocks))
@@ -4680,7 +4905,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
     fn restyled(&mut self, first: Node, end: usize, run: &Run) {
         self.flush();
         self.open_to(self.stack.len());
-        let rpr = revisions::run_rpr(run, &self.s.cx, self.s.people);
+        let rpr = revisions::run_rpr(run, &self.s.colours, &self.s.cx, self.s.people);
         for n in std::iter::successors(Some(first), |n| n.next_sibling()).take_while(|n| n.range().start < end) {
             self.restyle(n, &rpr);
         }
@@ -4910,8 +5135,10 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                 continue;
             }
             match &m {
-                Marker::Bookmark(n) if self.marks_outside.0.contains(n) => continue,
-                Marker::Opaque(o) if self.marks_outside.1.contains(&Rc::as_ptr(o)) => continue,
+                Marker::Bookmark(n, start) if self.marks_outside.0.iter().any(|(m, s)| m == n && s == start) => continue,
+                Marker::Foreign(o) if self.marks_outside.1.contains(&Rc::as_ptr(o).cast()) => continue,
+                Marker::Edge(e, _) if self.marks_outside.1.contains(&Rc::as_ptr(e).cast()) => continue,
+                Marker::Permission(p) if self.marks_outside.1.contains(&permission_ptr(p)) => continue,
                 _ => {}
             }
             match m {
@@ -4930,38 +5157,43 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                     let x = self.range_xml(&r);
                     self.out.push_str(&x);
                 }
-                Marker::Bookmark(n) => {
+                Marker::Bookmark(name, start) => {
                     self.flush();
                     let level = self.stack.iter().rposition(|o| o.run).unwrap_or(self.stack.len());
                     self.open_to(level);
-                    let (name, start) = n.strip_prefix('/').map_or((n.as_str(), true), |n| (n, false));
-                    let id = self.s.bookmark_id(name);
+                    let id = self.s.bookmark_id(&name);
                     let x = if start {
-                        format!("<{w}bookmarkStart {w}id=\"{id}\" {w}name=\"{}\"/>", props::esc(name))
+                        format!("<{w}bookmarkStart {w}id=\"{id}\" {w}name=\"{}\"/>", props::esc(&name))
                     } else {
                         format!("<{w}bookmarkEnd {w}id=\"{id}\"/>")
                     };
                     self.out.push_str(&x);
                 }
                 // A field edge in the wrappers of its tracked changes.
-                Marker::Opaque(o) if o.field.is_some() && o.run.is_some() => {
-                    let Some(run) = o.run.clone() else { continue };
+                Marker::Edge(e, run) => {
                     self.flush();
                     self.close_wrap();
                     let (level, ins, del) = self.own_level(&run);
                     self.open_to(level);
                     let (open, close) = revisions::wrappers(&self.s.w, ins.as_deref(), del.as_deref(), self.s.people);
                     let deleted = run.rev.del.as_ref().is_some_and(|m| m.kind != crate::docx::review::MarkKind::MoveFrom);
-                    let x = edge_runs(o.xml.0.as_deref().unwrap_or(""), deleted);
+                    let x = edge_runs(&edge_xml(&self.s.w, &e), deleted);
                     self.out.push_str(&open);
                     self.out.push_str(&x);
                     self.out.push_str(&close);
                 }
-                Marker::Opaque(o) => {
+                Marker::Foreign(o) if o.format == super::foreign::DOCX => {
                     self.flush();
                     let level = self.stack.iter().rposition(|o| o.run).unwrap_or(self.stack.len());
                     self.open_to(level);
-                    self.out.push_str(o.xml.0.as_deref().unwrap_or(""));
+                    self.out.push_str(&o.payload);
+                }
+                Marker::Foreign(_) => {}
+                Marker::Permission(p) => {
+                    self.flush();
+                    let level = self.stack.iter().rposition(|o| o.run).unwrap_or(self.stack.len());
+                    self.open_to(level);
+                    self.out.push_str(&permission_xml(&w, &p));
                 }
                 Marker::Comment(id, run) => {
                     self.add(To::Own(run), None, None);
@@ -5156,7 +5388,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                     }
                 }
                 let w = &self.s.w;
-                let mut rpr = revisions::run_rpr(&run, &self.s.cx, self.s.people);
+                let mut rpr = revisions::run_rpr(&run, &self.s.colours, &self.s.cx, self.s.people);
                 if self.strip_link {
                     for style in [format!("<{w}rStyle {w}val=\"Hyperlink\"/>"), format!("<{w}rStyle {w}val=\"Hyperlink\" />")] {
                         rpr = rpr.replace(&style, "");
@@ -5237,7 +5469,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
     /// control), in source ranges: an edited shape's `mc:AlternateContent` becomes its Choice's drawing, as in a run.
     fn contained_shape_edits(&self, r: Range<usize>, was: Option<&PicState>, now: &PicState) -> Vec<drawing::Edit> {
         let (Some(a), Some(b)) = (was.and_then(|s| s.0.shape.as_deref()), now.0.shape.as_deref()) else { return Vec::new() };
-        let Some(at) = a.spans.shape.as_ref().map(|x| x.start) else { return Vec::new() };
+        let Some(at) = crate::drawing::Spans::of(a).shape.as_ref().map(|x| x.start) else { return Vec::new() };
         match self.s.choice_around(r.clone(), at) {
             Some((ac, d)) => {
                 let text = self.s.src_text(d.clone());
@@ -5377,9 +5609,9 @@ fn emit(s: &Saver, qs: &[&Paragraph], srcs: &[&ParaSrc], ps: &[&Paragraph]) -> R
     Emit::group(s, qs, srcs, ps)
 }
 
-fn same_src(a: &Option<Rc<Range<usize>>>, b: &Option<Rc<Range<usize>>>) -> bool {
+fn same_src(a: Option<&Range<usize>>, b: Option<&Range<usize>>) -> bool {
     match (a, b) {
-        (Some(a), Some(b)) => Rc::ptr_eq(a, b),
+        (Some(a), Some(b)) => std::ptr::eq(a, b),
         (None, None) => true,
         _ => false,
     }
@@ -5479,7 +5711,7 @@ fn vml_run_child(src: &str) -> Option<Range<usize>> {
 }
 
 /// A VML picture's text naming image `now` when it shows another than `was`.
-fn picture_relinked(x: String, was: Option<usize>, now: Option<usize>) -> String {
+fn picture_relinked(x: String, was: Option<ResourceId>, now: Option<ResourceId>) -> String {
     let image = now.filter(|_| now != was);
     match (image, find_tag(&x, "imagedata", 0)) {
         // Its `r:id`, else the `o:relid` read when it has none.
@@ -5488,7 +5720,7 @@ fn picture_relinked(x: String, was: Option<usize>, now: Option<usize>) -> String
                 Some(a) => {
                     let v0 = start + a;
                     let v1 = x[v0..end].find('"').map_or(end, |e| v0 + e);
-                    format!("{}{NEW_IMAGE}{k}{}", &x[..v0], &x[v1..])
+                    format!("{}{NEW_IMAGE}{}{}", &x[..v0], k.0, &x[v1..])
                 }
                 None => x,
             }
@@ -5499,7 +5731,7 @@ fn picture_relinked(x: String, was: Option<usize>, now: Option<usize>) -> String
 
 /// A kept picture's drawing (`src`) as it is now: its extents, alternative text and, when it shows another image
 /// than it was read with, a blip naming that image.
-fn picture_patched(src: &str, p: Placement, was: Option<usize>, now: Option<usize>) -> String {
+fn picture_patched(src: &str, p: Placement, was: Option<ResourceId>, now: Option<ResourceId>) -> String {
     let image = now.filter(|_| now != was);
     if drawing::is_vml(src) {
         let (w, h) = p.size.unwrap_or_default();
@@ -5511,7 +5743,7 @@ fn picture_patched(src: &str, p: Placement, was: Option<usize>, now: Option<usiz
                     Some(a) => {
                         let v0 = start + a;
                         let v1 = x[v0..end].find('"').map_or(end, |e| v0 + e);
-                        format!("{}{NEW_IMAGE}{k}{}", &x[..v0], &x[v1..])
+                        format!("{}{NEW_IMAGE}{}{}", &x[..v0], k.0, &x[v1..])
                     }
                     None => x,
                 }
@@ -5528,7 +5760,7 @@ const PARA_LEVEL: &str = "\u{0}P";
 /// Where new drawings' `wp:docPr/@id`s start: above what Word gives a document's own drawings.
 const DRAWING_IDS: u32 = 0x4345_0000;
 
-/// What a new picture's image is embedded by until saving: this and its index in [`Document::images`].
+/// What a new picture's image is embedded by until saving: this and its id in [`Document::images`].
 /// [`add_images`] gives each part that names one the image, a relationship of its own and that relationship's id. It
 /// holds a colon, which a relationship id (an `xsd:ID`) can't: no id a package was read with is taken for one.
 pub(crate) const NEW_IMAGE: &str = "twip:image:";
@@ -5546,7 +5778,7 @@ impl Saver<'_, '_> {
         // A watermark is written as Word writes one, so Word's Watermark dialog finds it.
         if let Some(m) = super::watermark::of(f) {
             let spid = f.shape.as_ref().map_or(0, |s| s.nv.id).max(2049);
-            let image = f.image.map_or(String::new(), |i| format!("{NEW_IMAGE}{i}"));
+            let image = f.image.map_or(String::new(), |i| format!("{NEW_IMAGE}{}", i.0));
             return Some(super::watermark::vml(&m, &self.w, [f.w, f.h], spid, &image, &run.lang));
         }
         let f = &*unswapped(f);
@@ -5560,7 +5792,7 @@ impl Saver<'_, '_> {
         self.ids.set(id + 1);
         let (cx, cy) = (emu(f.w), emu(f.h));
         const WP14: &str = "http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing";
-        let pos = |name: &str, rel: &str, align: &Option<String>, off: f64| {
+        let pos = |name: &str, rel: &str, align: Option<&str>, off: f64| {
             let (k, el) = if name == "positionH" { (0, "pctPosHOffset") } else { (1, "pctPosVOffset") };
             match (align, f.relative.pos[k]) {
                 (Some(a), _) => format!("<wp:{name} relativeFrom=\"{rel}\"><wp:align>{}</wp:align></wp:{name}>", props::esc(a)),
@@ -5648,7 +5880,7 @@ impl Saver<'_, '_> {
                 id = id,
                 r = R,
                 new = NEW_IMAGE,
-                image = image,
+                image = image.0,
                 cx = cx,
                 cy = cy,
             ),
@@ -5677,11 +5909,11 @@ impl Saver<'_, '_> {
             locked = on(f.locked),
             cell = on(f.layout_in_cell),
             overlap = on(f.allow_overlap),
-            h = pos("positionH", &f.h_relative, &f.h_align, f.h_offset),
-            v = pos("positionV", &f.v_relative, &f.v_align, f.v_offset),
+            h = pos("positionH", anchor::h_relative_name(f.h_relative), f.h_align.map(anchor::h_align_name), f.h_offset),
+            v = pos("positionV", anchor::v_relative_name(f.v_relative), f.v_align.map(anchor::v_align_name), f.v_offset),
             cx = cx,
             cy = cy,
-            wrap = wrap_xml("wp:", &f.wrap, &f.wrap_text, f.poly.as_deref(), f.poly_edited),
+            wrap = wrap_xml("wp:", f.wrap, f.wrap_text, f.poly.as_deref(), f.poly_edited),
             name = match f.shape.as_deref().map(|s| s.nv.name.as_str()).filter(|n| !n.is_empty()) {
                 Some(n) => props::esc(n),
                 None => format!("{} {id}", if f.text_box.is_some() { "Text Box" } else { "Picture" }),
@@ -5698,24 +5930,27 @@ impl Saver<'_, '_> {
     /// references and marks, and pictures (inserted, or copied from elsewhere in the document).
     fn object_xml(&self, i: &Inline) -> Option<String> {
         if let Inline::Sym { ch, font, run, control: Some(c) } = i
-            && let Some(Control { props: ControlProps { kind: ControlKind::Checkbox { checked, unchecked }, .. }, .. }) = self.controls.get(c)
+            && let Some(Control { props: ControlProps { kind: ControlKind::Checkbox { checked, unchecked, .. }, .. }, .. }) = self.controls.get(c)
         {
             let w = &self.w;
             let hex = |c: char| format!("{:04X}", c as u32);
             let esc = props::esc;
-            let rpr = run.direct.0.as_deref().unwrap_or("");
+            let rpr = run.direct.xml(&self.colours, &self.cx).unwrap_or_default();
             let on = if ch == checked { 1 } else { 0 };
             let (cs, us, f) = (hex(*checked), hex(*unchecked), esc(font));
             // From its properties (alias, tag, lock and the rest), with the state it shows now.
             let mut ctl = self.controls[c].clone();
-            ctl.open.clear();
+            ctl.edit_src(|s| s.open.clear());
             // Its own states (their fonts) when it has them, checked as it shows.
-            let own = ctl.props.kind_xml.as_deref().filter(|x| x.contains("checkedState")).map(|x| {
-                let mut x = x.to_string();
-                crate::docx::xml::set_checkbox_checked(&mut x, on == 1);
-                x
-            });
-            ctl.props.kind_xml = own.or(Some(format!(
+            let own = match &ctl.props.kind_xml {
+                Some(k) if k.kind == ctl.props.kind => k.xml.contains("checkedState").then(|| {
+                    let mut x = k.xml.clone();
+                    crate::docx::xml::set_checkbox_checked(&mut x, on == 1);
+                    x
+                }),
+                _ => controls::checkbox_edited(&ctl.props, on == 1),
+            };
+            let xml = own.unwrap_or_else(|| format!(
                 concat!(
                     "<w14:checkbox xmlns:w14=\"http://schemas.microsoft.com/office/word/2010/wordml\">",
                     "<w14:checked w14:val=\"{on}\"/><w14:checkedState w14:val=\"{cs}\" w14:font=\"{f}\"/><w14:uncheckedState w14:val=\"{us}\" w14:font=\"{f}\"/>",
@@ -5725,7 +5960,8 @@ impl Saver<'_, '_> {
                 cs = cs,
                 us = us,
                 f = f,
-            )));
+            ));
+            ctl.props.kind_xml = Some(KindXml { xml, kind: ctl.props.kind.clone() });
             return Some(format!(
                 "{PARA_LEVEL}{}<{w}r>{rpr}<{w}t>{}</{w}t></{w}r></{w}sdtContent></{w}sdt>",
                 control_open(w, *c, &ctl),
@@ -5735,7 +5971,7 @@ impl Saver<'_, '_> {
         // A copy pasted into the part it came from: its source XML (its relationships are this part's), at its size now,
         // with drawing ids of its own.
         if let Inline::Picture(p, _) = i
-            && let Some(x) = p.src.0.as_deref().filter(|x| self.xml.contains(*x))
+            && let Some(x) = p.origin_xml().map(|x| &**x).filter(|x| self.xml.contains(*x))
         {
             // Its text box holding its own text.
             let own = p.text.as_ref().and_then(|t| self.nested_blocks(&t.text_box.blocks).ok());
@@ -5824,7 +6060,7 @@ impl Saver<'_, '_> {
             cx = cx,
             cy = cy,
             id = id,
-            image = image,
+            image = image.0,
             descr = descr_attr(&p.alt),
             ee = effect_extent(p.effect),
         ))
@@ -5845,7 +6081,7 @@ fn descr_attr(alt: &str) -> String {
 /// Each made part that embeds a new picture's image ([`NEW_IMAGE`]): the image as a media part beside it, its
 /// relationship, and the content type of its extension.
 // shortcut: its relationship and content-type edits are its own; they move to `package::add_part` when next changed.
-fn add_images(package: &[u8], images: &[Vec<u8>], parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
+fn add_images(package: &[u8], images: &Resources, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
     let mut zin = zip::ZipArchive::new(Cursor::new(package)).map_err(|e| e.to_string())?;
     // Media part names the package and the parts written have: a new image's is free in both.
     let mut taken: std::collections::HashSet<String> =
@@ -5867,12 +6103,12 @@ fn add_images(package: &[u8], images: &[Vec<u8>], parts: &mut Vec<(String, Vec<u
     for name in names {
         let xml = String::from_utf8(parts.iter().find(|(n, _)| *n == name).map(|p| p.1.clone()).unwrap_or_default()).map_err(|e| e.to_string())?;
         // The images its relationship attributes name (`r:embed`, `r:id`, `o:relid`), not text that looks like one.
-        let mut used: Vec<usize> = {
+        let mut used: Vec<ResourceId> = {
             let dom = roxmltree::Document::parse(&xml).map_err(|e| e.to_string())?;
             dom.descendants()
                 .flat_map(|n| n.attributes())
                 .filter(|a| a.namespace() == Some(R) || a.namespace() == Some(O) && a.name() == "relid")
-                .filter_map(|a| a.value().strip_prefix(NEW_IMAGE)?.parse().ok())
+                .filter_map(|a| a.value().strip_prefix(NEW_IMAGE)?.parse().ok().map(ResourceId))
                 .collect()
         };
         used.sort_unstable();
@@ -5887,13 +6123,13 @@ fn add_images(package: &[u8], images: &[Vec<u8>], parts: &mut Vec<(String, Vec<u
         let mut media: Vec<(String, Vec<u8>)> = Vec::new();
         for k in used {
             let data = images.get(k).ok_or("a new picture without its image")?;
-            media.push((format!("{k}"), data.clone()));
+            media.push((format!("{}", k.0), data.to_vec()));
             // An SVG is written as Word writes one: the blip shows a PNG of it, its `asvg:svgBlip` the SVG.
             if super::image::is_svg(data)
                 && let Some((png, patched)) = svg_blips(&xml, k, data)
             {
                 xml = patched;
-                media.push((format!("{k}f"), png));
+                media.push((format!("{}f", k.0), png));
             }
         }
         // Relationship ids the part has: each new image takes one it doesn't.
@@ -5970,8 +6206,8 @@ fn add_images(package: &[u8], images: &[Vec<u8>], parts: &mut Vec<(String, Vec<u
 /// A part's XML with each new blip of SVG image `k` (`a:blip r:embed="rIdCeImg{k}"`) showing its PNG fallback
 /// (`rIdCeImg{k}f`) and naming the SVG in an `asvg:svgBlip` extension, and that PNG: drawn at the first picture's
 /// size at 96 dpi. `None` when the SVG can't be drawn.
-fn svg_blips(xml: &str, k: usize, svg: &[u8]) -> Option<(Vec<u8>, String)> {
-    let attr = format!("r:embed=\"{NEW_IMAGE}{k}\"");
+fn svg_blips(xml: &str, k: ResourceId, svg: &[u8]) -> Option<(Vec<u8>, String)> {
+    let attr = format!("r:embed=\"{NEW_IMAGE}{}\"", k.0);
     let first = xml.match_indices(&attr).map(|(at, _)| at).find(|&at| xml[..at].rfind('<').is_some_and(|t| xml[t..].starts_with("<a:blip")))?;
     // The drawing's extent, the last before the blip.
     let extent = xml[..first].rfind("<wp:extent ").map(|e| &xml[e..]).and_then(|t| {
@@ -5992,7 +6228,7 @@ fn svg_blips(xml: &str, k: usize, svg: &[u8]) -> Option<(Vec<u8>, String)> {
             continue;
         }
         out.push_str(&rest[..at]);
-        out.push_str(&format!("r:embed=\"{NEW_IMAGE}{k}f\""));
+        out.push_str(&format!("r:embed=\"{NEW_IMAGE}{}f\"", k.0));
         rest = &rest[at + attr.len()..];
         let end = rest.find('>')?;
         if rest[..end].ends_with('/') {
@@ -6044,16 +6280,16 @@ fn object_xml(w: &str, i: &Inline) -> Option<String> {
         Inline::FieldBegin { lock, dirty, form, .. } => {
             let lock = if *lock { format!(" {w}fldLock=\"1\"") } else { String::new() };
             let dirty = if *dirty { format!(" {w}dirty=\"1\"") } else { String::new() };
-            let ff = form.as_ref().map(|f| match f.xml.0.as_deref() {
-                Some(x) if f.data == f.read => x.to_string(),
-                _ => f.data.xml(w),
+            let ff = form.as_ref().map(|f| match f.src() {
+                Some(s) if f.data == s.read => s.xml.to_string(),
+                _ => super::forms::xml(&f.data, w),
             });
             Some(match ff {
                 Some(ff) => format!("<{w}fldChar {w}fldCharType=\"begin\"{lock}{dirty}>{ff}</{w}fldChar>"),
                 None => format!("<{w}fldChar {w}fldCharType=\"begin\"{lock}{dirty}/>"),
             })
         }
-        Inline::Ruby(r, _) => r.xml.0.as_deref().map(str::to_string),
+        Inline::Ruby(r, _) => r.origin_xml().map(|x| x.to_string()),
         Inline::DateBlock(name, ..) => Some(format!("<{w}{name}/>")),
         Inline::FieldSep { .. } => Some(format!("<{w}fldChar {w}fldCharType=\"separate\"/>")),
         Inline::FieldEnd { .. } => Some(format!("<{w}fldChar {w}fldCharType=\"end\"/>")),
@@ -6082,11 +6318,11 @@ fn object_xml(w: &str, i: &Inline) -> Option<String> {
 #[derive(Clone, Debug, Default)]
 struct Placement {
     /// A position's reference, alignment (or else offset), when any of them changed.
-    h: Option<(String, Option<String>, f64)>,
-    v: Option<(String, Option<String>, f64)>,
+    h: Option<(&'static str, Option<&'static str>, f64)>,
+    v: Option<(&'static str, Option<&'static str>, f64)>,
     size: Option<(f64, f64)>,
     /// Wrapping (`wrap`, `wrap_text`, behind the text, the wrap polygon and whether it was edited), when changed.
-    wrap: Option<(String, String, bool, Option<Rc<[(f64, f64)]>>, bool)>,
+    wrap: Option<(FloatWrap, WrapText, bool, Option<Rc<[(f64, f64)]>>, bool)>,
     locked: Option<bool>,
     z: Option<u32>,
     /// The alternative text (`wp:docPr/@descr`).
@@ -6098,7 +6334,7 @@ struct Placement {
     /// Lock aspect ratio (`a:graphicFrameLocks/@noChangeAspect`).
     lock: Option<bool>,
     /// A new picture (an image of [`Document::images`]): the blip names it ([`NEW_IMAGE`]).
-    blip: Option<usize>,
+    blip: Option<ResourceId>,
     /// The distance from the text (`distT`, `distB`, `distL`, `distR`), `allowOverlap` and `layoutInCell`.
     dist: Option<[f64; 4]>,
     /// An inline picture's effect extents (`wp:effectExtent`: left, top, right, bottom).
@@ -6139,15 +6375,14 @@ impl Placement {
         let ne = |x: f64, y: f64| (x - y).abs() > 1e-6;
         let (a, b) = (&*unswapped(a), &*unswapped(b));
         // An aligned position that became an offset is written as one.
-        let pos = |(ra, aa, oa): (&String, &Option<String>, f64), (rb, ab, ob): (&String, &Option<String>, f64)| {
-            (ra != rb || aa != ab || ab.is_none() && ne(oa, ob)).then(|| (rb.clone(), ab.clone(), ob))
-        };
         let p = Placement {
-            h: pos((&a.h_relative, &a.h_align, a.h_offset), (&b.h_relative, &b.h_align, b.h_offset)),
-            v: pos((&a.v_relative, &a.v_align, a.v_offset), (&b.v_relative, &b.v_align, b.v_offset)),
+            h: (a.h_relative != b.h_relative || a.h_align != b.h_align || b.h_align.is_none() && ne(a.h_offset, b.h_offset))
+                .then(|| (anchor::h_relative_name(b.h_relative), b.h_align.map(anchor::h_align_name), b.h_offset)),
+            v: (a.v_relative != b.v_relative || a.v_align != b.v_align || b.v_align.is_none() && ne(a.v_offset, b.v_offset))
+                .then(|| (anchor::v_relative_name(b.v_relative), b.v_align.map(anchor::v_align_name), b.v_offset)),
             size: (ne(a.w, b.w) || ne(a.h, b.h)).then_some((b.w, b.h)),
             wrap: (a.wrap != b.wrap || a.wrap_text != b.wrap_text || a.behind != b.behind || a.poly != b.poly || a.poly_edited != b.poly_edited)
-                .then(|| (b.wrap.clone(), b.wrap_text.clone(), b.behind, b.poly.clone(), b.poly_edited)),
+                .then(|| (b.wrap, b.wrap_text, b.behind, b.poly.clone(), b.poly_edited)),
             locked: (a.locked != b.locked).then_some(b.locked),
             z: (a.z != b.z).then_some(b.z),
             alt: (a.alt != b.alt).then(|| b.alt.to_string()),
@@ -6191,7 +6426,7 @@ impl Placement {
             Some(e) => drawing::apply(d, e.clone()),
             None => d.to_string(),
         };
-        for (name, pos) in [("positionH", &self.h), ("positionV", &self.v)] {
+        for (name, pos) in [("positionH", self.h), ("positionV", self.v)] {
             let Some((rel, align, off)) = pos else { continue };
             if let Some((start, end)) = find_tag(&s, name, 0) {
                 let tag = set_attr(&s[start..end], "relativeFrom", &props::esc(rel));
@@ -6199,7 +6434,7 @@ impl Placement {
             }
             set_content(&mut s, name, |p| match align {
                 Some(a) => format!("<{p}align>{}</{p}align>", props::esc(a)),
-                None => format!("<{p}posOffset>{}</{p}posOffset>", emu(*off)),
+                None => format!("<{p}posOffset>{}</{p}posOffset>", emu(off)),
             });
         }
         if let Some((r, offsets)) = &self.relative {
@@ -6264,7 +6499,7 @@ impl Placement {
                 .map_or(String::new(), |(p, _)| format!("{p}:"));
             s.replace_range(start..end, &tag);
             if let Some((wrap, text, _, poly, edited)) = &self.wrap {
-                let x = wrap_xml(&p, wrap, text, poly.as_deref(), *edited);
+                let x = wrap_xml(&p, *wrap, *text, poly.as_deref(), *edited);
                 let old = ["wrapSquare", "wrapTight", "wrapThrough", "wrapTopAndBottom", "wrapNone"].iter().find_map(|n| element(&s, n));
                 match old {
                     Some(r) => s.replace_range(r, &x),
@@ -6332,7 +6567,7 @@ impl Placement {
             let stop = if s[start..end].ends_with("/>") { Some(end) } else { s[end..].find(&close).map(|c| end + c + close.len()) };
             if let Some(stop) = stop {
                 // Its own relationship namespace: the old blip may have declared it.
-                s.replace_range(start..stop, &format!(r#"<{prefix}blip xmlns:r="{R}" r:embed="{NEW_IMAGE}{k}"/>"#));
+                s.replace_range(start..stop, &format!(r#"<{prefix}blip xmlns:r="{R}" r:embed="{NEW_IMAGE}{}"/>"#, k.0));
             }
         }
         if let Some((w, h)) = self.size {
@@ -6479,14 +6714,15 @@ fn find_tag(s: &str, local: &str, from: usize) -> Option<(usize, usize)> {
 
 /// A drawing's wrap element (`p`: the drawing prefix with its colon): a tight or through wrap's polygon is `poly` (box
 /// fractions), or the object's box; `edited` marks one the user changed.
-fn wrap_xml(p: &str, wrap: &str, text: &str, poly: Option<&[(f64, f64)]>, edited: bool) -> String {
+fn wrap_xml(p: &str, wrap: FloatWrap, text: WrapText, poly: Option<&[(f64, f64)]>, edited: bool) -> String {
+    let text = anchor::wrap_text_name(text);
     match wrap {
-        "square" => format!("<{p}wrapSquare wrapText=\"{text}\"/>"),
-        "tight" | "through" => {
+        FloatWrap::Square => format!("<{p}wrapSquare wrapText=\"{text}\"/>"),
+        FloatWrap::Tight | FloatWrap::Through => {
             use std::fmt::Write as _;
             // 21600 is the whole of each side.
             const BOX: [(f64, f64); 5] = [(0.0, 0.0), (0.0, 1.0), (1.0, 1.0), (1.0, 0.0), (0.0, 0.0)];
-            let n = if wrap == "tight" { "wrapTight" } else { "wrapThrough" };
+            let n = if wrap == FloatWrap::Tight { "wrapTight" } else { "wrapThrough" };
             let (points, edited) = match poly.filter(|q| q.len() >= 2) {
                 Some(q) => (q, edited),
                 None => (&BOX[..], false),
@@ -6500,8 +6736,8 @@ fn wrap_xml(p: &str, wrap: &str, text: &str, poly: Option<&[(f64, f64)]>, edited
             let _ = write!(s, "</{p}wrapPolygon></{p}{n}>");
             s
         }
-        "topAndBottom" => format!("<{p}wrapTopAndBottom/>"),
-        _ => format!("<{p}wrapNone/>"),
+        FloatWrap::TopAndBottom => format!("<{p}wrapTopAndBottom/>"),
+        FloatWrap::None => format!("<{p}wrapNone/>"),
     }
 }
 
@@ -6645,7 +6881,7 @@ fn border(w: &str, name: &str, b: &Option<Border>) -> String {
     let color = b.color.map_or("auto".to_string(), |c| format!("{c:06X}"));
     format!(
         "<{w}{name} {w}val=\"{}\" {w}sz=\"{}\" {w}space=\"{}\" {w}color=\"{color}\"{}/>",
-        b.style,
+        crate::docx::line_style::border_val(b.style),
         (b.width * 8.0).round() as i64,
         b.space.round() as i64,
         if b.shadow { format!(" {w}shadow=\"1\"") } else { String::new() }
@@ -6658,7 +6894,16 @@ fn shading(w: &str, fill: Option<u32>) -> String {
 
 /// A table's `w:tblPr` from the model (its resolved properties written as direct ones, its tracked change last), in
 /// CT_TblPr order.
-fn tbl_pr(w: &str, t: &Table, shd: Option<&str>, bands: &[Option<String>; 2], cell_mar: Option<&str>, people: &People) -> String {
+fn tbl_pr(
+    w: &str,
+    t: &Table,
+    shd: Option<&str>,
+    bands: &[Option<String>; 2],
+    cell_mar: Option<&str>,
+    people: &People,
+    colours: &ThemeColours,
+    cx: &Cx,
+) -> String {
     let mut s = format!("<{w}tblPr>");
     if let Some(id) = &t.style_id {
         s.push_str(&format!("<{w}tblStyle {w}val=\"{}\"/>", props::esc(id)));
@@ -6716,7 +6961,7 @@ fn tbl_pr(w: &str, t: &Table, shd: Option<&str>, bands: &[Option<String>; 2], ce
     }
     s.push_str(&alt_xml(w, t.alt.as_deref()));
     if let Some(c) = &t.change {
-        s.push_str(&revisions::table_change(w, "tblPrChange", "tblPr", c, people));
+        s.push_str(&revisions::table_change(w, "tblPrChange", "tblPr", c, colours, cx, people));
     }
     s.push_str(&format!("</{w}tblPr>"));
     s
@@ -6730,7 +6975,15 @@ fn alt_xml(w: &str, alt: Option<&crate::docx::TableAlt>) -> String {
 }
 
 /// A row's `w:trPr` from the model, in CT_TrPr order; empty when it has nothing to say.
-fn tr_pr(w: &str, r: &Row, people: &People) -> String {
+/// A row height's `w:hRule` attribute, none for at least.
+fn row_height_rule(w: &str, rule: HeightRule) -> String {
+    match rule {
+        HeightRule::AtLeast => String::new(),
+        r => format!(" {w}hRule=\"{}\"", super::section::height_rule_literal(r)),
+    }
+}
+
+fn tr_pr(w: &str, r: &Row, people: &People, colours: &ThemeColours, cx: &Cx) -> String {
     let mut s = String::new();
     if r.grid_before > 0 {
         s.push_str(&format!("<{w}gridBefore {w}val=\"{}\"/>", r.grid_before));
@@ -6742,7 +6995,7 @@ fn tr_pr(w: &str, r: &Row, people: &People) -> String {
         s.push_str(&format!("<{w}cantSplit/>"));
     }
     if let Some((h, rule)) = &r.height {
-        let rule = if rule == "atLeast" { String::new() } else { format!(" {w}hRule=\"{rule}\"") };
+        let rule = row_height_rule(w, *rule);
         s.push_str(&format!("<{w}trHeight {w}val=\"{}\"{rule}/>", twips(*h)));
     }
     if r.header {
@@ -6752,7 +7005,7 @@ fn tr_pr(w: &str, r: &Row, people: &People) -> String {
         s.push_str(&format!("<{w}hidden/>"));
     }
     s.push_str(&row_jc(w, r.jc));
-    for (_, tag) in revisions::row_marks(w, &r.rev, people) {
+    for (_, tag) in revisions::row_marks(w, &r.rev, people, colours, cx) {
         s.push_str(&tag);
     }
     if s.is_empty() { s } else { format!("<{w}trPr>{s}</{w}trPr>") }
@@ -6803,7 +7056,7 @@ fn tr_changes(w: &str, gaps: Option<[usize; 2]>, was: Option<&Row>, now: &Row) -
     if was.is_none_or(|x| x.height != now.height) {
         let tag = match &now.height {
             Some((h, rule)) => {
-                let rule = if rule == "atLeast" { String::new() } else { format!(" {w}hRule=\"{rule}\"") };
+                let rule = row_height_rule(w, *rule);
                 format!("<{w}trHeight {w}val=\"{}\"{rule}/>", twips(*h))
             }
             None => String::new(),
@@ -6819,9 +7072,9 @@ fn tr_changes(w: &str, gaps: Option<[usize; 2]>, was: Option<&Row>, now: &Row) -
 /// A cell's `w:tcPr` from the model, in CT_TcPr order.
 /// A cell's `w:tcPr`: the properties it was read with (which table formatting keeps current), its width, span,
 /// vertical merge and revisions as the model has them now; else written from the model.
-fn tc_pr(w: &str, c: &Cell, people: &People, cx: &Cx) -> String {
-    if let Some(raw) = c.direct.0.as_deref() {
-        let mut p = Props::parse(Some(raw), "tcPr", cx);
+fn tc_pr(w: &str, c: &Cell, people: &People, colours: &ThemeColours, cx: &Cx) -> String {
+    if let Some(raw) = c.direct.xml(colours, cx) {
+        let mut p = Props::parse(Some(&raw), "tcPr", cx);
         p.reorder(props::TCPR);
         match &c.width {
             Some(x) => p.set("tcW", width(w, "tcW", x)),
@@ -6847,7 +7100,7 @@ fn tc_pr(w: &str, c: &Cell, people: &People, cx: &Cx) -> String {
             VMerge::Continue => p.set("vMerge", format!("<{w}vMerge/>")),
             VMerge::None => p.remove("vMerge"),
         }
-        for (name, tag) in revisions::cell_marks(w, &c.rev, people) {
+        for (name, tag) in revisions::cell_marks(w, &c.rev, people, colours, cx) {
             p.remove(name);
             if !tag.is_empty() {
                 p.set(name, tag);
@@ -6896,14 +7149,14 @@ fn tc_pr(w: &str, c: &Cell, people: &People, cx: &Cx) -> String {
     if c.fit_text {
         s.push_str(&format!("<{w}tcFitText/>"));
     }
-    if c.v_align != "top" {
-        s.push_str(&format!("<{w}vAlign {w}val=\"{}\"/>", c.v_align));
+    if c.v_align != VerticalAlignment::Top {
+        s.push_str(&format!("<{w}vAlign {w}val=\"{}\"/>", super::section::v_align_literal(c.v_align)));
     }
     if c.hide_mark {
         s.push_str(&format!("<{w}hideMark/>"));
     }
     s.push_str(&header_refs(w, c).unwrap_or_default());
-    for (_, tag) in revisions::cell_marks(w, &c.rev, people) {
+    for (_, tag) in revisions::cell_marks(w, &c.rev, people, colours, cx) {
         s.push_str(&tag);
     }
     s.push_str(&format!("</{w}tcPr>"));
@@ -6934,71 +7187,185 @@ fn strip_attr(tag: &str, name: &str) -> String {
 /// from them (`w:sdtPr` children in schema order, the settings the editor doesn't change as read).
 pub(crate) fn control_open(w: &str, id: ControlId, c: &Control) -> String {
     if c.as_read() {
-        return c.open.clone();
+        return c.open().to_string();
     }
     let p = &c.props;
     let esc = props::esc;
     let rest = |name: &str| p.rest.iter().filter(|(n, _)| n == name).map(|(_, x)| x.as_str()).collect::<String>();
-    let mut pr = rest("rPr");
+    let first = |name: &str| p.rest.iter().find(|(n, _)| n == name).map(|(_, x)| x.as_str());
+    // `w:rPr` as read while it is, else as set
+    let mut pr = match &p.run {
+        Some(r) if first("rPr") == Some(&*r.xml) => rest("rPr"),
+        Some(r) => r.xml.to_string(),
+        None => String::new(),
+    };
     if let Some(a) = &p.alias {
         pr.push_str(&format!("<{w}alias {w}val=\"{}\"/>", esc(a)));
     }
     if let Some(t) = &p.tag {
         pr.push_str(&format!("<{w}tag {w}val=\"{}\"/>", esc(t)));
     }
+    // `w:id` as read while it is (one this doesn't read too), else as set, else a new one
     let given_id = rest("id");
-    if given_id.is_empty() {
+    let read_id = first("id").and_then(controls::val).and_then(|v| v.trim().parse::<i64>().ok());
+    match p.id {
+        Some(n) if read_id == Some(n) => pr.push_str(&given_id),
+        None if !given_id.is_empty() && c.read().is_some_and(|r| r.id.is_none()) => pr.push_str(&given_id),
+        Some(n) => pr.push_str(&format!("<{w}id {w}val=\"{n}\"/>")),
         // Word's `w:id`: a signed 32-bit number, unique in the document.
-        pr.push_str(&format!("<{w}id {w}val=\"{}\"/>", (id.0 % 0x7fff_ffff) as i64 + 1));
-    } else {
-        pr.push_str(&given_id);
+        None => pr.push_str(&format!("<{w}id {w}val=\"{}\"/>", (id.0 % 0x7fff_ffff) as i64 + 1)),
     }
-    if let Some(v) = p.lock.val() {
+    if let Some(v) = controls::lock_val(p.lock) {
         pr.push_str(&format!("<{w}lock {w}val=\"{v}\"/>"));
     }
-    if let Some(x) = &p.placeholder {
-        pr.push_str(x);
+    // `w:placeholder` and `w:dataBinding` as read (the last of each) while they are, else as set
+    let last = |name: &str| p.rest.iter().rfind(|(n, _)| n == name).map(|(_, x)| x.as_str());
+    let placeholder = last("placeholder");
+    let same = match c.read() {
+        Some(r) => r.placeholder == p.placeholder,
+        None => placeholder.and_then(controls::placeholder_of) == p.placeholder,
+    };
+    match (placeholder, &p.placeholder) {
+        (Some(x), _) if same => pr.push_str(x),
+        (_, Some(name)) => pr.push_str(&controls::placeholder_xml(w, name)),
+        _ => {}
     }
-    pr.push_str(&rest("temporary"));
+    // `w:temporary` as read while it is, else from the flag.
+    match c.read() {
+        Some(r) if r.temporary == p.temporary => pr.push_str(&rest("temporary")),
+        _ if p.temporary => pr.push_str(&format!("<{w}temporary/>")),
+        _ => {}
+    }
     if p.showing_placeholder {
         pr.push_str(&format!("<{w}showingPlcHdr/>"));
     }
-    if let Some(x) = &p.binding {
-        pr.push_str(x);
+    let binding = last("dataBinding");
+    let same = match c.read() {
+        Some(r) => r.binding == p.binding,
+        None => binding.map(controls::binding_of) == p.binding,
+    };
+    match (binding, &p.binding) {
+        (Some(x), Some(_)) if same => pr.push_str(x),
+        (_, Some(b)) => pr.push_str(&controls::binding_xml(w, b)),
+        _ => {}
     }
+    let w15 = "http://schemas.microsoft.com/office/word/2012/wordml";
+    // `w15:appearance` and `w15:color` as read while they are, else as set, after the rest
+    let appearance = match c.read() {
+        Some(r) => r.appearance != p.appearance,
+        None => first("appearance").and_then(controls::val).as_deref().and_then(crate::docx::reader::control_appearance) != p.appearance,
+    };
+    let color = match c.read() {
+        Some(r) => r.color != p.color,
+        None => first("color").map(|x| controls::val(x).and_then(|v| u32::from_str_radix(&v, 16).ok())) != p.color,
+    };
     for (n, x) in &p.rest {
-        if !matches!(n.as_str(), "rPr" | "id" | "temporary") {
+        let set = (n == "appearance" && appearance) || (n == "color" && color);
+        if !set && !matches!(n.as_str(), "rPr" | "id" | "placeholder" | "temporary" | "dataBinding") {
             pr.push_str(x);
         }
     }
-    let w15 = "http://schemas.microsoft.com/office/word/2012/wordml";
+    if let Some(a) = p.appearance.filter(|_| appearance) {
+        pr.push_str(&format!(r#"<w15:appearance xmlns:w15="{w15}" w15:val="{}"/>"#, controls::appearance_val(a)));
+    }
+    // A colour this doesn't read is never set, only kept.
+    if let Some(Some(k)) = p.color.filter(|_| color) {
+        pr.push_str(&format!(r#"<w15:color xmlns:w15="{w15}" {w}val="{k:06X}"/>"#));
+    }
     let kind = match (&p.kind_xml, &p.kind) {
-        (Some(x), _) => x.clone(),
-        (None, ControlKind::PlainText { multi_line: true }) => format!("<{w}text {w}multiLine=\"1\"/>"),
-        (None, ControlKind::PlainText { .. }) => format!("<{w}text/>"),
-        (None, ControlKind::RichText) => format!("<{w}richText/>"),
-        (None, ControlKind::Picture) => format!("<{w}picture/>"),
-        (None, ControlKind::Date { format, lid }) => format!(
-            "<{w}date><{w}dateFormat {w}val=\"{}\"/>{}<{w}storeMappedDataAs {w}val=\"dateTime\"/><{w}calendar {w}val=\"gregorian\"/></{w}date>",
-            esc(format),
-            lid.as_ref().map_or(String::new(), |l| format!("<{w}lid {w}val=\"{}\"/>", esc(l)))
-        ),
-        (None, ControlKind::Group) => format!("<{w}group/>"),
-        (None, ControlKind::RepeatingSection) => format!("<w15:repeatingSection xmlns:w15=\"{w15}\"/>"),
-        (None, ControlKind::RepeatingItem) => format!("<w15:repeatingSectionItem xmlns:w15=\"{w15}\"/>"),
-        (None, ControlKind::Checkbox { .. } | ControlKind::DropDown | ControlKind::Other) => String::new(),
+        (_, ControlKind::DropDown) => list_xml(w, c),
+        (Some(x), ControlKind::Other) if c.read().is_some_and(|r| r.kept == p.kept) => x.xml.clone(),
+        (x, ControlKind::Other) => {
+            p.kept.as_ref().and_then(|k| kept_part_xml(k, w)).or_else(|| x.as_ref().map(|x| x.xml.clone())).unwrap_or_default()
+        }
+        (_, ControlKind::Date { .. }) => controls::date_xml(w, p),
+        (Some(x), _) if x.kind == p.kind => x.xml.clone(),
+        (_, ControlKind::Checkbox { value, .. }) => controls::checkbox_edited(p, value.unwrap_or(false)).unwrap_or_default(),
+        (_, ControlKind::PlainText { multi_line: true }) => format!("<{w}text {w}multiLine=\"1\"/>"),
+        (_, ControlKind::PlainText { .. }) => format!("<{w}text/>"),
+        (_, ControlKind::RichText) => format!("<{w}richText/>"),
+        (_, ControlKind::Picture) => format!("<{w}picture/>"),
+        (_, ControlKind::Group) => format!("<{w}group/>"),
+        (None, ControlKind::RepeatingSection { title: None, fixed: false }) => format!("<w15:repeatingSection xmlns:w15=\"{w15}\"/>"),
+        (_, ControlKind::RepeatingSection { title, fixed }) => {
+            let title = title.as_ref().map_or(String::new(), |t| format!(r#"<w15:sectionTitle w15:val="{}"/>"#, esc(t)));
+            let fixed = if *fixed { "<w15:doNotAllowInsertDeleteSection/>" } else { "" };
+            format!(r#"<w15:repeatingSection xmlns:w15="{w15}">{title}{fixed}</w15:repeatingSection>"#)
+        }
+        (_, ControlKind::RepeatingItem) => format!("<w15:repeatingSectionItem xmlns:w15=\"{w15}\"/>"),
     };
     format!("<{w}sdt><{w}sdtPr>{pr}{kind}</{w}sdtPr><{w}sdtContent>")
 }
 
+/// A drop-down's kind element: as read while its entries and kind are; else its entries in the element as read (its
+/// attributes, such as its last value, kept) when that is of its kind, or in a new one.
+fn list_xml(w: &str, c: &Control) -> String {
+    let p = &c.props;
+    if let Some(x) = &p.kind_xml
+        && c.read().is_some_and(|r| r.items == p.items && r.combo == p.combo)
+    {
+        return x.xml.clone();
+    }
+    let esc = props::esc;
+    let mut items = String::new();
+    for i in &p.items {
+        items += &format!("<{w}listItem");
+        if let Some(t) = &i.text {
+            items += &format!(" {w}displayText=\"{}\"", esc(t));
+        }
+        if let Some(v) = &i.value {
+            items += &format!(" {w}value=\"{}\"", esc(v));
+        }
+        items += "/>";
+    }
+    let name = if p.combo { "comboBox" } else { "dropDownList" };
+    let head = p.kind_xml.as_ref().map(|k| k.xml.as_str()).and_then(|x| Some(x[..crate::docx::binding::tag_end(x)?].trim_end_matches('/')));
+    let qname = head.and_then(|h| h.get(1..)).and_then(|h| h.split(|c: char| c.is_whitespace() || c == '/').next());
+    match (head, qname) {
+        (Some(head), Some(q)) if q.rsplit(':').next() == Some(name) => format!("{head}>{items}</{q}>"),
+        _ => format!("<{w}{name}>{items}</{w}{name}>"),
+    }
+}
+
+/// A building block gallery's (or building block's) kind element in the main namespace's prefix `w`: `None` for the
+/// other kept kinds.
+fn kept_part_xml(k: &super::model::KeptKind, w: &str) -> Option<String> {
+    let esc = props::esc;
+    let (name, gallery, category, unique) = match k {
+        super::model::KeptKind::Gallery { gallery, category } => ("docPartList", gallery, category, false),
+        super::model::KeptKind::BuildingBlock { gallery, category, unique } => ("docPartObj", gallery, category, *unique),
+        _ => return None,
+    };
+    let mut x = format!("<{w}{name}>");
+    if let Some(g) = gallery {
+        x += &format!("<{w}docPartGallery {w}val=\"{}\"/>", esc(g));
+    }
+    if let Some(c) = category {
+        x += &format!("<{w}docPartCategory {w}val=\"{}\"/>", esc(c));
+    }
+    if unique {
+        x += &format!("<{w}docPartUnique/>");
+    }
+    x += &format!("</{w}{name}>");
+    Some(x)
+}
+
 /// The end markup matching [`control_open`].
 pub(crate) fn control_close(w: &str, c: &Control) -> String {
-    if c.as_read() { c.close.clone() } else { format!("</{w}sdtContent></{w}sdt>") }
+    if c.as_read() { c.close().to_string() } else { format!("</{w}sdtContent></{w}sdt>") }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_edge_prefix_is_its_runs_tag_prefix() {
+        assert_eq!(edge_prefix(r#"<w:r w:rsidR="00AB"><w:fldChar w:fldCharType="begin"/></w:r>"#), "w:");
+        assert_eq!(edge_prefix("<x:r><x:fldChar/></x:r>"), "x:");
+        assert_eq!(edge_prefix("<r><fldChar/></r>"), "");
+        assert_eq!(edge_prefix("<w:fldSimple/>"), "w:");
+    }
 
     #[test]
     fn diff_keeps_common_units() {
@@ -7050,10 +7417,10 @@ mod tests {
         assert_eq!(tag_ids(&xml, BOOKMARK_TAGS).into_iter().map(|(_, id)| id).collect::<Vec<_>>(), [6]);
     }
 
-    fn render_fixture(name: &str) -> (Vec<u8>, Document) {
+    fn render_fixture(name: &str) -> (Vec<u8>, Document, Session) {
         let bytes = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/render").join(name)).expect("fixture");
-        let doc = crate::docx::read_editable(&bytes).expect("reads");
-        (bytes, doc)
+        let (doc, docx) = crate::docx::read_editable(&bytes).expect("reads");
+        (bytes, doc, docx)
     }
 
     fn part_text(package: &[u8], name: &str) -> String {
@@ -7063,35 +7430,47 @@ mod tests {
         s
     }
 
+    /// `doc`'s page fill, its picture named by its place in the document's images (each read gives new ids).
+    fn fill_by_place(doc: &Document) -> Option<crate::drawing::paint::Fill> {
+        let mut f = doc.page_fill.clone();
+        if let Some(crate::drawing::paint::Fill::Blip(b)) = &mut f {
+            b.image = b.image.and_then(|k| doc.images.iter().position(|(i, _)| i == k)).map(|p| ResourceId(p as u64));
+        }
+        f
+    }
+
     #[test]
     fn an_untouched_page_background_keeps_its_markup_and_a_changed_one_is_written() {
-        let (bytes, mut doc) = render_fixture("page-pattern.docx");
-        assert_eq!(save(&doc).expect("saves"), bytes, "untouched");
+        let (bytes, mut doc, docx) = render_fixture("page-pattern.docx");
+        assert_eq!(save(&doc, &docx).expect("saves"), bytes, "untouched");
         // A new colour: the fill as read is kept, the theme attributes go with the old colour.
         let was = part_text(&bytes, "word/document.xml");
         let fill = &was[was.find("<v:background").unwrap()..was.find("</v:background>").unwrap() + 15];
         doc.page_colour = Some(0x12_3456);
         doc.settings.display_background_shape = false;
-        let saved = save(&doc).expect("saves");
+        let saved = save(&doc, &docx).expect("saves");
         let xml = part_text(&saved, "word/document.xml");
         assert!(xml.contains(&format!(r#"<w:background w:color="123456">{fill}</w:background>"#)), "{xml}");
         assert!(!part_text(&saved, "word/settings.xml").contains("displayBackgroundShape"));
         let again = crate::docx::read(&saved).expect("reads again");
-        assert_eq!((again.page_colour, again.page_fill == doc.page_fill, again.settings.display_background_shape), (Some(0x12_3456), true, false));
+        assert_eq!(
+            (again.page_colour, fill_by_place(&again) == fill_by_place(&doc), again.settings.display_background_shape),
+            (Some(0x12_3456), true, false)
+        );
         // No colour and no fill: no background.
         doc.page_colour = None;
         doc.page_fill = None;
-        let xml = part_text(&save(&doc).expect("saves"), "word/document.xml");
+        let xml = part_text(&save(&doc, &docx).expect("saves"), "word/document.xml");
         assert!(!xml.contains("<w:background"), "{xml}");
     }
 
     #[test]
     fn a_fill_that_takes_the_page_colour_is_written_from_the_model_when_the_colour_changes() {
         // The gradient names no first colour: it starts from the page's white.
-        let (_, mut doc) = render_fixture("page-gradient.docx");
+        let (_, mut doc, docx) = render_fixture("page-gradient.docx");
         let fill = doc.page_fill.clone();
         doc.page_colour = Some(0x12_3456);
-        let saved = save(&doc).expect("saves");
+        let saved = save(&doc, &docx).expect("saves");
         let xml = part_text(&saved, "word/document.xml");
         let el = &xml[xml.find("<w:background").unwrap()..xml.find("</w:background>").unwrap()];
         assert!(!el.contains("xmlns") && !el.contains("opacity"), "as Word writes it: {el}");
@@ -7101,15 +7480,15 @@ mod tests {
 
     #[test]
     fn a_fill_on_a_part_without_vml_declares_its_namespaces_on_the_root() {
-        let (bytes, _) = render_fixture("page-colour.docx");
+        let (bytes, ..) = render_fixture("page-colour.docx");
         let xml = part_text(&bytes, "word/document.xml");
         let bare =
             xml.replace(r#" xmlns:v="urn:schemas-microsoft-com:vml""#, "").replace(r#" xmlns:o="urn:schemas-microsoft-com:office:office""#, "");
         assert!(!bare.contains("xmlns:v="));
         let package = repackage(&bytes, &[("word/document.xml".into(), bare.into_bytes())], zip::CompressionMethod::Deflated).expect("repackages");
-        let mut doc = crate::docx::read_editable(&package).expect("reads");
+        let (mut doc, docx) = crate::docx::read_editable(&package).expect("reads");
         doc.page_fill = render_fixture("page-gradient.docx").1.page_fill;
-        let saved = save(&doc).expect("saves");
+        let saved = save(&doc, &docx).expect("saves");
         let again = crate::docx::read(&saved).expect("reads again");
         assert_eq!(again.page_fill, doc.page_fill);
         let xml = part_text(&saved, "word/document.xml");
@@ -7121,12 +7500,12 @@ mod tests {
     fn a_page_background_made_since_reading_is_written_in_its_model_form() {
         use crate::drawing::paint::Fill;
         // A gradient on a page that had none, its colour, shown.
-        let (_, mut doc) = render_fixture("watermark-text.docx");
-        let (_, gradient) = render_fixture("page-gradient.docx");
+        let (_, mut doc, docx) = render_fixture("watermark-text.docx");
+        let (_, gradient, _) = render_fixture("page-gradient.docx");
         doc.page_colour = Some(0xFF_FFFF);
         doc.page_fill = gradient.page_fill.clone();
         doc.settings.display_background_shape = true;
-        let saved = save(&doc).expect("saves");
+        let saved = save(&doc, &docx).expect("saves");
         let xml = part_text(&saved, "word/document.xml");
         let el = &xml[xml.find("<w:background").unwrap()..xml.find("</w:background>").unwrap()];
         assert!(
@@ -7139,18 +7518,18 @@ mod tests {
         assert_eq!((a.kind, a.tile, a.flip), (b.kind, b.tile, b.flip));
         assert_eq!(a.stops.len(), b.stops.len());
         // A tiled picture: the image goes with the part.
-        let (_, picture) = render_fixture("page-picture.docx");
-        let mut doc = render_fixture("watermark-text.docx").1;
+        let (_, picture, _) = render_fixture("page-picture.docx");
+        let (_, mut doc, docx) = render_fixture("watermark-text.docx");
         doc.images = picture.images.clone();
         doc.page_fill = picture.page_fill.clone();
-        let saved = save(&doc).expect("saves");
+        let saved = save(&doc, &docx).expect("saves");
         let again = crate::docx::read(&saved).expect("reads again");
         let Some(Fill::Blip(b)) = &again.page_fill else { panic!("{:?}", again.page_fill) };
-        assert_eq!(again.images[b.image.expect("its picture")], picture.images[0]);
+        assert_eq!(again.images.get(b.image.expect("its picture")).unwrap(), picture.images.iter().next().unwrap().1);
     }
 
     /// A blank document's body as `body`, read for editing.
-    fn body_doc(body: &str) -> Document {
+    fn body_doc(body: &str) -> (Document, Session) {
         crate::docx::read_editable(&crate::editing::tests::blank_body(body)).expect("reads")
     }
 
@@ -7174,14 +7553,14 @@ mod tests {
 
     #[test]
     fn a_kept_rows_alignment_is_written_and_taken_off() {
-        let mut doc = body_doc(&format!("{}<w:p/>", one_cell("", "<w:tc>", "a")));
+        let (mut doc, docx) = body_doc(&format!("{}<w:p/>", one_cell("", "<w:tc>", "a")));
         first_table(&mut doc).rows[0].jc = Some(Jc::Center);
-        let saved = save(&doc).expect("saves");
-        let mut again = crate::docx::read_editable(&saved).expect("reads again");
+        let saved = save(&doc, &docx).expect("saves");
+        let (mut again, again_docx) = crate::docx::read_editable(&saved).expect("reads again");
         assert_eq!(first_table(&mut again).rows[0].jc, Some(Jc::Center), "{}", part_text(&saved, "word/document.xml"));
         first_table(&mut again).rows[0].jc = None;
-        let saved = save(&again).expect("saves");
-        let mut back = crate::docx::read_editable(&saved).expect("reads again");
+        let saved = save(&again, &again_docx).expect("saves");
+        let (mut back, _) = crate::docx::read_editable(&saved).expect("reads again");
         assert_eq!(first_table(&mut back).rows[0].jc, None, "{}", part_text(&saved, "word/document.xml"));
     }
 
@@ -7194,11 +7573,11 @@ mod tests {
             row("a"),
             row("b")
         );
-        let mut doc = body_doc(&body);
+        let (mut doc, docx) = body_doc(&body);
         let t = first_table(&mut doc);
         assert!(!t.rows[0].controls.is_empty() && t.rows[1].controls.is_empty(), "the first row is in the control");
         t.rows[1].jc = Some(Jc::Center);
-        let saved = save(&doc).expect("saves");
+        let saved = save(&doc, &docx).expect("saves");
         let xml = part_text(&saved, "word/document.xml");
         roxmltree::Document::parse(&xml).unwrap_or_else(|e| panic!("well formed: {e}: {xml}"));
         let at = |s: &str| xml.find(s).unwrap_or_else(|| panic!("{s} in {xml}"));
@@ -7207,13 +7586,21 @@ mod tests {
 
     #[test]
     fn a_header_reference_goes_by_its_parsed_slot() {
-        let doc = body_doc("<w:p/>");
+        let (doc, _) = body_doc("<w:p/>");
         let mut was = doc.sections[0].page();
-        was.headers = [Some("rId1".into()), Some("rId2".into()), None];
+        was.headers = [Some(HeaderFooterId::next()), Some(HeaderFooterId::next()), None];
         let mut now = was.clone();
         now.headers[0] = None;
         let sect = r#"<w:sectPr><w:headerReference w:type = 'default' r:id="rId1"/><w:headerReference w:type="first" r:id="rId2"/></w:sectPr>"#;
-        let out = sect_with_page(sect, "w:", &now, Some(&was), None, &People::default());
+        let out = sect_with_page(
+            sect,
+            "w:",
+            SectPage { page: &now, was: Some(&was), grid: None },
+            None,
+            &People::default(),
+            &Cx::of_xml(sect),
+            &ThemeColours::default(),
+        );
         assert!(!out.contains("rId1") && out.contains(r#"<w:headerReference w:type="first" r:id="rId2"/>"#), "{out}");
     }
 
@@ -7221,7 +7608,7 @@ mod tests {
     fn a_new_blip_declares_its_relationship_namespace() {
         let a = super::super::xml::A;
         let src = r#"<w:drawing><a:graphic><a:blip xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:embed="rId1"/></a:graphic></w:drawing>"#;
-        let out = Placement { blip: Some(2), ..Placement::default() }.apply(src);
+        let out = Placement { blip: Some(ResourceId(2)), ..Placement::default() }.apply(src);
         let xml = format!(r#"<x xmlns:w="{W}" xmlns:a="{a}">{out}</x>"#);
         let dom = roxmltree::Document::parse(&xml).unwrap_or_else(|e| panic!("well formed: {e}: {out}"));
         let blip = dom.descendants().find(|n| n.tag_name().name() == "blip").expect("a blip");
@@ -7231,10 +7618,10 @@ mod tests {
     #[test]
     fn a_vml_picture_named_by_its_relid_takes_its_new_image() {
         let src = r#"<w:pict><v:shape style="width:1pt;height:1pt"><v:imagedata o:relid="rId3" o:title=""/></v:shape></w:pict>"#;
-        let out = picture_patched(src, Placement::default(), Some(0), Some(1));
+        let out = picture_patched(src, Placement::default(), Some(ResourceId(0)), Some(ResourceId(1)));
         assert!(out.contains(&format!(r#"o:relid="{NEW_IMAGE}1""#)), "{out}");
         let src = r#"<w:pict><v:shape style="width:1pt;height:1pt"><v:imagedata r:id="rId3" o:relid="rId4"/></v:shape></w:pict>"#;
-        let out = picture_patched(src, Placement::default(), Some(0), Some(1));
+        let out = picture_patched(src, Placement::default(), Some(ResourceId(0)), Some(ResourceId(1)));
         assert!(out.contains(&format!(r#"r:id="{NEW_IMAGE}1""#)) && out.contains(r#"o:relid="rId4""#), "{out}");
     }
 
@@ -7250,7 +7637,8 @@ mod tests {
             r#"<w:document xmlns:w="{W}" xmlns:wp="{wp}" xmlns:a="{a}" xmlns:r="{R}"><wp:docPr id="1" descr="{NEW_IMAGE}0"/><a:blip r:embed="{NEW_IMAGE}0"/></w:document>"#
         );
         let mut parts = vec![("word/document.xml".to_string(), xml.into_bytes())];
-        add_images(&package, &[crate::render::svg::png(1, 1, &[0, 0, 0, 255])], &mut parts).expect("adds the image");
+        add_images(&package, &[(ResourceId(0), crate::render::svg::png(1, 1, &[0, 0, 0, 255]))].into_iter().collect(), &mut parts)
+            .expect("adds the image");
         let out = String::from_utf8(parts[0].1.clone()).expect("text");
         assert!(out.contains(&format!(r#"descr="{NEW_IMAGE}0""#)) && out.contains(r#"r:embed="rIdCeImg1""#), "{out}");
     }
@@ -7266,12 +7654,12 @@ mod tests {
         let shd = |fill: &str| format!(r#"<w:shd w:val="clear" w:color="auto" w:fill="{fill}"/>"#);
         for (later, want) in [(shd("0000FF"), (Some(0x00_00FF), None)), (String::new(), (None, Some((None, None))))] {
             let body = format!("{}{}<w:p/>", one_cell(&shd("FF0000"), "<w:tc>", "a"), one_cell(&later, "<w:tc>", "b"));
-            let mut doc = body_doc(&body);
+            let (mut doc, docx) = body_doc(&body);
             let t = first_table(&mut doc);
             assert_eq!(t.rows.len(), 2, "read as one");
             edit_first_cell(t);
-            let saved = save(&doc).expect("saves");
-            let mut again = crate::docx::read_editable(&saved).expect("reads again");
+            let saved = save(&doc, &docx).expect("saves");
+            let (mut again, _) = crate::docx::read_editable(&saved).expect("reads again");
             let t = first_table(&mut again);
             assert_eq!(t.rows[0].shading, None);
             let row = &t.rows[1];
@@ -7283,12 +7671,12 @@ mod tests {
     #[test]
     fn a_joined_table_s_later_rows_stay_unshaded_under_shading_the_first_takes_since_reading() {
         let body = format!("{}{}<w:p/>", one_cell("", "<w:tc>", "a"), one_cell("", "<w:tc>", "b"));
-        let mut doc = body_doc(&body);
+        let (mut doc, docx) = body_doc(&body);
         let t = first_table(&mut doc);
         assert_eq!(t.rows[1].table_shading, Some((None, None)));
-        t.direct = Raw(Some(Rc::from(r#"<w:tblPr><w:shd w:val="clear" w:color="auto" w:fill="00FF00"/></w:tblPr>"#)));
-        let saved = save(&doc).expect("saves");
-        let mut again = crate::docx::read_editable(&saved).expect("reads again");
+        t.direct = crate::docx::table_props::TableDirect::in_w(r#"<w:tblPr><w:shd w:val="clear" w:color="auto" w:fill="00FF00"/></w:tblPr>"#);
+        let saved = save(&doc, &docx).expect("saves");
+        let (mut again, _) = crate::docx::read_editable(&saved).expect("reads again");
         let t = first_table(&mut again);
         assert_eq!(t.rows[1].table_shading, Some((None, None)), "{}", part_text(&saved, "word/document.xml"));
     }
@@ -7300,13 +7688,13 @@ mod tests {
         for (tr, edit) in [("<w:tr>", false), ("<w:tr>", true), ("<w:tr><w:tblPrEx/>", false)] {
             let later = one_cell(&format!("<w:jc w:val=\"center\"/>{shd}{mar}"), "<w:tc>", "b").replace("<w:tr>", tr);
             let body = format!("{}{later}<w:p/>", one_cell(shd, "<w:tc>", "a"));
-            let mut doc = body_doc(&body);
+            let (mut doc, docx) = body_doc(&body);
             let t = first_table(&mut doc);
             if edit {
                 let cell = t.rows[1].cells[0].clone();
                 t.rows[1].cells.push(cell);
             }
-            let saved = save(&doc).expect("saves");
+            let saved = save(&doc, &docx).expect("saves");
             let xml = part_text(&saved, "word/document.xml");
             let ex = &xml[xml.find("<w:tblPrEx>").expect("exceptions")..xml.find("</w:tblPrEx>").unwrap()];
             let at = |name: &str| ex.find(&format!("<w:{name}")).unwrap_or_else(|| panic!("{name} in {ex}"));
@@ -7317,11 +7705,11 @@ mod tests {
     #[test]
     fn a_table_s_width_and_shading_change_together_in_a_self_closing_tbl_pr() {
         let body = r#"<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:p/></w:tc></w:tr></w:tbl><w:p/>"#;
-        let mut doc = body_doc(body);
+        let (mut doc, docx) = body_doc(body);
         let t = first_table(&mut doc);
         t.width = Width::Dxa(144.0);
-        t.direct = Raw(Some(Rc::from(r#"<w:tblPr><w:shd w:val="clear" w:color="auto" w:fill="00FF00"/></w:tblPr>"#)));
-        let saved = save(&doc).expect("saves");
+        t.direct = crate::docx::table_props::TableDirect::in_w(r#"<w:tblPr><w:shd w:val="clear" w:color="auto" w:fill="00FF00"/></w:tblPr>"#);
+        let saved = save(&doc, &docx).expect("saves");
         let xml = part_text(&saved, "word/document.xml");
         assert!(
             xml.contains(r#"<w:tblPr><w:tblW w:w="2880" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="00FF00"/></w:tblPr>"#),
@@ -7333,14 +7721,14 @@ mod tests {
     fn a_cell_s_id_alone_changing_is_written_over_its_own_however_quoted() {
         let body = format!("{}<w:p/>", one_cell("", "<w:tc w:id='old'>", "a"));
         for id in [Some("new"), None] {
-            let mut doc = body_doc(&body);
+            let (mut doc, docx) = body_doc(&body);
             let cell = &mut first_table(&mut doc).rows[0].cells[0];
             assert_eq!(cell.ids.as_ref().and_then(|i| i.id.as_deref()), Some("old"));
             cell.ids = id.map(|v| Rc::new(crate::docx::CellIds { id: Some(v.into()), headers: Vec::new() }));
-            let saved = save(&doc).expect("saves");
+            let saved = save(&doc, &docx).expect("saves");
             let xml = part_text(&saved, "word/document.xml");
             roxmltree::Document::parse(&xml).expect("well formed");
-            let mut again = crate::docx::read_editable(&saved).expect("reads again");
+            let (mut again, _) = crate::docx::read_editable(&saved).expect("reads again");
             let ids = first_table(&mut again).rows[0].cells[0].ids.clone();
             assert_eq!(ids.and_then(|i| i.id.clone()).as_deref(), id, "{xml}");
         }
@@ -7350,37 +7738,37 @@ mod tests {
     fn a_page_fill_takes_a_free_prefix_and_kept_markup_keeps_its_own() {
         use crate::drawing::paint::Fill;
         // The root's `v` is another namespace's: the fill's VML takes a free prefix.
-        let (bytes, _) = render_fixture("page-colour.docx");
+        let (bytes, ..) = render_fixture("page-colour.docx");
         let xml = part_text(&bytes, "word/document.xml").replace(r#"xmlns:v="urn:schemas-microsoft-com:vml""#, r#"xmlns:v="urn:example:other""#);
         let package = repackage(&bytes, &[("word/document.xml".into(), xml.into_bytes())], zip::CompressionMethod::Deflated).expect("repackages");
-        let mut doc = crate::docx::read_editable(&package).expect("reads");
+        let (mut doc, docx) = crate::docx::read_editable(&package).expect("reads");
         doc.page_fill = render_fixture("page-gradient.docx").1.page_fill;
-        let saved = save(&doc).expect("saves");
+        let saved = save(&doc, &docx).expect("saves");
         let out = part_text(&saved, "word/document.xml");
         roxmltree::Document::parse(&out).expect("well formed");
         assert!(out.contains(r#"xmlns:v1="urn:schemas-microsoft-com:vml""#) && out.contains("<v1:background"), "{out}");
-        assert_eq!(crate::docx::read(&saved).expect("reads again").page_fill, doc.page_fill);
+        assert_eq!(fill_by_place(&crate::docx::read(&saved).expect("reads again")), fill_by_place(&doc));
         // VML declared on the `w:background` alone: a colour change keeps the fill, and its declaration.
-        let (bytes, read) = render_fixture("page-picture.docx");
+        let (bytes, read, _) = render_fixture("page-picture.docx");
         let xml = part_text(&bytes, "word/document.xml");
         let decl = r#" xmlns:v="urn:schemas-microsoft-com:vml""#;
         let local = xml.replacen(decl, "", 1).replacen("<w:background ", &format!("<w:background{decl} "), 1);
         assert!(!local[..local.find("<w:body").unwrap()].contains(&format!("<w:document{decl}")));
         let package = repackage(&bytes, &[("word/document.xml".into(), local.into_bytes())], zip::CompressionMethod::Deflated).expect("repackages");
-        let mut doc = crate::docx::read_editable(&package).expect("reads");
+        let (mut doc, docx) = crate::docx::read_editable(&package).expect("reads");
         assert!(matches!(doc.page_fill, Some(Fill::Blip(_))), "{:?}", doc.page_fill);
         doc.page_colour = read.page_colour.map(|c| c ^ 0x10);
-        let saved = save(&doc).expect("saves");
+        let saved = save(&doc, &docx).expect("saves");
         let out = part_text(&saved, "word/document.xml");
         roxmltree::Document::parse(&out).expect("well formed");
         assert!(out.contains(&format!("<w:background w:color=\"FFFFEF\"{decl}><v:background")), "{out}");
-        assert_eq!(crate::docx::read(&saved).expect("reads again").page_fill, doc.page_fill);
+        assert_eq!(fill_by_place(&crate::docx::read(&saved).expect("reads again")), fill_by_place(&doc));
     }
 
     #[test]
     fn a_kept_page_fill_s_local_declarations_leave_the_background_wordprocessingml() {
         use crate::drawing::paint::Fill;
-        let (bytes, read) = render_fixture("page-picture.docx");
+        let (bytes, read, _) = render_fixture("page-picture.docx");
         let xml = part_text(&bytes, "word/document.xml");
         let open = r#"<w:background w:color="FFFFFF">"#;
         assert!(xml.contains(open));
@@ -7392,31 +7780,30 @@ mod tests {
             );
             let package =
                 repackage(&bytes, &[("word/document.xml".into(), local.into_bytes())], zip::CompressionMethod::Deflated).expect("repackages");
-            let mut doc = crate::docx::read_editable(&package).expect("reads");
+            let (mut doc, docx) = crate::docx::read_editable(&package).expect("reads");
             assert!(matches!(doc.page_fill, Some(Fill::Blip(_))), "{:?}", doc.page_fill);
             doc.page_colour = read.page_colour.map(|c| c ^ 0x10);
-            let saved = save(&doc).expect("saves");
+            let saved = save(&doc, &docx).expect("saves");
             let out = part_text(&saved, "word/document.xml");
             roxmltree::Document::parse(&out).expect("well formed");
             assert!(out.contains(r#"xmlns:w="urn:example:other""#), "{out}");
             let again = crate::docx::read(&saved).expect("reads again");
-            assert_eq!((again.page_colour, &again.page_fill), (doc.page_colour, &doc.page_fill), "{out}");
+            assert_eq!((again.page_colour, fill_by_place(&again)), (doc.page_colour, fill_by_place(&doc)), "{out}");
         }
     }
 
     #[test]
     fn a_replaced_tiled_picture_is_written_with_its_new_image() {
         use crate::drawing::paint::Fill;
-        let (_, mut doc) = render_fixture("page-picture.docx");
+        let (_, mut doc, docx) = render_fixture("page-picture.docx");
         let Some(Fill::Blip(mut b)) = doc.page_fill.clone() else { panic!("{:?}", doc.page_fill) };
         let png = crate::render::svg::png(2, 2, &[0, 128, 255, 255].repeat(4));
-        doc.images.push(png.clone());
-        b.image = Some(doc.images.len() - 1);
+        b.image = Some(doc.images.add(png.clone()));
         doc.page_fill = Some(Fill::Blip(b));
-        let saved = save(&doc).expect("saves");
+        let saved = save(&doc, &docx).expect("saves");
         let again = crate::docx::read(&saved).expect("reads again");
         let Some(Fill::Blip(b)) = &again.page_fill else { panic!("{:?}", again.page_fill) };
-        assert_eq!(again.images[b.image.expect("its picture")], png);
+        assert_eq!(again.images.get(b.image.expect("its picture")).unwrap(), png);
     }
 
     #[test]

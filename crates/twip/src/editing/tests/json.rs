@@ -302,7 +302,7 @@ impl Editor {
             "mode": self.mode.name(),
         });
         if !self.changes.is_empty() {
-            r["elements"] = changes(&std::mem::take(&mut self.changes), &self.index);
+            r["elements"] = changes(&std::mem::take(&mut self.changes), &self.doc, &self.docx, &self.index);
         }
         if let Some(a) = answer {
             r["answer"] = a;
@@ -318,14 +318,17 @@ impl Editor {
         match q {
             "elements" => {
                 let matching = args.get("match").and_then(|m| Some((m.get("in")?.as_str()?.to_string(), m.get("text")?.as_str()?.to_string())));
-                let f = elements::Filter { kind: s("kind"), matching, story: s("story") };
-                json!(elements::enumerate(&self.doc, &self.index, &f).iter().map(|e| element(e, &self.index)).collect::<Vec<_>>())
+                let (f, story) = (elements::Filter { kind: s("kind"), matching }, s("story"));
+                let all = elements::enumerate(&self.doc, &self.index, &f);
+                let kept =
+                    all.iter().filter(|e| story.as_deref().is_none_or(|s| s == elements::story_name(e.story, &self.doc, &self.docx, &self.index)));
+                json!(kept.map(|e| element(e, &self.doc, &self.docx, &self.index)).collect::<Vec<_>>())
             }
             "element" => {
                 let Some(id) = s("id").as_deref().and_then(elements::parse_id) else { return json!({ "error": "bad estimate: id" }) };
                 match self.elems.get(&id) {
                     Some(e) => {
-                        let mut v = element(e, &self.index);
+                        let mut v = element(e, &self.doc, &self.docx, &self.index);
                         let children: Vec<String> = self.elems.values().filter(|c| c.parent == Some(id)).map(|c| elements::id_str(c.id)).collect();
                         v["children"] = json!(children);
                         v
@@ -416,9 +419,9 @@ fn request(r: &Request) -> Value {
     }
 }
 
-fn element(e: &Element, idx: &DocIndex) -> Value {
+fn element(e: &Element, doc: &crate::docx::Document, docx: &crate::docx::Session, idx: &DocIndex) -> Value {
     let mut v = json!({
-        "id": elements::id_str(e.id), "kind": e.kind(), "display": e.display, "story": elements::story_name(e.story, idx),
+        "id": elements::id_str(e.id), "kind": e.kind(), "display": e.display, "story": elements::story_name(e.story, doc, docx, idx),
         "parent": e.parent.map(elements::id_str), "locked": e.locked,
     });
     if let Some(c) = &e.code {
@@ -437,21 +440,21 @@ fn element(e: &Element, idx: &DocIndex) -> Value {
         v["binding"] = json!(p.binding.is_some());
         match &p.kind {
             ControlKind::PlainText { multi_line } => v["props"] = json!({ "multi_line": multi_line }),
-            ControlKind::Checkbox { checked, unchecked } => {
+            ControlKind::Checkbox { checked, unchecked, .. } => {
                 v["props"] = json!({ "checked": checked.to_string(), "unchecked": unchecked.to_string() })
             }
-            ControlKind::Date { format, lid } => v["props"] = json!({ "format": format, "lid": lid }),
+            ControlKind::Date { format, lid, .. } => v["props"] = json!({ "format": format, "lid": lid }),
             _ => {}
         }
     }
     v
 }
 
-fn changes(c: &Changes, idx: &DocIndex) -> Value {
+fn changes(c: &Changes, doc: &crate::docx::Document, docx: &crate::docx::Session, idx: &DocIndex) -> Value {
     json!({
-        "added": c.added.iter().map(|e| element(e, idx)).collect::<Vec<_>>(),
+        "added": c.added.iter().map(|e| element(e, doc, docx, idx)).collect::<Vec<_>>(),
         "removed": c.removed.iter().map(|e| elements::id_str(*e)).collect::<Vec<_>>(),
-        "changed": c.changed.iter().map(|e| element(e, idx)).collect::<Vec<_>>(),
+        "changed": c.changed.iter().map(|e| element(e, doc, docx, idx)).collect::<Vec<_>>(),
     })
 }
 

@@ -15,7 +15,7 @@ use crate::api::value::{AutoOr, HorizontalAlignment, NoneOr, Points};
 use crate::docx::{Block, Table};
 
 fn doc_xml(e: &Editor) -> String {
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
     let mut s = String::new();
     z.by_name("word/document.xml").unwrap().read_to_string(&mut s).unwrap();
@@ -29,7 +29,7 @@ fn open(body: &str) -> Editor {
 }
 
 fn reopened(e: &Editor) -> Editor {
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut e = Editor::open(&bytes, fonts()).expect("reopens");
     e.complete(fonts());
     e
@@ -321,8 +321,8 @@ fn the_pen_splits_every_cell_its_line_crosses() {
     assert!(matches!(e.draw_table_stroke(Stroke { page: 0, from: [x, a[1] + 1.0], to: [x, c[3] - 1.0] }, fonts()), Outcome::Changed(_)));
     assert_eq!(shape(&e), [vec![(1, N); 3], vec![(1, N); 3]], "a column line in both rows");
     assert!((table(&e).grid[0] - 30.0).abs() < 0.6, "{:?}", table(&e).grid);
-    let pen = |c: &crate::docx::Cell| c.right.as_ref().map(|b| b.style.clone());
-    assert_eq!(pen(&table(&e).rows[1].cells[0]).as_deref(), Some("single"), "drawn in the pen's line");
+    let pen = |c: &crate::docx::Cell| c.right.as_ref().map(|b| b.style);
+    assert_eq!(pen(&table(&e).rows[1].cells[0]), Some(crate::docx::props::BorderStyle::Single), "drawn in the pen's line");
 }
 
 #[test]
@@ -385,14 +385,21 @@ fn a_pen_click_draws_nothing() {
 fn the_pen_redraws_a_border_it_follows() {
     use crate::editing::table_draw::Stroke;
     let mut e = open(&grid2(["", "", "", ""], "", ["", ""]));
-    e.set_table_pen(crate::docx::props::Border { style: "double".into(), width: 1.5, space: 0.0, shadow: false, color: None, color_theme: None });
+    e.set_table_pen(crate::docx::props::Border {
+        style: crate::docx::props::BorderStyle::Double,
+        width: 1.5,
+        space: 0.0,
+        shadow: false,
+        color: None,
+        color_theme: None,
+    });
     let r = cell_rect(&mut e, 0, 0);
     assert!(matches!(e.draw_table_stroke(Stroke { page: 0, from: [r[0] + 2.0, r[3]], to: [r[2] - 2.0, r[3]] }, fonts()), Outcome::Changed(_)));
     let t = table(&e);
     assert_eq!(t.rows.len(), 2, "no split");
-    assert_eq!(t.rows[0].cells[0].bottom.as_ref().map(|b| &*b.style), Some("double"));
-    assert_eq!(t.rows[1].cells[0].top.as_ref().map(|b| &*b.style), Some("double"));
-    assert_ne!(t.rows[0].cells[1].bottom.as_ref().map(|b| &*b.style), Some("double"), "only where it was drawn");
+    assert_eq!(t.rows[0].cells[0].bottom.as_ref().map(|b| b.style), Some(crate::docx::props::BorderStyle::Double));
+    assert_eq!(t.rows[1].cells[0].top.as_ref().map(|b| b.style), Some(crate::docx::props::BorderStyle::Double));
+    assert_ne!(t.rows[0].cells[1].bottom.as_ref().map(|b| b.style), Some(crate::docx::props::BorderStyle::Double), "only where it was drawn");
 }
 
 #[test]
@@ -419,9 +426,9 @@ fn a_line_in_a_drawn_outline_keeps_the_rows_where_drawn() {
     let r = cell_rect(&mut e, 0, 0);
     let y = r[1] + 20.0;
     assert!(matches!(e.draw_table_stroke(Stroke { page: 0, from: [r[0] + 1.0, y], to: [r[2] - 1.0, y] }, fonts()), Outcome::Changed(_)));
-    let h: Vec<(f64, String)> = table(&e).rows.iter().map(|r| r.height.clone().expect("a height")).collect();
+    let h: Vec<(f64, crate::docx::HeightRule)> = table(&e).rows.iter().map(|r| r.height.expect("a height")).collect();
     assert!((h[0].0 - 20.0).abs() < 0.6 && (h[1].0 - 40.0).abs() < 0.6, "{h:?}");
-    assert!(h.iter().all(|x| x.1 == "atLeast"));
+    assert!(h.iter().all(|x| x.1 == crate::docx::HeightRule::AtLeast));
 }
 
 #[test]
@@ -452,7 +459,7 @@ fn the_pen_draws_a_new_table_outside_one() {
     let mut e = open("<w:p><w:r><w:t>text</w:t></w:r></w:p>");
     assert!(matches!(e.draw_table_stroke(Stroke { page: 0, from: [250.0, 300.0], to: [100.0, 360.0] }, fonts()), Outcome::Changed(_)));
     let t = table(&e);
-    assert_eq!((t.grid.clone(), t.rows[0].height.clone()), (vec![150.0], Some((60.0, "atLeast".to_string()))));
+    assert_eq!((t.grid.clone(), t.rows[0].height), (vec![150.0], Some((60.0, crate::docx::HeightRule::AtLeast))));
     let pos = t.floating.expect("positioned where it was drawn");
     assert_eq!((pos.x, pos.y, pos.h_page, pos.v_anchor), (100.0, 300.0, true, crate::docx::props::TableAnchor::Page));
     e.execute(Command::Undo(Default::default()), fonts());
@@ -546,7 +553,7 @@ fn insert_cells_track_as_inserted_cells_and_moved_text() {
             e.execute(Command::SetTrackChanges(true), fonts());
             cells(&mut e, sel, sel);
             assert!(matches!(e.insert_cells(shift, fonts()), Outcome::Changed(_)));
-            assert!(crate::docx::write::save(e.document()).is_ok());
+            assert!(crate::docx::write::save(e.document(), e.docx()).is_ok());
             e.execute(
                 if accept { Command::AcceptAllRevisions(Default::default()) } else { Command::RejectAllRevisions(Default::default()) },
                 fonts(),

@@ -27,7 +27,7 @@ pub fn drawing_key(page: &PageFragment) -> u64 {
                     r.paint.hash(h);
                 }
                 Item::Rect { rect, colour, snap, dash, phase } => (1u8, rect.map(f64::to_bits), colour, snap, dash, phase.to_bits()).hash(h),
-                Item::Image { rect, key, .. } => (2u8, rect.map(f64::to_bits), key.index, key.generation).hash(h),
+                Item::Image { rect, key, .. } => (2u8, rect.map(f64::to_bits), key.image, key.generation).hash(h),
                 Item::Gridline { line } => (3u8, line.map(f64::to_bits)).hash(h),
                 // Shared by identity, as lines are: a layout that keeps the shape keeps its address.
                 Item::Shape(s) => (4u8, Rc::as_ptr(s) as usize).hash(h),

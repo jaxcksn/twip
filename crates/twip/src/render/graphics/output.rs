@@ -85,7 +85,7 @@ fn kept(name: &str, pages: usize) -> usize {
 }
 
 /// One page drawn on the CPU at `k` device pixels a point, light appearance, page only, on the document's page colour.
-fn draw(g: &mut Graphics, r: &Renderer, page: &crate::layout::fragment::PageFragment, images: &[Vec<u8>], k: f64) -> Rgba {
+fn draw(g: &mut Graphics, r: &Renderer, page: &crate::layout::fragment::PageFragment, images: &crate::docx::Resources, k: f64) -> Rgba {
     let picture = g.page_picture(r, page, images);
     let (w, h) = ((page.w * k).round().max(1.0) as u32, (page.h * k).round().max(1.0) as u32);
     let mut px = vec![0u8; w as usize * h as usize * 4];
@@ -99,8 +99,9 @@ fn draw(g: &mut Graphics, r: &Renderer, page: &crate::layout::fragment::PageFrag
 pub(crate) fn rendered() -> BTreeMap<String, Rgba> {
     let fonts = bundled_fonts();
     let mut out = BTreeMap::new();
+    let hyphenation = crate::layout::tests::output::hyphenation();
     for (name, d) in corpus() {
-        let snap = crate::layout::layout(&d, &fonts);
+        let snap = crate::layout::tests::layout_hyphenated(&d, &fonts, Some(&hyphenation));
         let mut r = Renderer::default();
         r.set_page_background(&d);
         let mut g = Graphics::default();
@@ -219,13 +220,14 @@ fn gpu_pages_match_the_cpu() {
     let fonts = bundled_fonts();
     let (mut failures, mut drawn) = (Vec::new(), 0);
     let mut gpu = Gpu::new(&ctx, wgpu::TextureFormat::Rgba8Unorm);
+    let hyphenation = crate::layout::tests::output::hyphenation();
     for (name, d) in corpus() {
         let pages = match name.as_str() {
             "docx-feature-showcase" => 1,
             n if n.starts_with("render__") => usize::MAX,
             _ => continue,
         };
-        let snap = crate::layout::layout(&d, &fonts);
+        let snap = crate::layout::tests::layout_hyphenated(&d, &fonts, Some(&hyphenation));
         let mut r = Renderer::default();
         r.set_page_background(&d);
         let mut g = Graphics::default();

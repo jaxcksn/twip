@@ -1,5 +1,6 @@
 //! Formatting and command state
 
+use crate::docx::origin::FloatOrigin;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
@@ -13,17 +14,18 @@ use crate::api::state::{
     ParagraphFormatting, TableSelection, TableStyleOptions, Tri,
 };
 use crate::api::value::{
-    Alignment, AutoOr, CellAlignment, Color, HeightRule, HighlightColor, HorizontalAlignment, LineSpacing, NoneOr, ObjectWrap, Orientation, Points,
-    RowHeight, StyleId, TableWidth, UnderlineStyle,
+    Alignment, AutoOr, Color, HeightRule, HighlightColor, HorizontalAlignment, LineSpacing, NoneOr, ObjectWrap, Orientation, Points, RowHeight,
+    StyleId, TableWidth, UnderlineStyle,
 };
 use crate::docx::props::{Jc, LineRule, VertAlign};
-use crate::docx::{ParaStyle, Run, RunStyle};
+use crate::docx::{FloatWrap, ParaStyle, Run, RunStyle, Underline};
 use crate::layout::{ParaId, TableId};
 
 use super::Editor;
 use super::keymap::{Bound, KeyContext, Mods, Toggle};
 use super::position::StoryId;
 use super::selection::{ObjectRef, Selection};
+use crate::document::paragraph::{ListId, ListRef};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ObjectKind {
@@ -39,7 +41,7 @@ pub struct SelectedObject {
     pub height: f64,
     pub alt: Rc<str>,
     pub decorative: bool,
-    pub wrap: Option<(String, bool)>,
+    pub wrap: Option<(FloatWrap, bool)>,
     pub locked: Option<bool>,
 }
 
@@ -75,30 +77,30 @@ pub(super) fn fold<T: PartialEq>(values: impl IntoIterator<Item = T>) -> Tri<T> 
 }
 
 fn underline_of(r: &RunStyle) -> UnderlineStyle {
-    underline_style(r.underline.as_deref())
+    underline_style(r.underline)
 }
 
-/// The underline a `w:u` value draws.
-pub(super) fn underline_style(v: Option<&str>) -> UnderlineStyle {
-    match v {
-        None | Some("none") => UnderlineStyle::None,
-        Some("words") => UnderlineStyle::Words,
-        Some("double") => UnderlineStyle::Double,
-        Some("thick") => UnderlineStyle::Thick,
-        Some("dotted") => UnderlineStyle::Dotted,
-        Some("dash") => UnderlineStyle::Dash,
-        Some("dotDash") => UnderlineStyle::DotDash,
-        Some("wave") => UnderlineStyle::Wave,
-        Some("dottedHeavy") => UnderlineStyle::DottedHeavy,
-        Some("dashedHeavy") => UnderlineStyle::DashedHeavy,
-        Some("dashLong") => UnderlineStyle::DashLong,
-        Some("dashLongHeavy") => UnderlineStyle::DashLongHeavy,
-        Some("dashDotHeavy") => UnderlineStyle::DashDotHeavy,
-        Some("dotDotDash") => UnderlineStyle::DotDotDash,
-        Some("dashDotDotHeavy") => UnderlineStyle::DashDotDotHeavy,
-        Some("wavyHeavy") => UnderlineStyle::WavyHeavy,
-        Some("wavyDouble") => UnderlineStyle::WavyDouble,
-        Some(_) => UnderlineStyle::Single,
+/// The underline style of a run's underline.
+pub(super) fn underline_style(u: Option<Underline>) -> UnderlineStyle {
+    match u {
+        None | Some(Underline::None) => UnderlineStyle::None,
+        Some(Underline::Single) => UnderlineStyle::Single,
+        Some(Underline::Words) => UnderlineStyle::Words,
+        Some(Underline::Double) => UnderlineStyle::Double,
+        Some(Underline::Thick) => UnderlineStyle::Thick,
+        Some(Underline::Dotted) => UnderlineStyle::Dotted,
+        Some(Underline::Dash) => UnderlineStyle::Dash,
+        Some(Underline::DotDash) => UnderlineStyle::DotDash,
+        Some(Underline::Wave) => UnderlineStyle::Wave,
+        Some(Underline::DottedHeavy) => UnderlineStyle::DottedHeavy,
+        Some(Underline::DashedHeavy) => UnderlineStyle::DashedHeavy,
+        Some(Underline::DashLong) => UnderlineStyle::DashLong,
+        Some(Underline::DashLongHeavy) => UnderlineStyle::DashLongHeavy,
+        Some(Underline::DashDotHeavy) => UnderlineStyle::DashDotHeavy,
+        Some(Underline::DotDotDash) => UnderlineStyle::DotDotDash,
+        Some(Underline::DashDotDotHeavy) => UnderlineStyle::DashDotDotHeavy,
+        Some(Underline::WavyHeavy) => UnderlineStyle::WavyHeavy,
+        Some(Underline::WavyDouble) => UnderlineStyle::WavyDouble,
     }
 }
 
@@ -248,7 +250,7 @@ pub fn paragraph(paras: &[(&ParaStyle, Option<bool>)]) -> ParagraphFormatting {
             Some(false) => ListState::Numbered,
             None => ListState::None,
         })),
-        list_level: fold(paras.iter().filter(|(_, l)| l.is_some()).filter_map(|(p, _)| p.num.map(|(_, l)| l as u32))),
+        list_level: fold(paras.iter().filter(|(_, l)| l.is_some()).filter_map(|(p, _)| p.num.map(|ListRef { list: ListId(_), level: l }| l as u32))),
         flow: FlowState {
             keep_with_next: tri(&|p| p.keep_next),
             keep_lines_together: tri(&|p| p.keep_lines),
@@ -419,7 +421,7 @@ impl Editor {
                         height: fl.h,
                         alt: fl.alt.clone(),
                         decorative: fl.shape.as_ref().is_some_and(|s| s.nv.decorative),
-                        wrap: Some((fl.wrap.clone(), fl.behind)),
+                        wrap: Some((fl.wrap, fl.behind)),
                         locked: Some(fl.locked),
                     }),
                     _ => None,
@@ -514,7 +516,10 @@ impl Editor {
         let in_list = f.is_some_and(|f| f.list.is_some());
         let styled = self.style_target.is_some();
         let paras = if styled { Vec::new() } else { self.selected_paras() };
-        let listed = styled || paras.iter().any(|&p| self.index.para(&self.doc, p).is_some_and(|p| p.style.num.is_some_and(|(id, _)| id != 0)));
+        let listed = styled
+            || paras
+                .iter()
+                .any(|&p| self.index.para(&self.doc, p).is_some_and(|p| p.style.num.is_some_and(|ListRef { list: ListId(id), level: _ }| id != 0)));
         let framed = styled || self.frame_here().is_some();
         let tab_stops = self.tab_stops_in(&paras);
         let notes = self.takes_notes();
@@ -710,7 +715,7 @@ impl Editor {
                     (in_group, (None, None))
                 }
                 (C::SetTrackChanges, _) => (editable && !(locked && tracking), (Some(tracking), None)),
-                (C::SetMarkupView, _) => (true, (None, Some(CommandValue::MarkupView(self.doc.review.view)))),
+                (C::SetMarkupView, _) => (true, (None, Some(CommandValue::MarkupView(self.review.view)))),
                 (C::SetTrackOptions | C::AcceptAllAndStopTracking, _) => (editable && !locked, (None, None)),
                 (C::DeleteAllComments, _) => (editable && comments, (None, None)),
                 (C::PromoteOutline | C::DemoteOutline | C::PromoteToHeading1 | C::DemoteToBodyText, _) => {
@@ -749,7 +754,7 @@ impl Editor {
                 (C::SelectField, _) => (true, (None, None)),
                 (C::ShrinkSelection, _) => (self.modes.extend >= 2, (None, None)),
                 (C::SelectSimilarFormatting, _) => (self.selection.focus().is_some(), (None, None)),
-                (C::SelectStyleInstances, _) => (self.doc.resolver.is_some(), (None, None)),
+                (C::SelectStyleInstances, _) => (self.doc.definitions.is_some(), (None, None)),
                 (C::ToggleCharacterCode | C::GrowFontOnePoint | C::ShrinkFontOnePoint | C::ClearAllFormatting | C::SetFitText, _) => {
                     (chars, (None, None))
                 }
@@ -816,17 +821,14 @@ impl Editor {
             can_merge: matches!(self.selection, Selection::Cells { anchor, focus, .. } if anchor != focus),
             header_row: fold(rows.iter().map(|r| r.header)),
             row_can_break: fold(rows.iter().map(|r| !r.cant_split)),
-            cell_alignment: fold(cells.iter().map(|c| match c.v_align.as_str() {
-                "center" => CellAlignment::Center,
-                "bottom" => CellAlignment::Bottom,
-                _ => CellAlignment::Top,
-            })),
+            cell_alignment: fold(cells.iter().map(|c| super::table_format::api_cell_alignment(Some(c.v_align)))),
             cell_shading: fold(cells.iter().map(|c| c.shading.map_or(NoneOr::None, |s| NoneOr::Value(Color(s))))),
             row_height: fold(rows.iter().map(|r| match &r.height {
                 None => AutoOr::Auto,
-                Some((h, rule)) => {
-                    AutoOr::Value(RowHeight { height: Points(*h), rule: if rule == "exact" { HeightRule::Exact } else { HeightRule::AtLeast } })
-                }
+                Some((h, rule)) => AutoOr::Value(RowHeight {
+                    height: Points(*h),
+                    rule: if *rule == crate::docx::HeightRule::Exact { HeightRule::Exact } else { HeightRule::AtLeast },
+                }),
             })),
             column_width: fold((tg.cols.0..=tg.cols.1).filter_map(|c| t.grid.get(c)).map(|w| Points(*w))),
             style: t.style_id.clone().map(StyleId),
@@ -870,14 +872,14 @@ impl Editor {
 
     pub fn object_selection(&self) -> Option<ObjectSelection> {
         let o = self.selected_object()?;
-        let wrap = match o.wrap.as_ref().map(|(w, behind)| (w.as_str(), *behind)) {
+        let wrap = match o.wrap {
             None => ObjectWrap::Inline,
-            Some(("square", _)) => ObjectWrap::Square,
-            Some(("tight", _)) => ObjectWrap::Tight,
-            Some(("through", _)) => ObjectWrap::Through,
-            Some(("topAndBottom", _)) => ObjectWrap::TopAndBottom,
-            Some((_, true)) => ObjectWrap::BehindText,
-            Some((_, false)) => ObjectWrap::InFrontOfText,
+            Some((FloatWrap::Square, _)) => ObjectWrap::Square,
+            Some((FloatWrap::Tight, _)) => ObjectWrap::Tight,
+            Some((FloatWrap::Through, _)) => ObjectWrap::Through,
+            Some((FloatWrap::TopAndBottom, _)) => ObjectWrap::TopAndBottom,
+            Some((FloatWrap::None, true)) => ObjectWrap::BehindText,
+            Some((FloatWrap::None, false)) => ObjectWrap::InFrontOfText,
         };
         let shape = self.shape_info().unwrap_or_default();
         Some(ObjectSelection {
@@ -950,7 +952,7 @@ impl Editor {
                 let props = self.doc.controls.get(&c).map(|k| k.props.clone()).unwrap_or_default();
                 let kind = control_kind(&props);
                 let mut info = control_info(&props);
-                if let Some(crate::docx::KeptKind::Gallery { gallery, category }) = props.kept_kind() {
+                if let Some(crate::docx::KeptKind::Gallery { gallery, category }) = props.kept.clone() {
                     info.building_blocks = self.gallery_entries(gallery.as_deref(), category.as_deref()).map(|b| b.name.clone()).collect();
                 }
                 // A date control's date, from the text it shows
@@ -994,9 +996,9 @@ impl Editor {
 
     pub fn header_footer_info(&mut self, page: u32) -> Option<HeaderFooterInfo> {
         let StoryId::HeaderFooter(k) = self.selection.focus()?.story else { return None };
-        let name = self.index.part_name(k)?.to_string();
+        let part = self.index.part(k)?;
         let (section, kind, variant) = self.doc.sections.iter().enumerate().find_map(|(i, s)| {
-            let at = |refs: &crate::docx::HfRefs| refs.iter().position(|r| r.as_deref() == Some(name.as_str()));
+            let at = |refs: &crate::docx::HfRefs| refs.iter().position(|r| *r == Some(part));
             at(&s.headers).map(|v| (i, HeaderFooterKind::Header, v)).or_else(|| at(&s.footers).map(|v| (i, HeaderFooterKind::Footer, v)))
         })?;
         let pages = [HeaderFooterType::Default, HeaderFooterType::First, HeaderFooterType::Even][variant.min(2)];
@@ -1052,20 +1054,22 @@ impl Editor {
                 };
                 Some(crate::api::command::ChapterNumbers { level: u8::try_from(*level).ok()?, separator })
             }),
-            vertical_alignment: match s.v_align.as_str() {
-                "center" => PageVerticalAlignment::Center,
-                "both" => PageVerticalAlignment::Justified,
-                "bottom" => PageVerticalAlignment::Bottom,
-                _ => PageVerticalAlignment::Top,
+            vertical_alignment: match s.v_align {
+                crate::docx::VerticalAlignment::Center => PageVerticalAlignment::Center,
+                crate::docx::VerticalAlignment::Both => PageVerticalAlignment::Justified,
+                crate::docx::VerticalAlignment::Bottom => PageVerticalAlignment::Bottom,
+                crate::docx::VerticalAlignment::Top => PageVerticalAlignment::Top,
             },
             line_numbers: s.line_numbers.as_ref().map(|l| crate::api::command::LineNumbers {
                 start: u32::try_from(l.start + 1).ok(),
                 count_by: u32::try_from(l.count_by).ok(),
                 distance: (l.distance > 0.0).then_some(Points(l.distance)),
-                restart: Some(match l.restart.as_str() {
-                    "newSection" => crate::api::command::LineNumberRestart::EachSection,
-                    "continuous" => crate::api::command::LineNumberRestart::Continuous,
-                    _ => crate::api::command::LineNumberRestart::EachPage,
+                restart: Some(match l.restart {
+                    crate::docx::LineNumberingRestart::NewSection => crate::api::command::LineNumberRestart::EachSection,
+                    crate::docx::LineNumberingRestart::Continuous => crate::api::command::LineNumberRestart::Continuous,
+                    crate::docx::LineNumberingRestart::NewPage | crate::docx::LineNumberingRestart::Unrecognised => {
+                        crate::api::command::LineNumberRestart::EachPage
+                    }
                 }),
             }),
             break_type: match s.break_kind {
@@ -1139,13 +1143,13 @@ pub fn control_kind(p: &crate::docx::ControlProps) -> ElementKind {
         K::Picture => ElementKind::Picture,
         K::Checkbox { .. } => ElementKind::Checkbox,
         K::Date { .. } => ElementKind::Date,
-        K::DropDown if p.combo_box() => ElementKind::ComboBox,
+        K::DropDown if p.combo => ElementKind::ComboBox,
         K::DropDown => ElementKind::DropDown,
         K::Group => ElementKind::Group,
-        K::RepeatingSection => ElementKind::RepeatingSection,
+        K::RepeatingSection { .. } => ElementKind::RepeatingSection,
         K::RepeatingItem => ElementKind::RepeatingItem,
         K::RichText => ElementKind::RichText,
-        K::Other => match p.kept_kind() {
+        K::Other => match p.kept {
             Some(KeptKind::Gallery { .. }) => ElementKind::BuildingBlockGallery,
             Some(KeptKind::BuildingBlock { .. }) => ElementKind::BuildingBlock,
             Some(KeptKind::Citation) => ElementKind::Citation,
@@ -1158,43 +1162,36 @@ pub fn control_kind(p: &crate::docx::ControlProps) -> ElementKind {
 
 /// A content control's look and options, from its properties as kept.
 pub fn control_info(p: &crate::docx::ControlProps) -> crate::api::state::ControlInfo {
-    let rest = |name: &str| p.rest.iter().find(|(n, _)| n == name).map(|(_, x)| x.as_str());
-    let val = |x: &str, key: &str| {
-        let at = x.find(key)? + key.len();
-        Some(x[at..at + x[at..].find('"')?].to_string())
-    };
-    let appearance = match rest("appearance").and_then(|x| val(x, "val=\"")).as_deref() {
-        Some("tags") => crate::api::value::ControlAppearance::Tags,
-        Some("hidden") => crate::api::value::ControlAppearance::Hidden,
+    let appearance = match p.appearance {
+        Some(crate::docx::ControlAppearance::Tags) => crate::api::value::ControlAppearance::Tags,
+        Some(crate::docx::ControlAppearance::Hidden) => crate::api::value::ControlAppearance::Hidden,
         _ => crate::api::value::ControlAppearance::BoundingBox,
     };
     let mut info = crate::api::state::ControlInfo {
         appearance,
-        color: rest("color").and_then(|x| val(x, "val=\"")).and_then(|v| u32::from_str_radix(&v, 16).ok()).map(Color),
-        temporary: p.temporary(),
-        style: rest("rPr").and_then(|x| val(&x[x.find("rStyle")?..], "val=\"")).map(StyleId),
+        color: p.color.flatten().map(Color),
+        temporary: p.temporary,
+        style: p.run.as_ref().and_then(|r| r.props.style.as_deref()).map(|s| StyleId(s.to_string())),
         ..Default::default()
     };
     match &p.kind {
-        crate::docx::ControlKind::Checkbox { checked, unchecked } => {
+        crate::docx::ControlKind::Checkbox { checked, unchecked, .. } => {
             (info.checked_symbol, info.unchecked_symbol) = (Some(checked.to_string()), Some(unchecked.to_string()));
         }
-        crate::docx::ControlKind::RepeatingSection => {
-            let x = p.kind_xml.as_deref().unwrap_or_default();
-            info.section_title = x.find("sectionTitle").and_then(|at| val(&x[at..], "val=\""));
-            info.allow_insert_delete = Some(!super::merge::items_fixed(x));
+        crate::docx::ControlKind::RepeatingSection { title, fixed } => {
+            (info.section_title, info.allow_insert_delete) = (title.clone(), Some(!fixed));
         }
         crate::docx::ControlKind::Date { .. } => {
             if let Some(d) = super::merge::date_settings(p) {
                 info.calendar = Some(crate::api::value::CalendarType::of_val(&d.calendar).unwrap_or_default());
-                info.store_as = Some(d.storage.to_api());
+                info.store_as = Some(d.storage.into());
             }
         }
         crate::docx::ControlKind::Other => {
-            if let Some(crate::docx::KeptKind::Gallery { gallery, category } | crate::docx::KeptKind::BuildingBlock { gallery, category }) =
-                p.kept_kind()
+            if let Some(crate::docx::KeptKind::Gallery { gallery, category } | crate::docx::KeptKind::BuildingBlock { gallery, category, .. }) =
+                &p.kept
             {
-                (info.gallery, info.category) = (gallery, category);
+                (info.gallery, info.category) = (gallery.clone(), category.clone());
             }
         }
         _ => {}
@@ -1218,9 +1215,10 @@ mod underline_tests {
         let base = p.inlines.iter().find_map(crate::docx::Inline::run).expect("a run");
         for u in all {
             let value = serde_json::to_value(u).expect("serialises");
-            let r = RunStyle { underline: value.as_str().filter(|v| *v != "none").map(str::to_string), ..(**base).clone() };
+            let model = crate::docx::line_style::underline(value.as_str().expect("a string"));
+            let r = RunStyle { underline: Some(model).filter(|u| *u != Underline::None), ..(**base).clone() };
             assert_eq!(underline_of(&r), u, "{value}");
-            assert_eq!(crate::editing::commands::underline_value(u), value.as_str().expect("a string"));
+            assert_eq!(crate::editing::commands::underline(u), model);
         }
     }
 }

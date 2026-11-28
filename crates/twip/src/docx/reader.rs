@@ -1,23 +1,41 @@
 //! DOCX package → [`Document`]: resolves styles (STYLE), numbering (LIST) and fields (FIELD) while reading.
 
+use crate::docx::definitions::DefinitionsXml;
+use crate::docx::definitions::TypedDefsXml;
+use crate::docx::origin::ControlOrigin;
+use crate::docx::origin::{FloatOrigin, FormFieldOrigin, ParagraphOrigin};
 use std::collections::{HashMap, HashSet};
 use std::io::{Cursor, Read};
 use std::rc::Rc;
 
 use roxmltree::Node;
 
+use super::char_props::{self, RunDirect};
+use super::definitions::Definitions;
 use super::diagnostics::{Diagnostics, WarningCode};
 use super::model::*;
-use super::numbering::{Counters, Numbering};
+use super::origin::{ControlSrc, EdgeSource, ParaSrc, xml_origin};
+use super::para_props::{self, ParaDirect};
+use super::para_xml;
 use super::props::*;
-use super::resolve::{ParaResolved, Resolver, div_chain};
 use super::review::{
     AuthorId, CellMarkKind, CellRevisions, Comment, CommentId, FormatChange, GridChange, IdCounter, Identity, MarkKind, ParaChange, People,
-    PreviousProps, Protection, ProtectionKind, RangeKind, RangeMark, RevisionId, RevisionMark, RowRevisions, RunRevisions, SectionChange, ShowMarkup,
-    TableChange, Timestamp,
+    Permission, PreviousProps, Protection, ProtectionKind, RangeEditor, RangeKind, RangeMark, RevisionId, RevisionMark, RowRevisions, RunRevisions,
+    SectionChange, ShowMarkup, TableChange, Timestamp,
 };
-use super::styles::{Region, Styles, ThemeFonts};
+use super::run_xml;
+use super::session::Session;
+use super::styles::theme_fonts;
+use super::table_props::{self, CellDirect, ExceptionsDirect, PreviousDirect, RowDirect, TableDirect};
 use super::xml::*;
+use crate::docx::char_props::RunXml;
+use crate::docx::page_borders::PageBordersXml;
+use crate::docx::para_props::ParaXml;
+use crate::docx::table_props::TableXml;
+use crate::format::CharProps;
+use crate::format::cascade::TableRegion;
+use crate::format::cascade::div_chain;
+use crate::format::counters::Counters;
 
 struct Package {
     zip: zip::ZipArchive<Cursor<Vec<u8>>>,
@@ -187,13 +205,18 @@ fn resolve_path(dir: &str, target: &str) -> String {
 }
 
 pub fn read(bytes: &[u8]) -> Result<Document, String> {
+    read_with(bytes, false, now_local()).map(|(doc, _)| doc)
+}
+
+/// As [`read`], with the session reading leaves: what it reported, without the package.
+pub fn read_reported(bytes: &[u8]) -> Result<(Document, Session), String> {
     read_with(bytes, false, now_local())
 }
 
 /// As [`read`], with `DATE`/`TIME` fields and date blocks computed at `now` (seconds since 1970, local time) instead
 /// of the system clock, so the layout is the same on every run.
 pub fn read_at(bytes: &[u8], now: i64) -> Result<Document, String> {
-    read_with(bytes, false, now)
+    read_with(bytes, false, now).map(|(doc, _)| doc)
 }
 
 /// Seconds since 1970, UTC, by the system clock.
@@ -260,9 +283,10 @@ fn native_offset(t: i64) -> i64 {
     days * 86_400 + i64::from(tm.hour) * 3600 + i64::from(tm.min) * 60 + i64::from(tm.sec) - t
 }
 
-/// As [`read`], keeping what saving needs: the package, the main part's XML, where each body paragraph and table came
-/// from ([`Paragraph::src`], [`Table::src`]) and each run's direct formatting ([`RunStyle::direct`]).
-pub fn read_editable(bytes: &[u8]) -> Result<Document, String> {
+/// As [`read`], keeping what saving needs: the package and the main part's XML in the session's source, where each
+/// body paragraph and table came from ([`Paragraph::src`], [`Table::src`]) and each run's direct formatting
+/// ([`RunStyle::direct`]).
+pub fn read_editable(bytes: &[u8]) -> Result<(Document, Session), String> {
     read_with(bytes, true, now_local())
 }
 
@@ -278,22 +302,95 @@ fn raw(n: Node) -> Rc<str> {
     let extra: String = n
         .namespaces()
         .filter(|ns| !root.namespaces().any(|r| r.name() == ns.name() && r.uri() == ns.uri()))
-        .filter_map(|ns| ns.name().filter(|p| !own(p)).map(|p| format!(" xmlns:{p}=\"{}\"", ns.uri().replace('&', "&amp;").replace('"', "&quot;"))))
+        .filter_map(|ns| match ns.name() {
+            Some(p) if !own(p) => Some(format!(" xmlns:{p}=\"{}\"", esc_attr(ns.uri()))),
+            // The default namespace, which the element itself or an ancestor below the root declares.
+            None if !text.split('>').next().is_some_and(|tag| tag.contains("xmlns=")) => Some(format!(" xmlns=\"{}\"", esc_attr(ns.uri()))),
+            _ => None,
+        })
         .collect();
     let at = text.find(|c: char| c.is_whitespace() || c == '>' || c == '/').unwrap_or(text.len());
     format!("{}{extra}{}", &text[..at], &text[at..]).into()
 }
 
-/// The run line numbers draw with: the document defaults and the LineNumber character style.
-pub(crate) fn line_number_run(res: &Resolver) -> super::model::Run {
-    let mut rp = res.styles.doc_rpr.clone();
-    if res.styles.get("LineNumber").is_some() {
-        rp.merge_level(&res.styles.chain_rpr(Some("LineNumber")));
-    }
-    res.run_style(&rp)
+fn esc_attr(v: &str) -> String {
+    v.replace('&', "&amp;").replace('"', "&quot;")
 }
 
-fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String> {
+/// The break `w:br@type` and `@clear` give.
+fn break_kind(kind: Option<&str>, clear: Option<&str>) -> BreakKind {
+    match (kind, clear) {
+        (Some("page"), _) => BreakKind::Page,
+        (Some("column"), _) => BreakKind::Column,
+        (_, Some("left")) => BreakKind::ClearLeft,
+        (_, Some("right")) => BreakKind::ClearRight,
+        (_, Some("all")) => BreakKind::ClearAll,
+        _ => BreakKind::Line,
+    }
+}
+
+/// The run line numbers draw with: the document defaults and the LineNumber character style.
+pub(crate) fn line_number_run(res: &Definitions) -> super::model::Run {
+    let c = res.cascade();
+    let mut p = c.doc_char().clone();
+    if c.styles.styles.contains_key("LineNumber") {
+        p.merge_level(&run_xml::character_style(res, "LineNumber"));
+    }
+    Rc::new(crate::format::resolve::run_style(&c.env(), &p))
+}
+
+/// A paragraph's run base, typed.
+struct Base {
+    typed: CharProps,
+}
+
+impl Base {
+    fn new(typed: CharProps) -> Base {
+        Base { typed }
+    }
+}
+
+/// The XML path's resolver of the package `bytes`, read from its parts apart from the typed definitions: the
+/// baseline the typed cascade is checked against.
+#[cfg(test)]
+pub fn frozen_resolver(bytes: &[u8]) -> Option<super::resolve::Resolver> {
+    use super::numbering::Numbering;
+    use super::styles::Styles;
+    let zip = zip::ZipArchive::new(Cursor::new(bytes.to_vec())).ok()?;
+    let mut pkg = Package { zip, budget: PACKAGE_BUDGET };
+    let root_rels = pkg.rels("");
+    let main = root_rels.values().find(|(k, _)| k == "officeDocument").map(|(_, t)| t.clone()).unwrap_or_else(|| "word/document.xml".into());
+    let rels = pkg.rels(&main);
+    let part_of = |kind: &str| rels.values().find(|(k, _)| k == kind).map(|(_, t)| t.clone());
+    let theme_xml = part_of("theme").and_then(|p| pkg.read_str(&p));
+    let theme = theme_fonts(theme_xml.as_deref());
+    let drawing_theme = crate::docx::drawing::theme::theme(theme_xml.as_deref());
+    let settings_xml = part_of("settings").and_then(|p| pkg.read_str(&p));
+    let settings = read_settings(settings_xml.as_deref());
+    let settings_tree = settings_xml.as_deref().and_then(|x| roxmltree::Document::parse(x).ok());
+    let colour_map = crate::docx::drawing::theme::colour_map(settings_tree.as_ref().map(|d| d.root_element()));
+    let colours = ThemeColours::new(&drawing_theme, &colour_map);
+    let mut styles = Styles::parse(part_of("styles").and_then(|p| pkg.read_str(&p)).as_deref(), colours);
+    let mut numbering = Numbering::parse(part_of("numbering").and_then(|p| pkg.read_str(&p)).as_deref(), &colours);
+    if let Some(path) = part_of("glossaryDocument") {
+        let grels = pkg.rels(&path);
+        let mut gpart = |kind: &str| grels.values().find(|(k, _)| k == kind).and_then(|(_, t)| pkg.read_str(t));
+        let (gs, gn) = (gpart("styles"), gpart("numbering"));
+        let gstyles = gs.as_deref().map_or_else(Styles::default, |x| Styles::parse(Some(x), colours));
+        super::glossary::merge_tables(&mut styles, &mut numbering, gstyles, Numbering::parse(gn.as_deref(), &colours));
+    }
+    styles.compat = settings.compat();
+    styles.word2002_rules = styles.compat == Compat::Legacy && settings.policy.use_word2002_table_style_rules;
+    styles.open_type = styles.compat == Compat::Generic || settings.policy.enable_open_type_features;
+    styles.cell_size_rules = styles.compat == Compat::Legacy && !settings.policy.override_table_style_font_size_and_justification;
+    let fonts = part_of("fontTable").and_then(|p| pkg.read_str(&p)).map(|x| super::font_table::parse(&x)).unwrap_or_default();
+    let mut res = super::resolve::Resolver::new(styles, numbering, theme);
+    res.categories = Rc::new(super::font_table::categories(&fonts));
+    res.divisions = Rc::new(read_divs(part_of("webSettings").and_then(|p| pkg.read_str(&p)).as_deref(), &colours));
+    Some(res)
+}
+
+fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<(Document, Session), String> {
     read_nested(bytes, editable, now, &mut PACKAGE_BUDGET.clone(), 0)
 }
 
@@ -311,13 +408,13 @@ fn read_alt_doc(pkg: &mut Package, target: &str, left: u64, now: i64, depth: u8)
     pkg.budget += rest;
     match doc {
         _ if cost > left => Err("too much to import"),
-        Some(doc) => Ok((Rc::new(doc), cost)),
+        Some((doc, _)) => Ok((Rc::new(doc), cost)),
         None => Err("missing or not a readable document"),
     }
 }
 
 /// [`read_with`] for a package `depth` documents in (a `w:altChunk`'s), its reads taken from `budget`.
-fn read_nested(bytes: &[u8], editable: bool, now: i64, budget: &mut u64, depth: u8) -> Result<Document, String> {
+fn read_nested(bytes: &[u8], editable: bool, now: i64, budget: &mut u64, depth: u8) -> Result<(Document, Session), String> {
     let zip = zip::ZipArchive::new(Cursor::new(bytes.to_vec())).map_err(|e| e.to_string())?;
     let mut pkg = Package { zip, budget: *budget };
     let doc = read_package(bytes, &mut pkg, editable, now, depth);
@@ -325,37 +422,38 @@ fn read_nested(bytes: &[u8], editable: bool, now: i64, budget: &mut u64, depth: 
     doc
 }
 
-fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth: u8) -> Result<Document, String> {
+fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth: u8) -> Result<(Document, Session), String> {
     let root_rels = pkg.rels("");
     let main = root_rels.values().find(|(k, _)| k == "officeDocument").map(|(_, t)| t.clone()).unwrap_or_else(|| "word/document.xml".into());
     let rels = pkg.rels(&main);
     let part_of = |kind: &str| rels.values().find(|(k, _)| k == kind).map(|(_, t)| t.clone());
 
     let theme_xml = part_of("theme").and_then(|p| pkg.read_str(&p));
-    let theme = ThemeFonts::parse(theme_xml.as_deref());
-    let drawing_theme = Rc::new(crate::drawing::theme::Theme::parse(theme_xml.as_deref()));
+    let theme = theme_fonts(theme_xml.as_deref());
+    let drawing_theme = Rc::new(crate::docx::drawing::theme::theme(theme_xml.as_deref()));
     let settings_xml = part_of("settings").and_then(|p| pkg.read_str(&p));
     let settings = read_settings(settings_xml.as_deref());
     let settings_tree = settings_xml.as_deref().and_then(|x| roxmltree::Document::parse(x).ok());
     let settings_root = settings_tree.as_ref().map(|d| d.root_element());
-    let colour_map = crate::drawing::theme::ColourMap::parse(settings_root);
+    let colour_map = crate::docx::drawing::theme::colour_map(settings_root);
     let opening = settings_root.map(opening_view);
     let colours = ThemeColours::new(&drawing_theme, &colour_map);
-    let mut styles = Styles::parse(part_of("styles").and_then(|p| pkg.read_str(&p)).as_deref(), colours);
-    let mut numbering = Numbering::parse(part_of("numbering").and_then(|p| pkg.read_str(&p)).as_deref(), &colours);
-    // The glossary's styles and lists join the document's tables before anything resolves with them.
+    let styles_xml = part_of("styles").and_then(|p| pkg.read_str(&p));
+    let numbering_xml = part_of("numbering").and_then(|p| pkg.read_str(&p));
+    // The glossary's styles and lists join the document's before anything resolves with them.
     let glossary_part = part_of("glossaryDocument");
-    let glossary_map = glossary_part.as_deref().map(|path| {
+    let glossary_xml = glossary_part.as_deref().map(|path| {
         let grels = pkg.rels(path);
         let mut gpart = |kind: &str| grels.values().find(|(k, _)| k == kind).and_then(|(_, t)| pkg.read_str(t));
-        let gstyles = gpart("styles").map_or_else(Styles::default, |x| Styles::parse(Some(&x), colours));
-        let gnumbering = Numbering::parse(gpart("numbering").as_deref(), &colours);
-        super::glossary::merge_tables(&mut styles, &mut numbering, gstyles, gnumbering)
+        (gpart("styles"), gpart("numbering"))
     });
-    styles.compat = settings.compat();
-    styles.word2002_rules = styles.compat == Compat::Legacy && settings.has("useWord2002TableStyleRules");
-    styles.open_type = styles.compat == Compat::Generic || settings.has("enableOpenTypeFeatures");
-    styles.cell_size_rules = styles.compat == Compat::Legacy && !settings.has("overrideTableStyleFontSizeAndJustification");
+    let compat = settings.compat();
+    let rules = crate::format::cascade::Rules {
+        compat,
+        word2002_rules: compat == Compat::Legacy && settings.policy.use_word2002_table_style_rules,
+        cell_size_rules: compat == Compat::Legacy && !settings.policy.override_table_style_font_size_and_justification,
+        open_type: compat == Compat::Generic || settings.policy.enable_open_type_features,
+    };
     let xml = pkg.read_str(&main).ok_or("no main document part, or one too large or nested too deeply")?;
 
     // New revision, comment and paragraph ids go past every id in the parts read, so ids are seeded before reading.
@@ -378,15 +476,22 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
     let people_part = super::comments::people(people_xml.as_deref());
 
     let font_descriptions = part_of("fontTable").and_then(|p| pkg.read_str(&p)).map(|x| super::font_table::parse(&x)).unwrap_or_default();
-    let mut res = Resolver::new(styles, numbering, theme);
-    res.categories = Rc::new(super::font_table::categories(&font_descriptions));
-    res.divisions = Rc::new(read_divs(part_of("webSettings").and_then(|p| pkg.read_str(&p)).as_deref(), &colours));
+    let env = super::definitions::Surroundings {
+        theme,
+        colours,
+        rules,
+        categories: Rc::new(super::font_table::categories(&font_descriptions)),
+        divisions: Rc::new(read_divs(part_of("webSettings").and_then(|p| pkg.read_str(&p)).as_deref(), &colours)),
+    };
+    let glossary = glossary_xml.as_ref().map(|(s, n)| (s.as_deref(), n.as_deref()));
+    let (typed, glossary_map) = super::definitions::TypedDefs::read(styles_xml.as_deref(), numbering_xml.as_deref(), glossary, env);
+    let res = super::definitions::Definitions::new(typed);
     let numbering_part = part_of("numbering");
     let mut r = Reader {
         res,
         settings,
         counters: Counters::default(),
-        images: Vec::new(),
+        images: Resources::default(),
         image_index: HashMap::new(),
         bookmarks: HashMap::new(),
         fields: Vec::new(),
@@ -401,6 +506,10 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
         note_id: 0,
         in_endnotes: false,
         record: false,
+        interned: HashMap::new(),
+        interned_ppr: HashMap::new(),
+        interned_tr: HashMap::new(),
+        interned_tc: HashMap::new(),
         segs: Vec::new(),
         simple: Vec::new(),
         lossy: false,
@@ -424,14 +533,17 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
         alt_docs: Vec::new(),
         alt_depth: depth,
         theme: drawing_theme.clone(),
+        story_ids: HashMap::new(),
     };
     // The picture bullets' images, from the numbering part's relationships.
     if let Some(part) = &numbering_part {
         let rels = pkg.rels(part);
-        let wanted: Vec<(i64, String)> = r.res.numbering.pic_bullets.iter().filter_map(|(id, p)| Some((*id, p.rel.clone()?))).collect();
+        let wanted: Vec<(i64, String)> =
+            r.res.cascade().lists.pictures.iter().filter_map(|(id, p)| Some((*id, p.rel.as_deref()?.to_string()))).collect();
+        let mut found = Vec::new();
         for (id, rel) in wanted {
             let Some((_, target)) = rels.get(&rel).cloned() else { continue };
-            let index = match r.image_index.get(&target) {
+            let image = match r.image_index.get(&target) {
                 Some(&i) => i,
                 None => {
                     let Some(data) = pkg.read(&target) else { continue };
@@ -439,15 +551,14 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
                         r.diagnostics
                             .warn(WarningCode::PictureBulletUndecodable, Some(part), || format!("{target} isn't an image format the engine draws"));
                     }
-                    r.images.push(data);
-                    r.image_index.insert(target, r.images.len() - 1);
-                    r.images.len() - 1
+                    let image = r.images.add(data);
+                    r.image_index.insert(target, image);
+                    image
                 }
             };
-            if let Some(p) = r.res.numbering.pic_bullets.get_mut(&id) {
-                p.image = Some(index);
-            }
+            found.push((id, image));
         }
+        r.res.set_picture_images(&found);
     }
     for (name, identity) in &people_part {
         if let Some(i) = identity {
@@ -460,38 +571,51 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
         let dom = roxmltree::Document::parse(&xml).map_err(|e| e.to_string())?;
         let body = child(dom.root_element(), "body").ok_or("no body")?;
         if let Some(b) = child(dom.root_element(), "background") {
-            doc.page_colour = colours.colour(b, "color", "themeColor", "themeTint", "themeShade");
+            doc.page_colour = colour(&colours, b, "color", "themeColor", "themeTint", "themeShade");
             doc.page_colour_theme = crate::docx::props::theme_ref(b, "themeColor", "themeTint", "themeShade");
             let mut src = DrawingSource { reader: &mut r, pkg: &mut *pkg };
-            doc.page_fill = crate::drawing::vml::background_fill(b, doc.page_colour, &mut |rid| crate::drawing::read::Source::image(&mut src, rid));
+            doc.page_fill =
+                crate::docx::drawing::vml::background_fill(b, doc.page_colour, &mut |rid| crate::docx::drawing::read::Source::image(&mut src, rid));
         }
+        // Header and footer ids in part name order
+        let mut names: Vec<String> = body
+            .descendants()
+            .filter(|n| n.tag_name().namespace() == Some(W) && matches!(n.tag_name().name(), "headerReference" | "footerReference"))
+            .filter_map(|n| r.rels.get(n.attribute((R, "id"))?).map(|(_, t)| t.clone()))
+            .collect();
+        names.sort_unstable();
+        names.dedup();
+        r.story_ids.extend(names.into_iter().map(|n| (n, HeaderFooterId::next())));
         r.record = editable;
         doc.sections = r.read_body(body, &mut *pkg);
         shift_connector_text(&mut doc.sections);
         r.record = false;
     }
 
-    // Headers and footers are keyed by part path.
-    let mut wanted: Vec<String> = Vec::new();
+    // Headers and footers, by the part each id names.
+    let named: HashMap<HeaderFooterId, String> = r.story_ids.iter().map(|(n, id)| (*id, n.clone())).collect();
+    let mut wanted: Vec<HeaderFooterId> = Vec::new();
     for s in &doc.sections {
         for p in s.headers.iter().chain(s.footers.iter()).flatten() {
             if !wanted.contains(p) {
-                wanted.push(p.clone());
+                wanted.push(*p);
             }
         }
     }
     // Editable reads keep each header's and footer's XML and where its paragraphs came from, as the body's.
     let mut story_xml = HashMap::new();
-    for path in wanted {
+    for id in &wanted {
+        let Some(path) = named.get(id) else { continue };
         r.record = editable;
-        if let Some(blocks) = r.read_story(&path, &mut *pkg, |root| Some(root)) {
+        if let Some(blocks) = r.read_story(path, &mut *pkg, |root| Some(root)) {
             if editable {
-                story_xml.insert(path.clone(), pkg.read_str(&path).unwrap_or_default());
+                story_xml.insert(*id, pkg.read_str(path).unwrap_or_default());
             }
-            doc.stories.insert(path, blocks);
+            doc.stories.insert(*id, blocks);
         }
         r.record = false;
     }
+    let story_parts: HashMap<HeaderFooterId, String> = wanted.iter().filter_map(|id| Some((*id, named.get(id)?.clone()))).collect();
     let mut note_parts = Vec::new();
     for (kind, tag, map) in [("footnotes", "footnote", &mut doc.footnotes), ("endnotes", "endnote", &mut doc.endnotes)] {
         let Some(path) = part_of(kind) else { continue };
@@ -575,7 +699,7 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
     if let (Some(path), Some(map)) = (&glossary_part, glossary_map) {
         // The bodies are read from the part with their style and list ids as the document's tables hold them, and
         // saving maps them back: the model has one set of ids.
-        let xml = pkg.read_str(path).map(|x| map.to_view_xml(&x).into_owned());
+        let xml = pkg.read_str(path).map(|x| super::glossary::to_view_xml(&map, &x).into_owned());
         match xml.as_deref().map(roxmltree::Document::parse) {
             Some(Ok(dom)) => {
                 r.enter_part(path, &mut *pkg);
@@ -613,10 +737,7 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
         r.record = false;
     }
     doc.line_number_run = Some(line_number_run(&r.res));
-    let mut image_parts = vec![String::new(); r.images.len()];
-    for (part, &i) in &r.image_index {
-        image_parts[i] = part.clone();
-    }
+    let image_parts = r.image_index.iter().map(|(part, &i)| (i, part.clone())).collect();
     doc.images = r.images;
     doc.alt_chunks = std::mem::take(&mut r.alt_chunks);
     doc.controls = std::mem::take(&mut r.controls);
@@ -639,37 +760,40 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
     doc.theme = drawing_theme;
     doc.colour_map = colour_map;
     doc.settings = r.settings;
-    if let Some((show, hides_white_space)) = opening {
-        doc.review.markup = Rc::new(super::review::Markup { show, ..Default::default() });
-        doc.hides_white_space = hides_white_space;
+    if let Some((show, hides)) = opening {
+        (doc.settings.revision_view, doc.settings.hides_page_boundaries) = (show, hides);
     }
     doc.people = r.people;
     doc.review_ids = r.ids;
-    doc.diagnostics = r.diagnostics;
-    doc.resolver = Some(Rc::new(r.res));
+    let mut session = Session { diagnostics: r.diagnostics, ..Session::default() };
+    if cfg!(debug_assertions) {
+        r.res.typed();
+    }
+    doc.definitions = Some(Rc::new(r.res));
     doc.font_descriptions = font_descriptions;
     let mut prop = |kind: &str| root_rels.values().find(|(k, _)| k == kind).and_then(|(_, t)| pkg.read_str(t));
     doc.properties =
         super::properties::read(prop("core-properties").as_deref(), prop("extended-properties").as_deref(), prop("custom-properties").as_deref());
-    super::fields::evaluate(&mut doc, now);
+    super::fields::evaluate(&mut doc, None, now);
     super::frames::convert(&mut doc);
     doc.derive_image_sets();
-    let divs = doc.resolver.as_ref().map(|r| r.divisions.clone()).unwrap_or_default();
+    let divs = doc.definitions.as_ref().map(|r| r.cascade().divisions.clone()).unwrap_or_default();
     if !divs.is_empty() {
         doc.sections.iter_mut().for_each(|s| fold_divs(&mut s.blocks, &divs, false));
         doc.stories.values_mut().chain(doc.footnotes.values_mut()).chain(doc.endnotes.values_mut()).for_each(|b| fold_divs(b, &divs, false));
     }
     if editable {
         let blocks = doc.sections.iter().map(|s| s.blocks.clone()).collect();
-        let stories = story_xml.into_iter().map(|(name, x)| (name.clone(), (x, doc.stories[&name].clone()))).collect();
+        let stories = story_xml.into_iter().map(|(id, x)| (id, (x, doc.stories[&id].clone()))).collect();
         let (footnotes, endnotes) = (doc.footnotes.clone(), doc.endnotes.clone());
         let controls = doc.controls.clone();
-        doc.source = Some(Rc::new(Source {
+        session.source = Some(Rc::new(Source {
             package: bytes.to_vec(),
             main,
             xml,
             blocks,
             stories,
+            story_parts,
             image_parts,
             notes: note_parts,
             footnotes,
@@ -682,7 +806,7 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
             separator_defaults,
         }));
     }
-    Ok(doc)
+    Ok((doc, session))
 }
 
 fn has_content(p: Node) -> bool {
@@ -764,7 +888,7 @@ fn read_divs(xml: Option<&str>, colours: &ThemeColours) -> HashMap<i64, Division
             let Some(id) = int(attr(d, "id")) else { continue };
             let m = |name: &str| child(d, name).and_then(|e| twips(val(e))).unwrap_or(0.0);
             let bdr = child(d, "divBdr");
-            let b = |name: &str| bdr.and_then(|x| child(x, name)).map(|e| Border::parse(e, colours)).filter(|b| b.visible());
+            let b = |name: &str| bdr.and_then(|x| child(x, name)).map(|e| border(e, colours)).filter(|b| b.visible());
             out.insert(
                 id,
                 Division {
@@ -883,7 +1007,8 @@ fn fold_divs(blocks: &mut [Block], divs: &HashMap<i64, Division>, in_cell: bool)
         reopened.clone()
     };
     let most = |ids: &mut dyn Iterator<Item = &i64>, i: usize| ids.map(|id| divs[id].margins[i]).fold(0.0, f64::max);
-    let width = |b: &Option<Border>| b.as_ref().map_or(0.0, |b| b.width * if &*b.style == "double" { 3.0 } else { 1.0 } + b.space);
+    let width =
+        |b: &Option<Border>| b.as_ref().map_or(0.0, |b| b.width * if b.style == super::props::BorderStyle::Double { 3.0 } else { 1.0 } + b.space);
     let boxes = |chain: &[i64], prev: &[i64], next: &[i64], again: &[i64]| -> Vec<DivBox> {
         (0..chain.len())
             .rev()
@@ -966,8 +1091,55 @@ fn opening_view(root: Node) -> (ShowMarkup, bool) {
     (show, flag(root, "doNotDisplayPageBoundaries").unwrap_or(false))
 }
 
+/// Turns on the compatibility option `name` (a `w:compat` child, an on/off `w:compatSetting`, or
+/// `useWord2013TrackBottomHyphenation=0` for that setting off).
+pub(crate) fn set_option(p: &mut LayoutPolicy, name: &str) {
+    match name {
+        "adjustLineHeightInTable" => p.adjust_line_height_in_table = true,
+        "alignTablesRowByRow" => p.align_tables_row_by_row = true,
+        "allowHyphenationAtTrackBottom" => p.allow_hyphenation_at_track_bottom = true,
+        "allowSpaceOfSameStyleInTable" => p.allow_space_of_same_style_in_table = true,
+        "allowTextAfterFloatingTableBreak" => p.allow_text_after_floating_table_break = true,
+        "applyBreakingRules" => p.apply_breaking_rules = true,
+        "balanceSingleByteDoubleByteWidth" => p.balance_single_byte_double_byte_width = true,
+        "doNotAutofitConstrainedTables" => p.do_not_autofit_constrained_tables = true,
+        "doNotBreakWrappedTables" => p.do_not_break_wrapped_tables = true,
+        "doNotExpandShiftReturn" => p.do_not_expand_shift_return = true,
+        "doNotSuppressIndentation" => p.do_not_suppress_indentation = true,
+        "doNotUseHTMLParagraphAutoSpacing" => p.do_not_use_html_paragraph_auto_spacing = true,
+        "doNotUseIndentAsNumberingTabStop" => p.do_not_use_indent_as_numbering_tab_stop = true,
+        "doNotVertAlignCellWithSp" => p.do_not_vert_align_cell_with_sp = true,
+        "enableOpenTypeFeatures" => p.enable_open_type_features = true,
+        "footnoteLayoutLikeWW8" => p.footnote_layout_like_ww8 = true,
+        "growAutofit" => p.grow_autofit = true,
+        "layoutRawTableWidth" => p.layout_raw_table_width = true,
+        "mwSmallCaps" => p.mw_small_caps = true,
+        "noColumnBalance" => p.no_column_balance = true,
+        "noExtraLineSpacing" => p.no_extra_line_spacing = true,
+        "noLeading" => p.no_leading = true,
+        "noSpaceRaiseLower" => p.no_space_raise_lower = true,
+        "noTabHangInd" => p.no_tab_hang_ind = true,
+        "overrideTableStyleFontSizeAndJustification" => p.override_table_style_font_size_and_justification = true,
+        "showBreaksInFrames" => p.show_breaks_in_frames = true,
+        "spacingInWholePoints" => p.spacing_in_whole_points = true,
+        "splitPgBreakAndParaMark" => p.split_pg_break_and_para_mark = true,
+        "suppressBottomSpacing" => p.suppress_bottom_spacing = true,
+        "suppressSpBfAfterPgBrk" => p.suppress_sp_bf_after_pg_brk = true,
+        "suppressSpacingAtTopOfPage" => p.suppress_spacing_at_top_of_page = true,
+        "suppressTopSpacing" => p.suppress_top_spacing = true,
+        "suppressTopSpacingWP" => p.suppress_top_spacing_wp = true,
+        "ulTrailSpace" => p.ul_trail_space = true,
+        "useSingleBorderforContiguousCells" => p.use_single_border_for_contiguous_cells = true,
+        "useWord2002TableStyleRules" => p.use_word2002_table_style_rules = true,
+        "useWord97LineBreakRules" => p.use_word97_line_break_rules = true,
+        "wpJustification" => p.wp_justification = true,
+        "useWord2013TrackBottomHyphenation=0" => p.word2013_track_bottom_hyphenation_off = true,
+        _ => p.other = true,
+    }
+}
+
 pub(crate) fn read_settings(xml: Option<&str>) -> Settings {
-    let mut s = Settings { compat_mode: 12, default_tab: 36.0, hyphenation_zone: 18.0, ..Default::default() };
+    let mut s = Settings { policy: LayoutPolicy { mode: 12, ..Default::default() }, default_tab: 36.0, hyphenation_zone: 18.0, ..Default::default() };
     let Some(doc) = xml.and_then(|x| roxmltree::Document::parse(x).ok()) else { return s };
     let root = doc.root_element();
     if let Some(t) = child(root, "defaultTabStop").and_then(|n| twips(val(n)))
@@ -1042,7 +1214,7 @@ pub(crate) fn read_settings(xml: Option<&str>) -> Settings {
                 if attr(e, "name") == Some("compatibilityMode")
                     && let Some(m) = int(attr(e, "val"))
                 {
-                    s.compat_mode = m.min(15);
+                    s.policy.mode = m.min(15);
                 } else if let Some(
                     name @ ("enableOpenTypeFeatures"
                     | "overrideTableStyleFontSizeAndJustification"
@@ -1051,12 +1223,12 @@ pub(crate) fn read_settings(xml: Option<&str>) -> Settings {
                 ) = attr(e, "name")
                     && on_off_str(attr(e, "val"))
                 {
-                    s.compat.insert(name.to_string());
+                    set_option(&mut s.policy, name);
                 } else if attr(e, "name") == Some("useWord2013TrackBottomHyphenation") && !on_off_str(attr(e, "val")) {
-                    s.compat.insert("useWord2013TrackBottomHyphenation=0".to_string());
+                    set_option(&mut s.policy, "useWord2013TrackBottomHyphenation=0");
                 }
             } else if on_off(e) {
-                s.compat.insert(e.tag_name().name().to_string());
+                set_option(&mut s.policy, e.tag_name().name());
             }
         }
     }
@@ -1065,7 +1237,7 @@ pub(crate) fn read_settings(xml: Option<&str>) -> Settings {
 
 #[derive(Clone)]
 struct TableCtx {
-    region: Rc<Region>,
+    region: Rc<TableRegion>,
 }
 
 /// An open complex field.
@@ -1089,11 +1261,6 @@ struct OpenField {
     edge: bool,
     /// A legacy form field's data (`w:ffData`): the kind it lays out as, and a drop-down's shown entry.
     form: Option<(FieldKind, Option<String>)>,
-}
-
-/// The main namespace's prefix where `n` is (`w:`, or empty when it is the default namespace).
-fn prefix_of(n: Node) -> String {
-    n.lookup_prefix(W).filter(|p| !p.is_empty()).map_or_else(String::new, |p| format!("{p}:"))
 }
 
 /// The part's bytes from the run holding `from` (where a field's first marker starts) to the end of run `r` (holding
@@ -1139,15 +1306,15 @@ fn form_data(ff: Node) -> Option<(FieldKind, Option<String>)> {
 }
 
 struct Reader {
-    res: Resolver,
+    res: super::definitions::Definitions,
     /// The theme, for the outline widths text boxes take from their style.
     theme: Rc<crate::drawing::theme::Theme>,
     settings: Settings,
     counters: Counters,
-    images: Vec<Vec<u8>>,
-    image_index: HashMap<String, usize>,
+    images: Resources,
+    image_index: HashMap<String, ResourceId>,
     /// Bookmark names by `w:id`, for their ends.
-    bookmarks: HashMap<String, String>,
+    bookmarks: HashMap<String, Rc<str>>,
     fields: Vec<OpenField>,
     /// The paragraph being read (a number unique in the read), and the last number given.
     para_no: u64,
@@ -1166,6 +1333,13 @@ struct Reader {
     in_endnotes: bool,
     /// Reading the main body for editing: paragraphs and tables get their sources, runs their direct formatting.
     record: bool,
+    /// The authored run properties read so far, by the `w:rPr` written: runs written alike share them.
+    interned: HashMap<Rc<str>, RunDirect>,
+    /// The authored paragraph properties read so far, by the `w:pPr` written, likewise.
+    interned_ppr: HashMap<Rc<str>, ParaDirect>,
+    /// Rows' and cells' authored properties by the `w:trPr` and `w:tcPr` they were read from, for elements written alike.
+    interned_tr: HashMap<Rc<str>, RowDirect>,
+    interned_tc: HashMap<Rc<str>, CellDirect>,
     /// The paragraph being read: elements that produced units ([`ParaSrc::segs`]), and whether any can't be mapped.
     segs: Vec<(std::ops::Range<usize>, usize)>,
     /// [`ParaSrc::simple`].
@@ -1204,6 +1378,8 @@ struct Reader {
     alt_docs: Vec<(u64, String, bool)>,
     /// How many `w:altChunk` documents in this package is.
     alt_depth: u8,
+    /// The header and footer parts the sections refer to, by name, with their ids.
+    story_ids: HashMap<String, HeaderFooterId>,
 }
 
 /// Units added to `out` since `before` (its length and last inline's units then): text may grow the last inline.
@@ -1350,8 +1526,15 @@ impl Reader {
     ) -> Option<Rc<TableChange>> {
         let c = child(e?, name)?;
         let before = c.children().find(|n| n.is_element());
-        let (previous_raw, previous) = (Raw(before.map(raw)), previous(self, before));
-        Some(Rc::new(TableChange { mark: self.mark(c, MarkKind::Format), previous_raw, previous }))
+        let previous_direct = match name {
+            "tblPrChange" => PreviousDirect::Table(before.map_or_else(TableDirect::default, |n| TableDirect::read(TableDirect::parse(n), raw(n)))),
+            "tblPrExChange" => PreviousDirect::Exceptions(
+                before.map_or_else(ExceptionsDirect::default, |n| ExceptionsDirect::read(ExceptionsDirect::parse(n), raw(n))),
+            ),
+            "trPrChange" => PreviousDirect::Row(before.map_or_else(RowDirect::default, |n| RowDirect::read(RowDirect::parse(n), raw(n)))),
+            _ => PreviousDirect::Cell(before.map_or_else(CellDirect::default, |n| CellDirect::read(CellDirect::parse(n), raw(n)))),
+        };
+        Some(Rc::new(TableChange { mark: self.mark(c, MarkKind::Format), previous_direct, previous: previous(self, before) }))
     }
 
     /// A move mark with no move yet, named by the move range of its kind open now; `None` for any other mark.
@@ -1367,30 +1550,27 @@ impl Reader {
     }
 
     /// A run's revisions: the wrappers it is in and its `w:rPrChange` (the previous formatting resolved over `base`).
-    fn run_revisions(&mut self, base: &RunProps, rpr: Option<Node>) -> RunRevisions {
+    fn run_revisions(&mut self, base: &Base, rpr: Option<Node>) -> RunRevisions {
         RunRevisions { ins: self.wrap.ins.clone(), del: self.wrap.del.clone(), fmt: self.format_change(base, rpr) }
     }
 
     /// A paragraph mark's revisions: inserted, deleted or moved (`w:ins`, ... in the mark's `w:rPr`), and its
     /// formatting change.
-    fn mark_revisions(&mut self, base: &RunProps, rpr: Option<Node>) -> RunRevisions {
+    fn mark_revisions(&mut self, base: &Base, rpr: Option<Node>) -> RunRevisions {
         let ins = self.mark_at(rpr, "ins", MarkKind::Insert).or_else(|| self.mark_at(rpr, "moveTo", MarkKind::MoveTo));
         let del = self.mark_at(rpr, "del", MarkKind::Delete).or_else(|| self.mark_at(rpr, "moveFrom", MarkKind::MoveFrom));
         RunRevisions { ins, del, fmt: self.format_change(base, rpr) }
     }
 
-    fn format_change(&mut self, base: &RunProps, rpr: Option<Node>) -> Option<Rc<FormatChange>> {
+    fn format_change(&mut self, base: &Base, rpr: Option<Node>) -> Option<Rc<FormatChange>> {
         let c = child(rpr?, "rPrChange")?;
-        let before = child(c, "rPr");
-        let mut previous = self.run_style(&self.run_props(base, before));
-        if self.record {
-            Rc::make_mut(&mut previous).direct = Raw(before.map(raw));
-        }
-        Some(Rc::new(FormatChange { mark: self.mark(c, MarkKind::Format), previous, previous_raw: Raw(before.map(raw)) }))
+        let direct = self.direct(child(c, "rPr"));
+        let previous = self.typed_run(base, direct, false);
+        Some(Rc::new(FormatChange { mark: self.mark(c, MarkKind::Format), previous }))
     }
 
     /// `run` with the revisions it is read in.
-    fn tracked(&mut self, mut run: Run, base: &RunProps, rpr: Option<Node>) -> Run {
+    fn tracked(&mut self, mut run: Run, base: &Base, rpr: Option<Node>) -> Run {
         let rev = self.run_revisions(base, rpr);
         if !rev.is_empty() {
             Rc::make_mut(&mut run).rev = rev;
@@ -1401,7 +1581,7 @@ impl Reader {
     /// A paragraph's property change (`w:pPrChange`, the previous properties resolved as the paragraph is), and its
     /// list's numbering change (`w:numberingChange`, kept as written). A numbering change alone keeps the
     /// paragraph's properties as the previous ones.
-    fn para_change(&mut self, ppr: Option<Node>, region: Option<&Region>, current: &ParaStyle) -> Option<Rc<ParaChange>> {
+    fn para_change(&mut self, ppr: Option<Node>, region: Option<&TableRegion>, current: &ParaStyle) -> Option<Rc<ParaChange>> {
         let ppr = ppr?;
         let numbering = child(ppr, "numPr").and_then(|n| child(n, "numberingChange"));
         let change = child(ppr, "pPrChange");
@@ -1413,15 +1593,16 @@ impl Reader {
         let before = change.and_then(|c| child(c, "pPr"));
         let previous = match change {
             Some(_) => {
-                let mut s = self.res.paragraph(&ParaProps::parse(before, &self.res.styles.colours), region).style;
-                if self.record {
-                    s.direct = Raw(before.map(raw));
+                let typed = before.map(para_props::parse).unwrap_or_default();
+                let mut s = para_xml::resolve(&self.res, &typed, before.and_then(para_xml::mark_size), region).style;
+                if let Some(b) = before.filter(|_| self.record) {
+                    s.direct = ParaDirect::read(typed, raw(b));
                 }
                 s
             }
             None => current.clone(),
         };
-        Some(Rc::new(ParaChange { mark, previous: Rc::new(previous), previous_raw: Raw(before.map(raw)), numbering_change: Raw(numbering.map(raw)) }))
+        Some(Rc::new(ParaChange { mark, previous: Rc::new(previous), properties: change.is_some(), numbering_change: Raw(numbering.map(raw)) }))
     }
 
     /// Whether comment `id` exists; a missing one is reported once.
@@ -1452,13 +1633,33 @@ impl Reader {
         }
         let id = attr(e, "id");
         if e.tag_name().name() == "bookmarkEnd" {
-            return id.and_then(|id| self.bookmarks.get(id)).map(|name| Inline::Bookmark(format!("/{name}")));
+            return id.and_then(|id| self.bookmarks.get(id)).map(|name| Inline::Range(RangeMark::bookmark_end(name.clone())));
         }
-        let name = attr(e, "name").filter(|n| !n.is_empty() && !n.starts_with('/'))?;
+        let name: Rc<str> = attr(e, "name").filter(|n| !n.is_empty() && !n.starts_with('/'))?.into();
         if let Some(id) = id {
-            self.bookmarks.insert(id.to_string(), name.to_string());
+            self.bookmarks.insert(id.to_string(), name.clone());
         }
-        Some(Inline::Bookmark(name.to_string()))
+        Some(Inline::Range(RangeMark::bookmark_start(name)))
+    }
+
+    /// A `w:permStart`'s or `w:permEnd`'s marker (editable reads); one whose id isn't a number is kept as read.
+    fn permission(&mut self, e: Node, out: &mut Vec<Inline>) {
+        if !self.record {
+            return;
+        }
+        let Some(id) = attr(e, "id").and_then(|v| v.trim().parse::<i64>().ok()) else { return self.foreign(e, out) };
+        let start = e.tag_name().name() == "permStart";
+        let editor = match (attr(e, "edGrp"), attr(e, "ed")) {
+            _ if !start => None,
+            (Some(g), _) => Some(RangeEditor::Group(g.to_string())),
+            (None, Some(u)) => Some(RangeEditor::User(u.to_string())),
+            (None, None) => None,
+        };
+        let col = |n| attr(e, n).and_then(|v| v.trim().parse::<u32>().ok());
+        let columns = if start { (col("colFirst"), col("colLast")) } else { (None, None) };
+        let permission = Some(Rc::new(Permission { editor, columns, origin: xml_origin(raw(e)) }));
+        let kind = if start { RangeKind::PermissionStart } else { RangeKind::PermissionEnd };
+        out.push(Inline::Range(RangeMark { kind, id, name: None, permission }));
     }
 
     fn range(&mut self, e: Node) -> Option<RangeMark> {
@@ -1497,7 +1698,7 @@ impl Reader {
                 self.moves.push((kind, n.clone(), id));
             }
             self.open_ranges.push((kind, id));
-            return Some(RangeMark { kind, id, name });
+            return Some(RangeMark { kind, id, name, permission: None });
         }
         // The end of a range whose start was left out goes with it (an orphan's, or a glossary comment's).
         if kind == RangeKind::CommentEnd && (self.orphans.contains(&id) || self.glossary_comments.as_ref().is_some_and(|g| g.contains(&id))) {
@@ -1509,7 +1710,7 @@ impl Reader {
         };
         self.open_ranges.remove(k);
         self.moves.retain(|m| (m.0, m.2) != (start, id));
-        Some(RangeMark { kind, id, name: None })
+        Some(RangeMark { kind, id, name: None, permission: None })
     }
 
     /// The end of a story: range starts it never ended are reported and taken out of its blocks.
@@ -1570,17 +1771,19 @@ impl Reader {
         if matches!(blocks.last(), Some(Block::Para(_))) {
             return;
         }
-        let r = self.res.paragraph(&ParaProps::default(), None);
-        let mark = self.run_style(&self.run_props(&r.base, None));
-        let src = self
-            .record
-            .then(|| Rc::new(ParaSrc { ranges: vec![at], segs: Vec::new(), simple: Vec::new(), lossy: false, closing: true, joined: Vec::new() }));
+        let r = para_xml::resolve(&self.res, &Default::default(), None, None);
+        let mark = self.typed_run(&Base::new(r.base), RunDirect::default(), false);
+        let origin = if self.record {
+            Origin::new(ParaSrc { ranges: vec![at], segs: Vec::new(), simple: Vec::new(), lossy: false, closing: true, joined: Vec::new() })
+        } else {
+            Origin::NONE
+        };
         blocks.push(Block::Para(Paragraph {
             style: Rc::new(r.style),
             mark,
             list: None,
             inlines: Vec::new(),
-            src,
+            origin,
             id: next_para_id(),
             div: None,
             controls: Vec::new(),
@@ -1591,7 +1794,7 @@ impl Reader {
     /// without a final paragraph closed again where the last went ([`Reader::close_story`]).
     fn drop_paras(&mut self, blocks: &mut Vec<Block>, ids: &HashSet<u64>, story: bool) {
         let end = match blocks.last() {
-            Some(Block::Para(p)) if ids.contains(&p.id) => Some(p.src.as_ref().and_then(|s| s.ranges.first()).map_or(0..0, |r| r.end..r.end)),
+            Some(Block::Para(p)) if ids.contains(&p.id) => Some(p.src().and_then(|s| s.ranges.first()).map_or(0..0, |r| r.end..r.end)),
             _ => None,
         };
         blocks.retain(|b| !matches!(b, Block::Para(p) if ids.contains(&p.id)));
@@ -1777,13 +1980,15 @@ impl Reader {
             let content = if html { AltContent::Html(text) } else { AltContent::Text(text) };
             self.alt_chunks.push(AltChunk { para: id, content });
         }
-        let r = self.res.paragraph(&ParaProps::default(), None);
-        let mark = self.run_style(&self.run_props(&r.base, None));
+        let r = para_xml::resolve(&self.res, &Default::default(), None, None);
+        let mark = self.typed_run(&Base::new(r.base), RunDirect::default(), false);
         // Written from the model in its place once it holds the content; kept as read while it doesn't.
-        let src = self.record.then(|| {
-            Rc::new(ParaSrc { ranges: vec![n.range()], segs: Vec::new(), simple: Vec::new(), lossy: true, closing: false, joined: Vec::new() })
-        });
-        Some(Paragraph { style: Rc::new(r.style), mark, list: None, inlines: Vec::new(), src, id, div: None, controls: Vec::new() })
+        let origin = if self.record {
+            Origin::new(ParaSrc { ranges: vec![n.range()], segs: Vec::new(), simple: Vec::new(), lossy: true, closing: false, joined: Vec::new() })
+        } else {
+            Origin::NONE
+        };
+        Some(Paragraph { style: Rc::new(r.style), mark, list: None, inlines: Vec::new(), origin, id, div: None, controls: Vec::new() })
     }
 
     /// The documents `w:altChunk`s import ([`Reader::alt_docs`]): each part read once, from this package's budget,
@@ -1844,9 +2049,9 @@ impl Reader {
             pg_fmt: None,
             chapter: None,
             line_numbers: None,
-            v_align: "top".into(),
+            v_align: VerticalAlignment::Top,
             page_borders: None,
-            page_borders_xml: None,
+            page_borders_direct: Default::default(),
             line_grid: None,
             notes: Default::default(),
             no_endnote: false,
@@ -1856,7 +2061,7 @@ impl Reader {
             form_protected: true,
             blocks: Vec::new(),
             change: None,
-            read: None,
+            origin: Origin::NONE,
         }
     }
 
@@ -1917,6 +2122,7 @@ impl Reader {
                     _ => 0,
                 };
                 let target = r.attribute((R, "id")).and_then(|id| self.rels.get(id)).map(|(_, t)| t.clone());
+                let target = target.map(|t| *self.story_ids.entry(t).or_insert_with(HeaderFooterId::next));
                 if slot == 0 {
                     sec.headers[idx] = target;
                 } else {
@@ -1941,7 +2147,7 @@ impl Reader {
                 count_by: int(attr(l, "countBy")).unwrap_or(1).max(1),
                 start: int(attr(l, "start")).unwrap_or(0),
                 distance: attr_twips(l, "distance").unwrap_or(0.0),
-                restart: attr(l, "restart").unwrap_or("newPage").to_string(),
+                restart: attr(l, "restart").map_or(LineNumberingRestart::NewPage, super::section::line_numbering_restart),
             });
         }
         for (k, name) in [(0, "footnotePr"), (1, "endnotePr")] {
@@ -1958,26 +2164,16 @@ impl Reader {
         }
         sec.no_endnote = flag(s, "noEndnote").unwrap_or(false);
         if let Some(v) = child(s, "vAlign").and_then(val) {
-            sec.v_align = v.to_string();
+            sec.v_align = super::section::section_v_align(v);
         }
         if let Some(g) = child(s, "docGrid").filter(|g| matches!(attr(*g, "type"), Some("lines" | "linesAndChars" | "snapToChars"))) {
             sec.line_grid = Some((int(attr(g, "linePitch")).unwrap_or(0).max(1) * 2048 / 10) as i32);
         }
         sec.text_flow = child(s, "textDirection").and_then(val).map_or(0, |v| if v == "tbLrV" { 5 } else { crate::docx::model::text_flow(v) });
         if let Some(b) = child(s, "pgBorders") {
-            sec.page_borders_xml = Some(raw(b).to_string());
-            let side = |n| child(b, n).map(|n| Border::parse(n, &self.res.styles.colours));
-            sec.page_borders = Some(Rc::new(PageBorders {
-                top: side("top"),
-                left: side("left"),
-                bottom: side("bottom"),
-                right: side("right"),
-                offset_from_page: attr(b, "offsetFrom") == Some("page"),
-                display: attr(b, "display").unwrap_or("allPages").to_string(),
-                surround_header: !self.settings.borders_do_not_surround_header,
-                surround_footer: !self.settings.borders_do_not_surround_footer,
-                behind_text: attr(b, "zOrder") == Some("back"),
-            }));
+            sec.page_borders_direct = super::page_borders::PageBordersDirect::read(super::page_borders::parse(b), raw(b));
+            let (header, footer) = (!self.settings.borders_do_not_surround_header, !self.settings.borders_do_not_surround_footer);
+            sec.page_borders = Some(Rc::new(super::page_borders::effective(b, &self.res.cascade().colours, header, footer)));
         }
         if let Some(c) = child(s, "sectPrChange") {
             let mark = self.mark(c, MarkKind::Format);
@@ -1989,30 +2185,119 @@ impl Reader {
             sec.change = Some(Rc::new(SectionChange { mark, previous, previous_raw: Raw(before.map(raw)) }));
         }
         if self.record {
-            sec.read = Some(Rc::new(sec.page()));
+            sec.origin = Origin::new(sec.page());
         }
         sec
     }
 
-    /// `run` carrying the `w:rPr` it was read from (editable reads), without change tracking marks: what new runs in
-    /// this formatting are written with.
-    fn with_direct(&self, run: Run, rpr: Option<Node>) -> Run {
-        if !self.record {
-            return run;
-        }
+    /// The authored properties of `rpr` (`props`, read from it), with (editable reads) the `w:rPr` they were read
+    /// from without change tracking marks: what new runs in this formatting are written with.
+    fn direct_of(&mut self, rpr: Option<Node>, props: Option<CharProps>) -> RunDirect {
+        let Some(props) = props else { return RunDirect::default() };
+        let Some(n) = rpr.filter(|_| self.record) else { return RunDirect::typed(Some(Rc::new(props))) };
         let tracked = |c: &Node| c.is_element() && matches!(c.tag_name().name(), "ins" | "del" | "moveFrom" | "moveTo" | "rPrChange");
-        let direct = rpr.map(|n| {
-            if !n.children().any(|c| tracked(&c)) {
-                return raw(n);
+        if !n.children().any(|c| tracked(&c)) {
+            // Written alike and reading alike: shared
+            let plain = n.namespaces().len() <= n.document().root_element().namespaces().len();
+            let text = &n.document().input_text()[n.range()];
+            if let Some(d) = self.interned.get(text).filter(|d| plain && d.props().is_some_and(|p| **p == props)) {
+                return d.clone();
             }
-            let text = n.document().input_text();
-            let open = &text[n.range().start..n.first_child().map_or(n.range().end, |c| c.range().start)];
-            let name = open[1..].split(|c: char| c.is_whitespace() || c == '>' || c == '/').next().unwrap_or("w:rPr");
-            let kept: String = n.children().filter(|c| !tracked(c)).map(|c| &text[c.range()]).collect();
-            format!("{}>{kept}</{name}>", open.trim_end_matches('>').trim_end_matches('/')).into()
-        });
-        let mut s = (*run).clone();
-        s.direct = Raw(direct);
+            let x = raw(n);
+            let d = RunDirect::read(props, x.clone());
+            if plain {
+                self.interned.insert(x, d.clone());
+            }
+            return d;
+        }
+        let text = n.document().input_text();
+        let open = &text[n.range().start..n.first_child().map_or(n.range().end, |c| c.range().start)];
+        let name = open[1..].split(|c: char| c.is_whitespace() || c == '>' || c == '/').next().unwrap_or("w:rPr");
+        let kept: String = n.children().filter(|c| !tracked(c)).map(|c| &text[c.range()]).collect();
+        RunDirect::read(props, format!("{}>{kept}</{name}>", open.trim_end_matches('>').trim_end_matches('/')).into())
+    }
+
+    /// The authored properties `ppr` holds, with (editable reads) the `w:pPr` they were read from: paragraphs whose
+    /// `w:pPr` is written alike share them.
+    fn para_direct(&mut self, ppr: Option<Node>) -> ParaDirect {
+        let Some(n) = ppr else { return ParaDirect::default() };
+        let plain = n.namespaces().len() <= n.document().root_element().namespaces().len();
+        let text = &n.document().input_text()[n.range()];
+        if let Some(d) = self.interned_ppr.get(text).filter(|_| plain && self.record) {
+            return d.clone();
+        }
+        let props = Rc::new(para_props::parse(n));
+        if !self.record {
+            return ParaDirect::typed(props);
+        }
+        let x = raw(n);
+        let d = ParaDirect::shared(props, x.clone());
+        if plain {
+            self.interned_ppr.insert(x, d.clone());
+        }
+        d
+    }
+
+    /// A table's authored properties from its `w:tblPr`, with the element they were read from.
+    fn table_direct(&self, n: Option<Node>) -> TableDirect {
+        n.map_or_else(TableDirect::default, |n| TableDirect::read(TableDirect::parse(n), raw(n)))
+    }
+
+    /// A row's exceptions to its table's properties from its `w:tblPrEx`, with (editable reads) the element they were
+    /// read from.
+    fn exceptions_direct(&self, n: Option<Node>) -> ExceptionsDirect {
+        let Some(n) = n else { return ExceptionsDirect::default() };
+        let props = ExceptionsDirect::parse(n);
+        if self.record { ExceptionsDirect::read(props, raw(n)) } else { ExceptionsDirect::typed(Rc::new(props)) }
+    }
+
+    /// A row's authored properties from its `w:trPr`, with (editable reads) the element they were read from: rows
+    /// whose `w:trPr` is written alike share them.
+    fn row_direct(&mut self, n: Option<Node>) -> RowDirect {
+        let Some(n) = n else { return RowDirect::default() };
+        let plain = n.namespaces().len() <= n.document().root_element().namespaces().len();
+        let text = &n.document().input_text()[n.range()];
+        if let Some(d) = self.interned_tr.get(text).filter(|_| plain) {
+            return d.clone();
+        }
+        let props = Rc::new(RowDirect::parse(n));
+        let x = raw(n);
+        let d = if self.record { RowDirect::shared(props, x.clone()) } else { RowDirect::typed(props) };
+        if plain {
+            self.interned_tr.insert(x, d.clone());
+        }
+        d
+    }
+
+    /// A cell's authored properties from its `w:tcPr`, with the element they were read from: cells whose `w:tcPr` is
+    /// written alike share them.
+    fn cell_direct(&mut self, n: Option<Node>) -> CellDirect {
+        let Some(n) = n else { return CellDirect::default() };
+        let plain = n.namespaces().len() <= n.document().root_element().namespaces().len();
+        let text = &n.document().input_text()[n.range()];
+        if let Some(d) = self.interned_tc.get(text).filter(|_| plain) {
+            return d.clone();
+        }
+        let x = raw(n);
+        let d = CellDirect::shared(Rc::new(CellDirect::parse(n)), x.clone());
+        if plain {
+            self.interned_tc.insert(x, d.clone());
+        }
+        d
+    }
+
+    /// The authored properties `rpr` holds.
+    fn direct(&mut self, rpr: Option<Node>) -> RunDirect {
+        self.direct_of(rpr, rpr.map(|n| char_props::parse(n).0))
+    }
+
+    /// A run with authored properties `direct` over `base` (in a table of contents' result when `toc`), without
+    /// revisions; its authored properties kept for editable reads.
+    fn typed_run(&self, base: &Base, direct: RunDirect, toc: bool) -> Run {
+        let mut s = run_xml::resolve(&self.res, &base.typed, direct, toc);
+        if !self.record {
+            s.direct = RunDirect::default();
+        }
         Rc::new(s)
     }
 
@@ -2020,18 +2305,21 @@ impl Reader {
 
     fn read_paragraph(&mut self, n: Node, pkg: &mut Package, table: Option<&TableCtx>) -> Option<Paragraph> {
         let ppr_node = child(n, "pPr");
-        let direct = ParaProps::parse(ppr_node, &self.res.styles.colours);
-        let ParaResolved { style: mut para_style, base, level, num_id, ilvl, from_style, style_id } =
-            self.res.paragraph(&direct, table.map(|t| &*t.region));
+        let mark_rpr_node = ppr_node.and_then(|p| child(p, "rPr"));
+        let mark_direct = self.direct(mark_rpr_node);
+        let mark_own = mark_direct.props().cloned();
+        let ppr = self.para_direct(ppr_node);
+        let para_xml::Resolved { style: mut para_style, base, level, num_id, ilvl, from_style, style_id } =
+            para_xml::resolve(&self.res, ppr.get(), mark_own.as_ref().and_then(|m| m.size), table.map(|t| &*t.region));
+        let base = Base::new(base);
         if self.record {
-            para_style.direct = Raw(ppr_node.map(raw));
+            para_style.direct = ppr;
         }
         para_style.change = self.para_change(ppr_node, table.map(|t| &*t.region), &para_style);
         let para_style = Rc::new(para_style);
 
-        let mark_rpr_node = ppr_node.and_then(|p| child(p, "rPr"));
-        let mark_props = self.run_props(&base, mark_rpr_node);
-        let mut mark = self.with_direct(self.run_style(&mark_props), mark_rpr_node);
+        let direct = mark_direct;
+        let mut mark = self.typed_run(&base, direct, false);
         let mark_rev = self.mark_revisions(&base, mark_rpr_node);
         if !mark_rev.is_empty() {
             Rc::make_mut(&mut mark).rev = mark_rev;
@@ -2040,12 +2328,11 @@ impl Reader {
         // List label
         let list = match (&level, num_id) {
             (Some(l), Some(id)) => {
-                if !self.uncounted && self.res.label_shows(id, ilvl, from_style, style_id.as_deref()) {
-                    self.counters.next(&self.res.numbering, &self.res.styles, id, ilvl).map(|text| {
-                        let mut lp = mark_props.clone();
-                        lp.merge(&l.rpr);
-                        let picture = self.res.numbering.bullet_image(l);
-                        ListLabel { text, run: self.res.run_style(&lp), jc: l.jc.clone(), suff: l.suff.clone(), picture, legacy: l.legacy }
+                let c = self.res.cascade();
+                if !self.uncounted && c.label_shows(ListId(id), ilvl, from_style, style_id.as_deref()) {
+                    self.counters.next(&c, ListId(id), ilvl).map(|text| {
+                        let under = run_xml::folded(&self.res, &base.typed, mark_own.as_deref(), false);
+                        para_xml::label(&self.res, text, &under, l)
                     })
                 } else {
                     None
@@ -2072,8 +2359,12 @@ impl Reader {
         self.para_no = outer_para;
         let (segs, lossy, simple) =
             (std::mem::replace(&mut self.segs, outer.0), std::mem::replace(&mut self.lossy, outer.1), std::mem::replace(&mut self.simple, outer.2));
-        let src = self.record.then(|| Rc::new(ParaSrc { ranges: vec![n.range()], segs, simple, lossy, closing: false, joined: Vec::new() }));
-        let para = Paragraph { style: para_style, mark: mark.clone(), list, inlines, src, id: next_para_id(), div: None, controls: Vec::new() };
+        let origin = if self.record {
+            Origin::new(ParaSrc { ranges: vec![n.range()], segs, simple, lossy, closing: false, joined: Vec::new() })
+        } else {
+            Origin::NONE
+        };
+        let para = Paragraph { style: para_style, mark: mark.clone(), list, inlines, origin, id: next_para_id(), div: None, controls: Vec::new() };
 
         let spec = self.pending_spec.take();
         let mut para = match self.pending_hidden.take() {
@@ -2084,25 +2375,32 @@ impl Reader {
             // character (a line starting at a vanished mark is the mark's).
             Some(mut prev) => {
                 let at = prev.inlines.iter().map(Inline::units).sum::<usize>() as u32;
-                let style = super::resolve::joined_style(&prev.style, &para.style, at, spec.as_deref(), self.res.styles.compat == Compat::Legacy);
-                prev.inlines.extend(para.inlines);
-                let src = match (prev.src, para.src) {
-                    (Some(a), Some(b)) => Some(Rc::new(ParaSrc {
+                let style = crate::format::resolve::joined_style(
+                    &prev.style,
+                    &para.style,
+                    at,
+                    spec.as_deref(),
+                    self.res.cascade().rules.compat == Compat::Legacy,
+                );
+                let origin = match (prev.src(), para.src()) {
+                    (Some(a), Some(b)) => Origin::new(ParaSrc {
                         ranges: [a.ranges.clone(), b.ranges.clone()].concat(),
                         segs: [a.segs.clone(), b.segs.clone()].concat(),
                         simple: [a.simple.clone(), b.simple.clone()].concat(),
                         lossy: a.lossy || b.lossy,
                         closing: false,
                         joined: [a.joined.clone(), b.joined.clone()].concat(),
-                    })),
-                    (a, b) => a.or(b),
+                    }),
+                    _ if prev.origin.is_some() => prev.origin,
+                    _ => para.origin,
                 };
+                prev.inlines.extend(para.inlines);
                 Paragraph {
                     style: Rc::new(style),
                     mark: para.mark,
                     list: prev.list.or(para.list),
                     inlines: prev.inlines,
-                    src,
+                    origin,
                     id: prev.id,
                     div: None,
                     controls: para.controls,
@@ -2113,12 +2411,14 @@ impl Reader {
         if mark.hidden {
             let spec_vanish = mark_rpr_node.and_then(|r| child(r, "specVanish")).is_some_and(on_off);
             let empty = para.inlines.iter().map(Inline::units).sum::<usize>() == 0;
-            if spec_vanish && empty && self.res.styles.compat == Compat::Generic {
+            if spec_vanish && empty && self.res.cascade().rules.compat == Compat::Generic {
                 self.pending_spec = Some(spec.unwrap_or_else(|| para.style.clone()));
             }
             let end = para.inlines.iter().map(Inline::units).sum::<usize>() as u32;
-            if let Some(src) = para.src.as_mut().and_then(Rc::get_mut) {
+            if let Some(src) = para.src() {
+                let mut src = src.clone();
                 src.joined.push(JoinedPart { end, ppr: para.style.direct.clone(), spec_vanish });
+                para.origin = Origin::new(src);
             }
             para.mark = mark;
             self.pending_hidden = Some(para);
@@ -2128,22 +2428,14 @@ impl Reader {
     }
 
     /// A run's properties over a base: its character style chain (a toggle level), then direct formatting.
-    fn run_props(&self, base: &RunProps, rpr: Option<Node>) -> RunProps {
-        self.res.run_props(base, &RunProps::parse(rpr, &self.res.styles.colours))
-    }
-
-    fn run_style(&self, p: &RunProps) -> Run {
-        self.res.run_style(p)
-    }
-
-    fn read_inlines(&mut self, container: Node, base: &RunProps, pkg: &mut Package, out: &mut Vec<Inline>) {
+    fn read_inlines(&mut self, container: Node, base: &Base, pkg: &mut Package, out: &mut Vec<Inline>) {
         for e in container.children().filter(|c| c.is_element()) {
             if e.tag_name().namespace() == Some(W) {
                 match e.tag_name().name() {
                     "r" => self.read_run(e, base, pkg, out),
                     "br" | "cr" => {
-                        let run = self.direct_run(e, base, &mut RunProps::default());
-                        let kind = if e.tag_name().name() == "br" { BreakKind::of(attr(e, "type"), attr(e, "clear")) } else { BreakKind::Line };
+                        let run = self.direct_run(e, base, None);
+                        let kind = if e.tag_name().name() == "br" { break_kind(attr(e, "type"), attr(e, "clear")) } else { BreakKind::Line };
                         out.push(Inline::Break(kind, run));
                     }
                     // In a code too: a field nested in another's code (an `IF`'s operand).
@@ -2201,7 +2493,8 @@ impl Reader {
                         if self.controls.get(&id).is_some_and(|k| k.props.binding.is_some())
                             && let Some(rpr) = pr.and_then(|p| child(p, "rPr"))
                         {
-                            let run = self.with_direct(self.run_style(&self.run_props(base, Some(rpr))), Some(rpr));
+                            let direct = self.direct(Some(rpr));
+                            let run = self.typed_run(base, direct, false);
                             self.bound_runs.insert(id, run);
                         }
                         out.push(Inline::ControlStart(id));
@@ -2218,8 +2511,7 @@ impl Reader {
                     "bookmarkStart" | "bookmarkEnd" => out.extend(self.bookmark(e)),
                     // Properties, read with their element; Word's spelling state, rebuilt by Word.
                     "pPr" | "rPr" | "customXmlPr" | "smartTagPr" | "sdtPr" | "sdtEndPr" | "proofErr" => {}
-                    // Editing permissions: kept until protection reads them.
-                    "permStart" | "permEnd" => self.opaque(e, out),
+                    "permStart" | "permEnd" => self.permission(e, out),
                     _ => self.unsupported(e, out),
                 }
             } else if is(e, MC, "AlternateContent")
@@ -2237,22 +2529,23 @@ impl Reader {
         if self.record {
             for i in added {
                 if let Inline::Picture(p, _) = i {
-                    p.src = Raw(Some(raw(c)));
+                    p.origin = xml_origin(raw(c));
                 }
             }
         }
     }
 
     /// An element between runs the engine doesn't model, kept as read (editable reads).
-    fn opaque(&mut self, e: Node, out: &mut Vec<Inline>) {
+    fn foreign(&mut self, e: Node, out: &mut Vec<Inline>) {
         if self.record {
-            out.push(Inline::Opaque(Rc::new(Opaque { xml: Raw(Some(raw(e))), field: None, src: None, run: None })));
+            let equation = matches!(e.tag_name().name(), "oMath" | "oMathPara");
+            out.push(Inline::Foreign(Rc::new(super::foreign::read(raw(e), e.descendants(), equation))));
         }
     }
 
     /// A run child the engine doesn't model (`w:movie`, an element it doesn't know), kept as a run of its own with the
     /// run's start tag and properties as read: it is written back, moved and pasted with its text (editable reads).
-    fn run_opaque(&mut self, r: Node, c: Node, out: &mut Vec<Inline>) {
+    fn run_foreign(&mut self, r: Node, c: Node, out: &mut Vec<Inline>) {
         if !self.record {
             return;
         }
@@ -2261,23 +2554,28 @@ impl Reader {
         let name = &open[1..open.find(|ch: char| ch.is_whitespace() || ch == '>' || ch == '/').unwrap_or(1)];
         let rpr = child(r, "rPr").map_or_else(String::new, |p| raw(p).to_string());
         let xml = format!("{open}{rpr}{}</{name}>", raw(c));
-        out.push(Inline::Opaque(Rc::new(Opaque { xml: Raw(Some(xml.into())), field: None, src: None, run: None })));
+        let nodes = std::iter::once(r).chain(child(r, "rPr").into_iter().flat_map(|p| p.descendants())).chain(c.descendants());
+        out.push(Inline::Foreign(Rc::new(super::foreign::read(xml.into(), nodes, false))));
     }
 
-    /// [`Reader::opaque`], reported as content that isn't drawn.
+    /// [`Reader::foreign`], reported as content that isn't drawn.
     fn unsupported(&mut self, e: Node, out: &mut Vec<Inline>) {
         let name = e.tag_name();
         let prefix = e.lookup_prefix(name.namespace().unwrap_or("")).unwrap_or("");
         self.warn(WarningCode::UnsupportedElement, || format!("{prefix}:{} isn't drawn; it is kept as read", name.name()));
-        self.opaque(e, out);
+        self.foreign(e, out);
     }
 
-    fn read_run(&mut self, r: Node, base: &RunProps, pkg: &mut Package, out: &mut Vec<Inline>) {
-        let mut direct = RunProps::default();
+    fn read_run(&mut self, r: Node, base: &Base, pkg: &mut Package, out: &mut Vec<Inline>) {
+        let mut direct: Option<CharProps> = None;
+        let more = |direct: &mut Option<CharProps>, c: Node| match direct {
+            Some(d) => d.merge(&char_props::parse(c).0),
+            None => *direct = Some(char_props::parse(c).0),
+        };
         for c in r.children().filter(|c| c.is_element()).take_while(|c| is_w(*c, "rPr")) {
-            direct.merge(&RunProps::parse(Some(c), &self.res.styles.colours));
+            more(&mut direct, c);
         }
-        let mut run = self.direct_run(r, base, &mut direct);
+        let mut run = self.direct_run(r, base, direct.clone());
         let mut content = false;
         // The child being read and the units before it: what it added becomes a seg when the next one starts.
         let mut prev: Option<(std::ops::Range<usize>, (usize, usize))> = None;
@@ -2291,8 +2589,8 @@ impl Reader {
         for (c, seg) in kids {
             if is_w(c, "rPr") {
                 if content {
-                    direct.merge(&RunProps::parse(Some(c), &self.res.styles.colours));
-                    run = self.direct_run(r, base, &mut direct);
+                    more(&mut direct, c);
+                    run = self.direct_run(r, base, direct.clone());
                 }
                 continue;
             }
@@ -2315,7 +2613,7 @@ impl Reader {
                 continue;
             }
             if c.tag_name().namespace() != Some(W) {
-                self.run_opaque(r, c, out);
+                self.run_foreign(r, c, out);
                 continue;
             }
             let name = c.tag_name().name();
@@ -2341,8 +2639,8 @@ impl Reader {
                         });
                         let (lock, dirty) = (flag("fldLock"), flag("dirty"));
                         let form = child(c, "ffData").filter(|_| self.record).map(|f| {
-                            let data = super::forms::FormData::parse(f);
-                            Rc::new(FormField { xml: Raw(Some(raw(f))), read: data.clone(), data })
+                            let data = super::forms::parse(f);
+                            Rc::new(FormField::read(raw(f), data))
                         });
                         out.push(Inline::FieldBegin {
                             id,
@@ -2374,23 +2672,14 @@ impl Reader {
                         if let (Some(id), Some(f)) = (id, self.fields.pop()) {
                             if !f.spanning {
                                 out.push(Inline::FieldEnd { id, run: run.clone() });
-                                let style = self.run_style(&self.run_props(base, None));
+                                let style = self.typed_run(base, RunDirect::default(), false);
                                 self.close_field(out, f, &run, &style);
                             } else if f.edge && self.record {
-                                let at = marker_runs(r, c, c.range().start);
-                                let xml = match &at {
-                                    Some(at) => Rc::from(&r.document().input_text()[at.clone()]),
-                                    None => {
-                                        self.lossy = true;
-                                        Rc::from(FieldEdge::End.xml(&prefix_of(r)).as_str())
-                                    }
-                                };
-                                out.push(Inline::Opaque(Rc::new(Opaque {
-                                    xml: Raw(Some(xml)),
-                                    field: Some(FieldEdge::End),
-                                    src: at,
-                                    run: Some(run.clone()),
-                                })));
+                                let src = marker_runs(r, c, c.range().start)
+                                    .map(|at| EdgeSource { xml: Rc::from(&r.document().input_text()[at.clone()]), at });
+                                self.lossy |= src.is_none();
+                                let origin = src.map_or(Origin::NONE, Origin::new);
+                                out.push(Inline::FieldEdge { edge: Rc::new(Edge { kind: FieldEdge::End, origin }), run: run.clone() });
                             }
                         }
                     }
@@ -2460,7 +2749,7 @@ impl Reader {
                     out.push(Inline::PTab(PTab { align, margin: attr(c, "relativeTo") != Some("indent"), leader }, run.clone()));
                 }
                 "br" => {
-                    out.push(Inline::Break(BreakKind::of(attr(c, "type"), attr(c, "clear")), run.clone()));
+                    out.push(Inline::Break(break_kind(attr(c, "type"), attr(c, "clear")), run.clone()));
                 }
                 "cr" => out.push(Inline::Break(BreakKind::Line, run.clone())),
                 "noBreakHyphen" => push_text(out, "\u{2011}", &run),
@@ -2518,7 +2807,7 @@ impl Reader {
                 "continuationSeparator" => out.push(Inline::Separator { continuation: true, full: self.in_endnotes, run: run.clone() }),
                 // Word's layout cache and a comment's own mark: never kept.
                 "lastRenderedPageBreak" | "annotationRef" | "instrText" | "delInstrText" => {}
-                _ => self.run_opaque(r, c, out),
+                _ => self.run_foreign(r, c, out),
             }
         }
         if self.record {
@@ -2527,7 +2816,7 @@ impl Reader {
     }
 
     /// A ruby's base and annotation text with their runs, its alignment and raise.
-    fn read_ruby(&mut self, ruby: Node, base: &RunProps, pkg: &mut Package) -> Ruby {
+    fn read_ruby(&mut self, ruby: Node, base: &Base, pkg: &mut Package) -> Ruby {
         let record = std::mem::replace(&mut self.record, false);
         let mut text = |name: &str| {
             let mut tmp = Vec::new();
@@ -2549,16 +2838,17 @@ impl Reader {
         };
         let raise = pr.and_then(|p| child(p, "hpsRaise")).and_then(|h| half_points(val(h))).unwrap_or(0.0);
         let size = pr.and_then(|p| child(p, "hps")).and_then(|h| half_points(val(h)));
-        Ruby { base: base_text, text: annotation, align, raise, size, xml: Raw(Some(raw(ruby))) }
+        Ruby { base: base_text, text: annotation, align, raise, size, origin: xml_origin(raw(ruby)) }
     }
 
     /// A checkbox content control (`w14:checkbox`) as one symbol: the character it
     /// shows, in its run's font. The symbol's run is the control's formatting without that font: text typed next to
     /// the checkbox takes it.
-    fn read_checkbox(&mut self, sdt: Node, content: Node, pr: Option<Node>, base: &RunProps, out: &mut Vec<Inline>) {
+    fn read_checkbox(&mut self, sdt: Node, content: Node, pr: Option<Node>, base: &Base, out: &mut Vec<Inline>) {
         let rpr = content.descendants().find(|x| is_w(*x, "r")).and_then(|r| child(r, "rPr"));
-        let props = self.run_props(base, rpr);
-        let shown = self.run_style(&props);
+        let own = rpr.map(|n| char_props::parse(n).0);
+        let props = run_xml::folded(&self.res, &base.typed, own.as_ref(), false);
+        let shown = crate::format::resolve::run_style(&self.res.cascade().env(), &props);
         let checked = pr
             .and_then(|p| p.descendants().find(|x| is(*x, W14, "checked")))
             .and_then(|x| x.attribute((W14, "val")))
@@ -2582,28 +2872,35 @@ impl Reader {
             None => shown.h_ansi.clone(),
         };
         let mut plain = props;
-        (plain.ascii, plain.h_ansi, plain.east_asia, plain.cs, plain.hint) =
-            (base.ascii.clone(), base.h_ansi.clone(), base.east_asia.clone(), base.cs.clone(), base.hint.clone());
-        let mut run = (*self.run_style(&plain)).clone();
+        (plain.fonts, plain.hint) = (base.typed.fonts.clone(), base.typed.hint);
+        let mut run = crate::format::resolve::run_style(&self.res.cascade().env(), &plain);
         run.hint_east_asia = shown.hint_east_asia && sym_ch.is_none_or(|_| !text.is_empty());
         if self.record {
             // What new runs in this formatting are written with: the control's `w:rPr` without its `w:rFonts`.
             let other = |n: &Node| n.children().any(|c| c.is_element() && !is_w(c, "rFonts"));
-            run.direct = Raw(rpr.filter(other).map(|n| {
-                let at = n.range().start;
-                let mut s = n.document().input_text()[n.range()].to_string();
-                if let Some(f) = child(n, "rFonts") {
-                    s.replace_range(f.range().start - at..f.range().end - at, "");
+            run.direct = match (rpr.filter(other), own) {
+                (Some(n), Some(own)) => {
+                    let at = n.range().start;
+                    let mut s = n.document().input_text()[n.range()].to_string();
+                    if let Some(f) = child(n, "rFonts") {
+                        s.replace_range(f.range().start - at..f.range().end - at, "");
+                    }
+                    RunDirect::read(char_props::without_fonts(own), s.into())
                 }
-                s.into()
-            }));
+                _ => RunDirect::default(),
+            };
             self.segs.push((sdt.range(), 1));
         }
         let id = self.control(sdt);
         if let Some(c) = self.controls.get_mut(&id) {
             // The checkbox's face is its `Sym`; written as it was read, or as a new checkbox control.
-            c.props.kind = ControlKind::Checkbox { checked: on, unchecked: off };
-            c.read = Some(c.props.clone());
+            c.props.kind = pr
+                .map_or(ControlKind::Checkbox { checked: on, unchecked: off, checked_font: None, unchecked_font: None, value: None }, checkbox_kind);
+            if let Some(k) = &mut c.props.kind_xml {
+                k.kind = c.props.kind.clone();
+            }
+            let read = c.props.clone();
+            c.edit_src(|s| s.read = read);
         }
         let run = self.tracked(Rc::new(run), base, rpr);
         out.push(Inline::Sym { ch, font, run, control: Some(id) });
@@ -2633,7 +2930,8 @@ impl Reader {
             }
         };
         let id = ControlId::next();
-        self.controls.insert(id, Control { read: Some(props.clone()), props, open, close, at: Some((r.start, end)) });
+        let origin = Origin::new(ControlSrc { open, close, read: props.clone(), at: (r.start, end) });
+        self.controls.insert(id, Control { props, origin });
         id
     }
 
@@ -2706,12 +3004,13 @@ impl Reader {
         (address.is_some() || anchor.is_some()).then_some(code)
     }
 
-    fn read_simple_field(&mut self, e: Node, code: String, base: &RunProps, pkg: &mut Package, out: &mut Vec<Inline>) {
+    fn read_simple_field(&mut self, e: Node, code: String, base: &Base, pkg: &mut Package, out: &mut Vec<Inline>) {
         let first = e.children().find(|c| is_w(*c, "r"));
         let rpr = first.and_then(|r| child(r, "rPr"));
-        let run = self.with_direct(self.run_style(&self.run_props(base, rpr)), rpr);
+        let direct = self.direct(rpr);
+        let run = self.typed_run(base, direct, false);
         let run = self.tracked(run, base, rpr);
-        let style = self.run_style(&self.run_props(base, None));
+        let style = self.typed_run(base, RunDirect::default(), false);
         let (mark, segs) = (units_mark(out), self.segs.len());
         let id = FieldId::next();
         let flag = |a: &str| attr(e, a).is_some_and(|v| v == "1" || v == "true" || v == "on");
@@ -2730,7 +3029,7 @@ impl Reader {
         if !code.is_empty() {
             out.push(Inline::Text(code, run.clone()));
         }
-        out.push(Inline::FieldSep { id, run: self.run_style(&self.run_props(base, None)) });
+        out.push(Inline::FieldSep { id, run: self.typed_run(base, RunDirect::default(), false) });
         self.fields.push(OpenField {
             id,
             in_result: true,
@@ -2778,16 +3077,11 @@ impl Reader {
         };
         let begin_run = out[begin].run().cloned();
         out.drain(begin..stop);
-        if let Some(edge) = edge {
-            let at = self.fields[first].marker_runs.clone();
-            let xml = match &at {
-                Some(at) => Rc::from(&n.document().input_text()[at.clone()]),
-                None => {
-                    self.lossy = true;
-                    Rc::from(edge.xml(&prefix_of(n)).as_str())
-                }
-            };
-            out.insert(begin, Inline::Opaque(Rc::new(Opaque { xml: Raw(Some(xml)), field: Some(edge), src: at, run: begin_run })));
+        if let (Some(kind), Some(run)) = (edge, begin_run) {
+            let src = self.fields[first].marker_runs.clone().map(|at| EdgeSource { xml: Rc::from(&n.document().input_text()[at.clone()]), at });
+            self.lossy |= src.is_none();
+            let origin = src.map_or(Origin::NONE, Origin::new);
+            out.insert(begin, Inline::FieldEdge { edge: Rc::new(Edge { kind, origin }), run });
             self.fields[first].edge = true;
         }
         for f in &mut self.fields[first..] {
@@ -2808,7 +3102,7 @@ impl Reader {
 
     // ---------------- drawings ----------------
 
-    fn image(&mut self, rid: &str, pkg: &mut Package) -> Option<usize> {
+    fn image(&mut self, rid: &str, pkg: &mut Package) -> Option<ResourceId> {
         let (_, target) = self.rels.get(rid)?.clone();
         if let Some(&i) = self.image_index.get(&target) {
             return Some(i);
@@ -2817,9 +3111,9 @@ impl Reader {
         if super::image::image_type(&data).is_none() {
             self.warn(WarningCode::ImageUndecodable, || format!("{target} isn't an image format the engine draws"));
         }
-        self.images.push(data);
-        self.image_index.insert(target, self.images.len() - 1);
-        Some(self.images.len() - 1)
+        let image = self.images.add(data);
+        self.image_index.insert(target, image);
+        Some(image)
     }
 
     /// A table's rows with the controls wrapping each (outermost first): row-level `w:sdt` and `w:customXml` are
@@ -2862,8 +3156,8 @@ impl Reader {
 
     fn read_pict(&mut self, pict: Node, run: &Run, pkg: &mut Package, out: &mut Vec<Inline>) {
         let mut src = DrawingSource { reader: self, pkg };
-        let mut ctx = crate::drawing::read::Ctx { source: &mut src, unknown_presets: Vec::new() };
-        let Some(v) = crate::drawing::vml::read(pict, &mut ctx) else { return };
+        let mut ctx = crate::docx::drawing::read::Ctx { source: &mut src, unknown_presets: Vec::new() };
+        let Some(v) = crate::docx::drawing::vml::read(pict, &mut ctx) else { return };
         let st = &v.style;
         let mut shape = v.shape;
         shape.xfrm.ext = [crate::drawing::units::Emu((st.w * 12700.0).round() as i64), crate::drawing::units::Emu((st.h * 12700.0).round() as i64)];
@@ -2893,55 +3187,49 @@ impl Reader {
                     effect: [0.0; 4],
                     shape: Some(Box::new(shape)),
                     text,
-                    src: Default::default(),
+                    origin: Origin::NONE,
                 },
                 run.clone(),
             ));
             return;
         }
         let h_relative = match st.h_relative.as_deref() {
-            Some("margin") => "margin",
-            Some("page") => "page",
-            Some("char") => "character",
-            Some("left-margin-area") => "leftMargin",
-            Some("right-margin-area") => "rightMargin",
-            Some("inner-margin-area") => "insideMargin",
-            Some("outer-margin-area") => "outsideMargin",
-            _ => "column",
+            Some("margin") => HorizontalRelation::Margin,
+            Some("page") => HorizontalRelation::Page,
+            Some("char") => HorizontalRelation::Character,
+            Some("left-margin-area") => HorizontalRelation::LeftMargin,
+            Some("right-margin-area") => HorizontalRelation::RightMargin,
+            Some("inner-margin-area") => HorizontalRelation::InsideMargin,
+            Some("outer-margin-area") => HorizontalRelation::OutsideMargin,
+            _ => HorizontalRelation::Column,
         };
         let v_relative = match st.v_relative.as_deref() {
-            Some("margin") => "margin",
-            Some("page") => "page",
-            Some("line") => "line",
-            Some("top-margin-area") => "topMargin",
-            Some("bottom-margin-area") => "bottomMargin",
-            Some("inner-margin-area") => "insideMargin",
-            Some("outer-margin-area") => "outsideMargin",
-            _ => "paragraph",
+            Some("margin") => VerticalRelation::Margin,
+            Some("page") => VerticalRelation::Page,
+            Some("line") => VerticalRelation::Line,
+            Some("top-margin-area") => VerticalRelation::TopMargin,
+            Some("bottom-margin-area") => VerticalRelation::BottomMargin,
+            Some("inner-margin-area") => VerticalRelation::InsideMargin,
+            Some("outer-margin-area") => VerticalRelation::OutsideMargin,
+            _ => VerticalRelation::Paragraph,
         };
-        let align = |a: &Option<String>| a.as_deref().filter(|a| *a != "absolute").map(str::to_string);
         let (wrap, side) = v.wrap.unwrap_or_default();
-        let wrap = match wrap.as_str() {
-            "square" | "tight" | "through" | "topAndBottom" => wrap,
-            _ => "none".into(),
-        };
-        let wrap_text = match side.as_str() {
-            "left" => "left",
-            "right" => "right",
-            "largest" => "largest",
-            _ => "bothSides",
-        };
+        let wrap = super::anchor::wrap(&wrap);
+        let wrap_text = super::anchor::wrap_text(&side);
         // A style length goes to the nearest twip, halves up (the products of decimal points land just below).
         let tw = |v: f64| (v * 20.0 + 0.5 + 1e-7).floor();
         let twips = |v: f64| tw(v) / 20.0;
         let dflt = [0.0, 0.0, 9.0, 9.0];
         let dist = std::array::from_fn(|i| (st.wrap_dist[i].unwrap_or(dflt[i]) * 20.0).round() / 20.0);
         // Compat 15: a VML float is behind the text only without wrapping.
-        let behind = st.z < 0 && (self.res.styles.compat != Compat::Generic || wrap == "none");
-        let poly = v.wrap_coords.filter(|_| matches!(wrap.as_str(), "tight" | "through")).map(|p| Rc::from(super::bounded_polygon(p)));
+        let behind = st.z < 0 && (self.res.cascade().rules.compat != Compat::Generic || wrap == FloatWrap::None);
+        let poly = v.wrap_coords.filter(|_| matches!(wrap, FloatWrap::Tight | FloatWrap::Through)).map(|p| Rc::from(super::bounded_polygon(p)));
         let line = shape.sp().and_then(|s| s.line.as_ref()).or_else(|| shape.pic().and_then(|p| p.line.as_ref()));
         let pen = line.filter(|l| !matches!(l.fill, Some(crate::drawing::paint::Fill::None))).map(|l| l.width.map_or(15.0, |w| w.0 as f64 / 635.0));
-        let (h_align, v_align) = (align(&st.h_align), align(&st.v_align));
+        let (h_align, v_align) = (
+            st.h_align.as_deref().filter(|a| *a != "absolute").map(super::anchor::h_align),
+            st.v_align.as_deref().filter(|a| *a != "absolute").map(super::anchor::v_align),
+        );
         // A line grows the stored box to its pixel bounds, aligned or not. Without one, a shape aligned on one axis
         // grows only at its right and bottom, one aligned on both not at all.
         let aligned = (h_align.is_some(), v_align.is_some());
@@ -2961,14 +3249,14 @@ impl Reader {
                 alt,
                 lock_aspect: false,
                 text_box,
-                h_relative: h_relative.into(),
+                h_relative,
                 h_align,
                 h_offset: twips(st.x),
-                v_relative: v_relative.into(),
+                v_relative,
                 v_align,
                 v_offset: twips(st.y),
                 wrap,
-                wrap_text: wrap_text.into(),
+                wrap_text,
                 dist,
                 effect,
                 poly,
@@ -2979,9 +3267,8 @@ impl Reader {
                 layout_in_cell: v.allow_in_cell,
                 order: self.float_order,
                 z: st.z.unsigned_abs().min(u64::from(u32::MAX)) as u32,
-                src: Some(pict.range()),
+                origin: Float::origin_at(Some(pict.range()), None),
                 locked: false,
-                frame_src: None,
                 in_note: false,
                 parts: Vec::new(),
                 rot_swap: false,
@@ -3017,7 +3304,7 @@ impl Reader {
         let w = extent.and_then(|e| emu(e.attribute("cx"))).unwrap_or(0.0);
         let h = extent.and_then(|e| emu(e.attribute("cy"))).unwrap_or(0.0);
         let blip = item.descendants().find(|n| is(*n, A, "blip"));
-        let image = blip.and_then(crate::drawing::paint::blip_embed).map(str::to_string).and_then(|rid| self.image(&rid, pkg));
+        let image = blip.and_then(crate::docx::drawing::paint::blip_embed).map(str::to_string).and_then(|rid| self.image(&rid, pkg));
         let txbx = item.descendants().find(|n| is_w(*n, "txbxContent"));
         let shape = self.drawing_shape(item, pkg);
         let alt: Rc<str> = item
@@ -3026,7 +3313,7 @@ impl Reader {
             .and_then(|p| p.attribute("descr").filter(|s| !s.is_empty()).or(p.attribute("title")))
             .unwrap_or("")
             .into();
-        let lock_aspect = crate::drawing::read::aspect_locked(item);
+        let lock_aspect = crate::docx::drawing::read::aspect_locked(item);
         if is(item, WP, "inline") {
             let ee = item.children().find(|c| is(*c, WP, "effectExtent"));
             // Negative where a turned picture's bounds are narrower than its box (Word writes a quarter-turned
@@ -3037,22 +3324,26 @@ impl Reader {
             let group = item.descendants().any(|n| n.tag_name().name() == "wgp");
             let text = txbx.filter(|_| !group).map(|t| Box::new(InlineText { id: next_para_id(), text_box: self.text_box(item, t, pkg) }));
             out.push(Inline::Picture(
-                Picture { w, h, image, alt, lock_aspect, effect, shape: Some(Box::new(shape)), text, src: Default::default() },
+                Picture { w, h, image, alt, lock_aspect, effect, shape: Some(Box::new(shape)), text, origin: Origin::NONE },
                 run.clone(),
             ));
             return;
         }
         let pos = |name: &str| item.children().find(|c| is(*c, WP, name));
-        let (mut h_rel, h_align, mut h_off) = position(pos("positionH"));
-        let (mut v_rel, v_align, mut v_off) = position(pos("positionV"));
+        let (h_rel, h_align, mut h_off) = position(pos("positionH"));
+        let (v_rel, v_align, mut v_off) = position(pos("positionV"));
+        let mut h_rel = h_rel.map_or(HorizontalRelation::Column, super::anchor::h_relative);
+        // No vertical `relativeFrom` is as an unrecognised one.
+        let mut v_rel = v_rel.map_or(VerticalRelation::Unrecognised, super::anchor::v_relative);
+        let (h_align, v_align) = (h_align.map(super::anchor::h_align), v_align.map(super::anchor::v_align));
         if item.attribute("simplePos").is_some_and(|v| on_off_str(Some(v))) {
             let sp = pos("simplePos");
             let at = |n: &str| sp.and_then(|p| emu(p.attribute(n))).unwrap_or(0.0);
             if h_align.is_none() {
-                (h_rel, h_off) = ("page".into(), at("x"));
+                (h_rel, h_off) = (HorizontalRelation::Page, at("x"));
             }
             if v_align.is_none() {
-                (v_rel, v_off) = ("page".into(), at("y"));
+                (v_rel, v_off) = (VerticalRelation::Page, at("y"));
             }
         }
         let wrap_el = item.children().find(|c| {
@@ -3060,13 +3351,13 @@ impl Reader {
                 && matches!(c.tag_name().name(), "wrapSquare" | "wrapTight" | "wrapThrough" | "wrapTopAndBottom" | "wrapNone")
         });
         let wrap = match wrap_el.map(|w| w.tag_name().name()) {
-            Some("wrapSquare") => "square",
-            Some("wrapTight") => "tight",
-            Some("wrapThrough") => "through",
-            Some("wrapTopAndBottom") => "topAndBottom",
-            _ => "none",
+            Some("wrapSquare") => FloatWrap::Square,
+            Some("wrapTight") => FloatWrap::Tight,
+            Some("wrapThrough") => FloatWrap::Through,
+            Some("wrapTopAndBottom") => FloatWrap::TopAndBottom,
+            _ => FloatWrap::None,
         };
-        let wrap_text = wrap_el.and_then(|w| w.attribute("wrapText")).unwrap_or("bothSides").to_string();
+        let wrap_text = wrap_el.and_then(|w| w.attribute("wrapText")).map_or(WrapText::BothSides, super::anchor::wrap_text);
         let dist = |n: &str| emu(item.attribute(n)).unwrap_or(0.0);
         // Group shape
         let group = item.descendants().find(|n| n.tag_name().name() == "wgp");
@@ -3094,7 +3385,7 @@ impl Reader {
                 v_relative: v_rel,
                 v_align,
                 v_offset: v_off,
-                wrap: wrap.into(),
+                wrap,
                 wrap_text,
                 dist: [dist("distT"), dist("distB"), dist("distL"), dist("distR")],
                 effect: {
@@ -3105,7 +3396,7 @@ impl Reader {
                 poly_edited: wrap_el
                     .and_then(|w| w.children().find(|c| is(*c, WP, "wrapPolygon")))
                     .is_some_and(|p| p.attribute("edited").is_some_and(|v| on_off_str(Some(v)))),
-                poly: wrap_el.filter(|_| matches!(wrap, "tight" | "through")).and_then(|w| {
+                poly: wrap_el.filter(|_| matches!(wrap, FloatWrap::Tight | FloatWrap::Through)).and_then(|w| {
                     let pts: Vec<(f64, f64)> = w
                         .children()
                         .filter(|c| is(*c, WP, "wrapPolygon"))
@@ -3120,9 +3411,8 @@ impl Reader {
                 layout_in_cell: item.attribute("layoutInCell").map(|v| on_off_str(Some(v))).unwrap_or(true),
                 order: self.float_order,
                 z: item.attribute("relativeHeight").and_then(|v| v.parse().ok()).unwrap_or(0),
-                src: Some(d.range()),
+                origin: Float::origin_at(Some(d.range()), None),
                 locked: item.attribute("locked").is_some_and(|v| on_off_str(Some(v))),
-                frame_src: None,
                 in_note: false,
                 parts,
                 rot_swap: false,
@@ -3146,7 +3436,7 @@ impl Reader {
         ));
         if let Some(Inline::Float(f, _)) = out.last_mut() {
             let deg = f.shape.as_ref().map_or(0.0, |s| s.xfrm.rot.normalized().degrees()) % 180.0;
-            if (45.0..135.0).contains(&deg) && self.settings.compat_mode != 12 {
+            if (45.0..135.0).contains(&deg) && self.settings.policy.mode != 12 {
                 let (w0, h0) = (f.w, f.h);
                 (f.w, f.h) = (h0, w0);
                 if f.h_align.is_none() {
@@ -3162,8 +3452,8 @@ impl Reader {
 
     fn drawing_shape(&mut self, item: Node, pkg: &mut Package) -> crate::drawing::Shape {
         let mut src = DrawingSource { reader: self, pkg };
-        let mut ctx = crate::drawing::read::Ctx { source: &mut src, unknown_presets: Vec::new() };
-        let shape = crate::drawing::read::read(item, &mut ctx);
+        let mut ctx = crate::docx::drawing::read::Ctx { source: &mut src, unknown_presets: Vec::new() };
+        let shape = crate::docx::drawing::read::read(item, &mut ctx);
         for name in ctx.unknown_presets {
             self.warn(WarningCode::UnknownPreset, || format!("preset geometry {name} isn't one the engine draws; it is drawn as a rectangle"));
         }
@@ -3172,18 +3462,12 @@ impl Reader {
 
     /// A run's formatting from its direct properties `direct` over `base` (its first `w:rPr` kept for saving and
     /// revisions).
-    fn direct_run(&mut self, r: Node, base: &RunProps, direct: &mut RunProps) -> Run {
+    fn direct_run(&mut self, r: Node, base: &Base, direct: Option<CharProps>) -> Run {
         let toc = self.fields.iter().any(|f| f.toc && f.in_result);
-        if toc && direct.style.as_deref() == Some("Hyperlink") {
-            direct.style = None;
-        }
-        let props = self.res.run_props(base, direct);
-        let run = self.with_direct(self.run_style(&props), child(r, "rPr"));
-        let mut run = self.tracked(run, base, child(r, "rPr"));
-        if toc {
-            Rc::make_mut(&mut run).toc = true;
-        }
-        run
+        let rpr = child(r, "rPr");
+        let direct = self.direct_of(rpr, direct);
+        let run = self.typed_run(base, direct, toc);
+        self.tracked(run, base, rpr)
     }
 
     /// A text box's content and box settings: `shape` holds its `bodyPr` and outline, `t` its `w:txbxContent`.
@@ -3213,7 +3497,7 @@ impl Reader {
     }
 
     fn group_parts(&mut self, g: Node, map: &Map, path: &mut crate::drawing::ChildPath, pkg: &mut Package, out: &mut Vec<GroupPart>) {
-        // The children the shape tree keeps, in its order (drawing/read.rs `child`).
+        // The children the shape tree keeps, in its order (docx/drawing/read.rs `child`).
         let kept = |c: &Node| matches!(c.tag_name().name(), "wsp" | "sp" | "cxnSp" | "pic" | "grpSp" | "graphicFrame");
         for (i, c) in g.children().filter(|c| c.is_element()).filter(kept).enumerate() {
             path.push(i as u16);
@@ -3232,7 +3516,7 @@ impl Reader {
                 }
                 "pic" => {
                     if let Some(f) = child_xfrm(c, "spPr") {
-                        let rid = c.descendants().find(|n| is(*n, A, "blip")).and_then(crate::drawing::paint::blip_embed).map(str::to_string);
+                        let rid = c.descendants().find(|n| is(*n, A, "blip")).and_then(crate::docx::drawing::paint::blip_embed).map(str::to_string);
                         let image = rid.and_then(|r| self.image(&r, pkg));
                         out.push(GroupPart { rect: map.rect(&f), image, text_box: None, path: path.clone() });
                     }
@@ -3250,10 +3534,10 @@ impl Reader {
     /// merge).
     fn joins(&self, run: &[Node], m: Node) -> bool {
         let kind = |t: Node| {
-            let direct = TblProps::parse(child(t, "tblPr"), &self.res.styles.colours);
-            let style = self.res.styles.table_style(direct.style.as_deref()).map(str::to_string);
-            let mut tbl = self.res.styles.table_region(style.as_deref(), &[]).tbl.clone();
-            tbl.merge(&direct);
+            let direct = child(t, "tblPr").map(TableDirect::parse).unwrap_or_default();
+            let style = self.res.cascade().table_style(direct.style.as_deref()).map(str::to_string);
+            let tbl =
+                table_props::table_on(&self.res.cascade().table_region(style.as_deref(), &[]).format.table, &direct, &self.res.cascade().colours);
             (tbl.floating, style, tbl.bidi_visual.unwrap_or(false))
         };
         let grids: Vec<Vec<f64>> = run.iter().copied().chain([m]).map(table_grid).collect();
@@ -3265,13 +3549,14 @@ impl Reader {
     /// rows in order.
     fn read_table(&mut self, ts: &[Node], pkg: &mut Package) -> Table {
         let t = ts[0];
-        let direct = TblProps::parse(child(t, "tblPr"), &self.res.styles.colours);
-        let style_id = self.res.styles.table_style(direct.style.as_deref()).map(str::to_string);
-        let style_region = self.res.styles.table_region(style_id.as_deref(), &[]);
-        let mut tbl = style_region.tbl.clone();
-        tbl.merge(&direct);
+        let colours = self.res.cascade().colours;
+        let held = self.table_direct(child(t, "tblPr"));
+        let direct = held.get().clone();
+        let style_id = self.res.cascade().table_style(direct.style.as_deref()).map(str::to_string);
+        let style_region = self.res.cascade().table_region(style_id.as_deref(), &[]);
+        let mut tbl = table_props::table_on(&style_region.format.table, &direct, &colours);
         // Compat ≤ 14: a floating table at vertical position 0 stands in the flow, whatever it is anchored to.
-        if self.res.styles.compat == Compat::Legacy
+        if self.res.cascade().rules.compat == Compat::Legacy
             && let Some(fp) = tbl.floating.as_mut()
             && fp.y == 0.0
             && fp.y_spec.is_none()
@@ -3285,10 +3570,9 @@ impl Reader {
         // properties without borders leave the table's borders as they are (FX-REVIEW-TABLES and its rejected twin).
         let now = &tbl.borders;
         let change = self.table_change(child(t, "tblPr"), "tblPrChange", |r, before| {
-            let prev = TblProps::parse(before, &r.res.styles.colours);
-            let style_id = r.res.styles.table_style(prev.style.as_deref()).map(str::to_string);
-            let mut tbl = r.res.styles.table_region(style_id.as_deref(), &[]).tbl.clone();
-            tbl.merge(&prev);
+            let prev = before.map(TableDirect::parse).unwrap_or_default();
+            let style_id = r.res.cascade().table_style(prev.style.as_deref()).map(str::to_string);
+            let tbl = table_props::table_on(&r.res.cascade().table_region(style_id.as_deref(), &[]).format.table, &prev, &colours);
             let b = if before.and_then(|n| child(n, "tblBorders")).is_some() { &tbl.borders } else { now };
             Some(PreviousProps::Table {
                 style_id,
@@ -3316,15 +3600,15 @@ impl Reader {
             row_nodes.extend(rows);
         }
         let nrows = row_nodes.len();
+        let mut row_props = Vec::with_capacity(nrows);
+        for (rn, _) in &row_nodes {
+            row_props.push((self.row_direct(child(*rn, "trPr")), self.exceptions_direct(child(*rn, "tblPrEx"))));
+        }
         let row_band = tbl.row_band.unwrap_or(0);
-        let headers = row_nodes
+        let headers = row_props
             .iter()
             .enumerate()
-            .take_while(|(i, (rn, _))| {
-                let mut trp = style_region.tr.clone();
-                trp.merge(&TrProps::parse(child(*rn, "trPr")));
-                trp.header == Some(true) || *i == 0 && look.first_row
-            })
+            .take_while(|(i, (tr, _))| table_props::row_on(&style_region.format.row, tr.get()).header == Some(true) || *i == 0 && look.first_row)
             .count();
         let col_band = tbl.col_band.unwrap_or(0);
         let mut rows = Vec::new();
@@ -3333,16 +3617,16 @@ impl Reader {
         let mut first_row_width: Option<Width> = None;
         let mut first_row_ind: Option<Width> = None;
         let mut left_margins: Vec<i64> = Vec::new();
-        for (ri, (rn, row_controls)) in row_nodes.iter().enumerate() {
-            let mut trp = style_region.tr.clone();
-            trp.merge(&TrProps::parse(child(*rn, "trPr")));
-            let mut ex = TblProps::parse(child(*rn, "tblPrEx"), &self.res.styles.colours);
+        for (ri, ((rn, row_controls), (row_direct, row_ex))) in row_nodes.iter().zip(row_props).enumerate() {
+            let mut trp = table_props::row_on(&style_region.format.row, row_direct.get());
+            let mut ex = table_props::tbl_props(row_ex.get(), &colours);
             // A later table's rows keep its own alignment and cell margins as their exceptions.
             let mut table_shading = None;
             if row_table[ri] > 0 {
-                let own = TblProps::parse(child(ts[row_table[ri]], "tblPr"), &self.res.styles.colours);
+                let own = table_props::tbl_props(&child(ts[row_table[ri]], "tblPr").map(TableDirect::parse).unwrap_or_default(), &colours);
                 // Its own shading over its style's, which joined tables share (Word shows the style's under one without).
-                let shd = own.shd.as_ref().or(style_region.tbl.shd.as_ref());
+                let style_shd = style_region.format.table.shading.as_ref().map(|s| table_props::xml_shd(s, &colours));
+                let shd = own.shd.as_ref().or(style_shd.as_ref());
                 table_shading = Some((shd.and_then(Shd::flat), shd.and_then(Shd::hatch)));
                 let mut later = TblProps { jc: own.jc, margins: own.margins, ..Default::default() };
                 later.merge(&ex);
@@ -3371,14 +3655,16 @@ impl Reader {
             let ncols = cell_nodes.len();
             let mut cells = Vec::new();
             for (ci, (cn, cell_controls)) in cell_nodes.iter().enumerate() {
-                let region = Rc::new(self.res.cell_region(style_id.as_deref(), look, (row_band, col_band), (ri, ci), (nrows, ncols), headers));
+                let region =
+                    Rc::new(self.res.cascade().cell_region(style_id.as_deref(), look, (row_band, col_band), (ri, ci), (nrows, ncols), headers));
                 let tm = &row_tbl.margins;
-                let rev = self.cell_revisions(child(*cn, "tcPr"), &region.tc, tm, unset);
+                let rev = self.cell_revisions(child(*cn, "tcPr"), &region.format.cell, tm, unset);
                 let ctx = TableCtx { region: region.clone() };
+                let direct = self.cell_direct(child(*cn, "tcPr"));
                 let blocks = self.read_blocks(*cn, pkg, Some(&ctx));
-                cells.push(self.cell(*cn, &region.tc, tm, unset, blocks, cell_controls.clone(), rev));
+                cells.push(self.cell(*cn, direct, &region.format.cell, tm, unset, blocks, cell_controls.clone(), rev));
             }
-            rows.push(self.row(*rn, &trp, &ex, &tbl, &row_tbl, &style_region, cells, row_controls.clone()));
+            rows.push(self.row(*rn, (row_direct, row_ex), &trp, &ex, &tbl, &row_tbl, &style_region, cells, row_controls.clone()));
             if let Some(r) = rows.last_mut() {
                 r.table_shading = table_shading;
                 bound_spans(r);
@@ -3397,7 +3683,7 @@ impl Reader {
             let first_of = |k: usize| row_table.iter().position(|&t| t == k);
             let moves: Vec<i64> = (0..ts.len())
                 .map(|k| match (k, first_of(0), first_of(k)) {
-                    (1.., Some(a), Some(b)) if self.res.styles.compat == Compat::Legacy => pull(a) - pull(b) + 5,
+                    (1.., Some(a), Some(b)) if self.res.cascade().rules.compat == Compat::Legacy => pull(a) - pull(b) + 5,
                     _ => 0,
                 })
                 .collect();
@@ -3406,7 +3692,7 @@ impl Reader {
         // Compat ≤ 14: a joined table whose rows' left cell margins differ from the first row's by more than 5 twips
         // has every column edge 5 twips right, but the left edge of the rows with the largest margin.
         let widest = left_margins.iter().copied().max().unwrap_or(0);
-        if ts.len() > 1 && self.res.styles.compat == Compat::Legacy && left_margins.iter().any(|m| (m - left_margins[0]).abs() > 5) {
+        if ts.len() > 1 && self.res.cascade().rules.compat == Compat::Legacy && left_margins.iter().any(|m| (m - left_margins[0]).abs() > 5) {
             for (r, m) in rows.iter_mut().zip(&left_margins) {
                 r.nudge = Some(*m == widest);
             }
@@ -3416,7 +3702,7 @@ impl Reader {
             style_id,
             width: first_row_width.or(tbl.width).unwrap_or(Width::Auto),
             jc: first_row_jc
-                .filter(|_| self.res.styles.compat == Compat::Generic && tbl.floating.is_none())
+                .filter(|_| self.res.cascade().rules.compat == Compat::Generic && tbl.floating.is_none())
                 .or(tbl.jc)
                 .or(row_jc.flatten())
                 .unwrap_or(Jc::Left),
@@ -3440,9 +3726,9 @@ impl Reader {
             bidi_visual: tbl.bidi_visual.unwrap_or(false),
             grid,
             rows,
-            src: self.record.then(|| Rc::new(t.range().start..ts[ts.len() - 1].range().end)),
+            origin: if self.record { Origin::new(t.range().start..ts[ts.len() - 1].range().end) } else { Origin::NONE },
             id: next_para_id(),
-            direct: Raw(child(t, "tblPr").map(|n| Rc::from(&n.document().input_text()[n.range()]))),
+            direct: held,
             controls: Vec::new(),
             change,
             grid_change,
@@ -3452,10 +3738,19 @@ impl Reader {
     /// A table cell: its properties over its style region's `base`, the table's cell margins `tm`, and its content.
     #[allow(clippy::too_many_arguments, reason = "the cell, its properties' context and the content read before it")]
     #[inline(never)]
-    fn cell(&self, cn: Node, base: &TcProps, tm: &Margins, unset: f64, blocks: Vec<Block>, controls: Vec<ControlId>, rev: CellRevisions) -> Cell {
+    fn cell(
+        &self,
+        cn: Node,
+        direct: CellDirect,
+        base: &crate::format::CellProps,
+        tm: &Margins,
+        unset: f64,
+        blocks: Vec<Block>,
+        controls: Vec<ControlId>,
+        rev: CellRevisions,
+    ) -> Cell {
         let tc_pr = child(cn, "tcPr");
-        let mut tcp = base.clone();
-        tcp.merge(&TcProps::parse(tc_pr, &self.res.styles.colours));
+        let tcp = table_props::cell_on(base, direct.get(), &self.res.cascade().colours);
         let mut c = Cell {
             width: tcp.width,
             span: tcp.grid_span.unwrap_or(1).max(1) as usize,
@@ -3471,13 +3766,13 @@ impl Reader {
             shading: None,
             hatch: None,
             margins: [0.0; 4],
-            v_align: String::new(),
+            v_align: VerticalAlignment::Top,
             text_direction: String::new(),
             no_wrap: false,
             fit_text: false,
             hide_mark: tc_pr.and_then(|p| child(p, "hideMark")).is_some_and(|n| !matches!(attr(n, "val"), Some("0" | "false" | "off"))),
             diagonals: None,
-            direct: Raw(tc_pr.map(|n| Rc::from(&n.document().input_text()[n.range()]))),
+            direct,
             blocks,
             controls,
             rev,
@@ -3487,18 +3782,19 @@ impl Reader {
         c
     }
 
-    /// A table row: its properties `trp` and exceptions `ex` over the table's `tbl` (`row_tbl` with the exceptions),
-    /// and its cells.
+    /// A table row: its authored properties and exceptions (`direct`), resolved as `trp` and `ex` over the table's
+    /// `tbl` (`row_tbl` with the exceptions), and its cells.
     #[allow(clippy::too_many_arguments, reason = "the row, the table properties it resolves over and its cells")]
     #[inline(never)]
     fn row(
         &mut self,
         rn: Node,
+        (direct, exceptions): (RowDirect, ExceptionsDirect),
         trp: &TrProps,
         ex: &TblProps,
         tbl: &TblProps,
         row_tbl: &TblProps,
-        style_region: &Region,
+        style_region: &TableRegion,
         cells: Vec<Cell>,
         controls: Vec<ControlId>,
     ) -> Row {
@@ -3507,14 +3803,13 @@ impl Reader {
             ins: self.mark_at(tr_pr, "ins", MarkKind::Insert),
             del: self.mark_at(tr_pr, "del", MarkKind::Delete),
             change: self.table_change(tr_pr, "trPrChange", |_, before| {
-                let mut tr = style_region.tr.clone();
-                tr.merge(&TrProps::parse(before));
+                let tr = table_props::row_on(&style_region.format.row, &before.map(RowDirect::parse).unwrap_or_default());
                 Some(PreviousProps::Row { height: tr.height, cant_split: tr.cant_split.unwrap_or(false), header: tr.header.unwrap_or(false) })
             }),
             ex_change: self.table_change(child(rn, "tblPrEx"), "tblPrExChange", |_, _| None),
         };
         Row {
-            height: trp.height.clone(),
+            height: trp.height,
             cant_split: trp.cant_split.unwrap_or(false),
             header: trp.header.unwrap_or(false),
             grid_before: trp.grid_before.unwrap_or(0).max(0) as usize,
@@ -3547,16 +3842,16 @@ impl Reader {
             }),
             cells,
             controls,
-            direct: Raw(tr_pr.filter(|_| self.record).map(raw)),
-            exceptions: Raw(child(rn, "tblPrEx").filter(|_| self.record).map(raw)),
-            src: self.record.then(|| Rc::new(rn.range())),
+            direct,
+            exceptions,
+            origin: if self.record { Origin::new(rn.range()) } else { Origin::NONE },
             rev,
         }
     }
 
     /// A cell's tracked insertion, deletion or merge (`w:cellIns`, `w:cellDel`, `w:cellMerge`), and its property
     /// change, its earlier properties resolved over `base` (the cell's style region) and the table's cell margins `tm`.
-    fn cell_revisions(&mut self, tc_pr: Option<Node>, base: &TcProps, tm: &Margins, unset: f64) -> CellRevisions {
+    fn cell_revisions(&mut self, tc_pr: Option<Node>, base: &crate::format::CellProps, tm: &Margins, unset: f64) -> CellRevisions {
         let merge = |v: Option<&str>| match v {
             Some("rest") => Some(VMerge::Restart),
             Some("cont") => Some(VMerge::Continue),
@@ -3580,15 +3875,14 @@ impl Reader {
             (self.mark(e, mark_kind), kind)
         });
         let change = self.table_change(tc_pr, "tcPrChange", |r, before| {
-            let mut tcp = base.clone();
-            tcp.merge(&TcProps::parse(before, &r.res.styles.colours));
+            let tcp = table_props::cell_on(base, &before.map(CellDirect::parse).unwrap_or_default(), &r.res.cascade().colours);
             let b = &tcp.borders;
             Some(PreviousProps::Cell {
                 width: tcp.width,
                 borders: [b.top.clone(), b.left.clone(), b.bottom.clone(), b.right.clone()],
                 shading: tcp.shading.flatten(),
                 margins: cell_margins(&tcp, tm, unset),
-                v_align: tcp.v_align.clone().unwrap_or_else(|| "top".into()),
+                v_align: tcp.v_align.unwrap_or(VerticalAlignment::Top),
                 text_direction: tcp.text_direction.clone().unwrap_or_else(|| "lrTb".into()),
                 no_wrap: tcp.no_wrap.unwrap_or(false),
             })
@@ -3690,7 +3984,7 @@ pub(crate) fn style_cell(c: &mut Cell, tcp: &TcProps, tm: &Margins, unset: f64) 
     c.shading = tcp.shading.flatten();
     c.hatch = tcp.shd.as_ref().and_then(Shd::hatch);
     c.margins = cell_margins(tcp, tm, unset);
-    c.v_align = tcp.v_align.clone().unwrap_or_else(|| "top".into());
+    c.v_align = tcp.v_align.unwrap_or(VerticalAlignment::Top);
     c.text_direction = tcp.text_direction.clone().unwrap_or_else(|| "lrTb".into());
     c.no_wrap = tcp.no_wrap.unwrap_or(false);
     c.fit_text = tcp.fit_text.unwrap_or(false);
@@ -3703,10 +3997,10 @@ fn cell_margins(tcp: &TcProps, tm: &Margins, unset: f64) -> [f64; 4] {
     [m(tcp.margins.top, tm.top), side(tcp.margins.left, tm.left), m(tcp.margins.bottom, tm.bottom), side(tcp.margins.right, tm.right)]
 }
 
-fn position(p: Option<Node>) -> (String, Option<String>, f64) {
-    let Some(p) = p else { return ("column".into(), None, 0.0) };
-    let rel = p.attribute("relativeFrom").unwrap_or("column").to_string();
-    let align = p.children().find(|c| is(*c, WP, "align")).and_then(|a| a.text()).map(|s| s.trim().to_string());
+fn position<'a>(p: Option<Node<'a, '_>>) -> (Option<&'a str>, Option<&'a str>, f64) {
+    let Some(p) = p else { return (None, None, 0.0) };
+    let rel = p.attribute("relativeFrom");
+    let align = p.children().find(|c| is(*c, WP, "align")).and_then(|a| a.text()).map(str::trim);
     // F6: offsets are truncated to whole twips.
     let off = p
         .children()
@@ -3733,7 +4027,7 @@ fn sym_ex(ac: Node) -> Option<(char, String)> {
 
 fn push_text(out: &mut Vec<Inline>, t: &str, run: &Run) {
     if let Some(Inline::Text(s, r)) = out.last_mut()
-        && (Rc::ptr_eq(r, run) || (**r == **run && r.direct.0 == run.direct.0))
+        && (Rc::ptr_eq(r, run) || r.same_run(run))
     {
         s.push_str(t);
         return;
@@ -3795,6 +4089,53 @@ pub fn is_symbol_font(f: &str) -> bool {
     matches!(f, "Symbol" | "Wingdings" | "Wingdings 2" | "Wingdings 3" | "Webdings")
 }
 
+/// A checkbox control's kind from the first of each of its `w14:` elements under `n`: its states' characters (Word's
+/// boxes when not given) and fonts, and its `w14:checked`.
+fn checkbox_kind(n: Node) -> ControlKind {
+    let el = |name: &str| n.descendants().find(|x| is(*x, W14, name));
+    let state = |name: &str, d: char| {
+        el(name).and_then(|s| s.attribute((W14, "val"))).and_then(|v| u32::from_str_radix(v, 16).ok()).and_then(char::from_u32).unwrap_or(d)
+    };
+    let font = |name: &str| el(name).and_then(|s| s.attribute((W14, "font"))).map(str::to_string);
+    ControlKind::Checkbox {
+        checked: state("checkedState", '\u{2612}'),
+        unchecked: state("uncheckedState", '\u{2610}'),
+        checked_font: font("checkedState"),
+        unchecked_font: font("uncheckedState"),
+        value: el("checked").map(|c| on_off_str(c.attribute((W14, "val")))),
+    }
+}
+
+/// The lock a `w:lock` value names; no lock for one this doesn't know.
+fn lock(v: &str) -> Lock {
+    match v {
+        "sdtLocked" => Lock::ControlLocked,
+        "contentLocked" => Lock::ContentLocked,
+        "sdtContentLocked" => Lock::Both,
+        _ => Lock::None,
+    }
+}
+
+/// The appearance a `w15:appearance` value names; `None` for one this doesn't know.
+pub(super) fn control_appearance(v: &str) -> Option<ControlAppearance> {
+    match v {
+        "boundingBox" => Some(ControlAppearance::BoundingBox),
+        "tags" => Some(ControlAppearance::Tags),
+        "hidden" => Some(ControlAppearance::Hidden),
+        _ => None,
+    }
+}
+
+/// The storage a `w:storeMappedDataAs` value names; `None` for one this doesn't know.
+fn date_storage(v: &str) -> Option<DateStorage> {
+    match v {
+        "text" => Some(DateStorage::Text),
+        "date" => Some(DateStorage::Date),
+        "dateTime" => Some(DateStorage::DateTime),
+        _ => None,
+    }
+}
+
 /// A `w:sdtPr` as [`ControlProps`]: what the editor reads and changes, typed; every
 /// other child kept as its XML.
 fn control_props(pr: Option<Node>, xml: &str) -> ControlProps {
@@ -3810,46 +4151,106 @@ fn control_props(pr: Option<Node>, xml: &str) -> ControlProps {
         match name {
             "tag" => p.tag = attr(c, "val").map(str::to_string),
             "alias" => p.alias = attr(c, "val").map(str::to_string),
-            "lock" => p.lock = attr(c, "val").map_or(Lock::None, Lock::parse),
+            "lock" => p.lock = attr(c, "val").map_or(Lock::None, lock),
             "showingPlcHdr" => p.showing_placeholder = attr(c, "val").is_none_or(|v| v != "0" && v != "false"),
-            "placeholder" => p.placeholder = Some(raw()),
-            "dataBinding" => p.binding = Some(raw()),
+            // The last of each, typed and written as read.
+            "placeholder" => {
+                let part = c.children().find(|d| d.is_element() && d.tag_name().name() == "docPart");
+                p.placeholder = part.and_then(|d| d.attributes().find(|a| a.name() == "val")).map(|a| a.value().to_string());
+                p.rest.push((name.to_string(), raw()));
+            }
+            "dataBinding" => {
+                let a = |n: &str| c.attributes().find(|a| a.name() == n).map(|a| a.value().to_string());
+                p.binding = Some(ControlBinding { xpath: a("xpath"), prefix_mappings: a("prefixMappings"), store_item_id: a("storeItemID") });
+                p.rest.push((name.to_string(), raw()));
+            }
             "text" => {
                 let multi_line = attr(c, "multiLine").is_some_and(|v| v == "1" || v == "true");
                 kind = Some((ControlKind::PlainText { multi_line }, raw()));
             }
             "richText" => kind = Some((ControlKind::RichText, raw())),
             "picture" => kind = Some((ControlKind::Picture, raw())),
-            "checkbox" if c.tag_name().namespace() == Some(W14) => {
-                let state = |name: &str, d: char| {
-                    c.children()
-                        .find(|s| s.tag_name().name() == name)
-                        .and_then(|s| s.attribute((W14, "val")))
-                        .and_then(|v| u32::from_str_radix(v, 16).ok())
-                        .and_then(char::from_u32)
-                        .unwrap_or(d)
-                };
-                let (checked, unchecked) = (state("checkedState", '\u{2612}'), state("uncheckedState", '\u{2610}'));
-                kind = Some((ControlKind::Checkbox { checked, unchecked }, raw()))
-            }
+            "checkbox" if c.tag_name().namespace() == Some(W14) => kind = Some((checkbox_kind(c), raw())),
             "date" => {
-                let format = child(c, "dateFormat").and_then(|f| attr(f, "val")).unwrap_or("").to_string();
-                let lid = child(c, "lid").and_then(|l| attr(l, "val")).map(str::to_string);
-                kind = Some((ControlKind::Date { format, lid }, raw()));
+                let v = |n| child(c, n).and_then(|x| attr(x, "val"));
+                kind = Some((
+                    ControlKind::Date {
+                        format: v("dateFormat").unwrap_or("").to_string(),
+                        lid: v("lid").map(str::to_string),
+                        calendar: v("calendar").map(str::to_string),
+                        storage: v("storeMappedDataAs").and_then(date_storage),
+                        full_date: attr(c, "fullDate").map(str::to_string),
+                    },
+                    raw(),
+                ));
             }
-            "dropDownList" | "comboBox" => kind = Some((ControlKind::DropDown, raw())),
+            "dropDownList" | "comboBox" => {
+                p.combo = name == "comboBox";
+                p.items = c
+                    .children()
+                    .filter(|i| is_w(*i, "listItem"))
+                    .map(|i| ListEntry { text: attr(i, "displayText").map(str::to_string), value: attr(i, "value").map(str::to_string) })
+                    .collect();
+                kind = Some((ControlKind::DropDown, raw()));
+            }
             "group" => kind = Some((ControlKind::Group, raw())),
-            "repeatingSection" if c.tag_name().namespace() == Some(W15) => kind = Some((ControlKind::RepeatingSection, raw())),
+            "repeatingSection" if c.tag_name().namespace() == Some(W15) => {
+                let el = |name: &str| c.children().find(|x| is(*x, W15, name));
+                fn val<'a>(x: Node<'a, '_>) -> Option<&'a str> {
+                    x.attributes().find(|a| a.name() == "val").map(|a| a.value())
+                }
+                let title = el("sectionTitle").and_then(val).map(str::to_string);
+                let fixed = el("doNotAllowInsertDeleteSection").is_some_and(|x| on_off_str(val(x)));
+                kind = Some((ControlKind::RepeatingSection { title, fixed }, raw()));
+            }
             "repeatingSectionItem" if c.tag_name().namespace() == Some(W15) => kind = Some((ControlKind::RepeatingItem, raw())),
             // Kinds the editor doesn't know (bibliography, citation, equation, document part galleries, ...).
-            "docPartObj" | "docPartList" | "bibliography" | "citation" | "equation" => kind = Some((ControlKind::Other, raw())),
+            "docPartObj" | "docPartList" | "bibliography" | "citation" | "equation" => {
+                let part = |n| child(c, n).and_then(|x| attr(x, "val")).filter(|v| !v.is_empty()).map(str::to_string);
+                p.kept = Some(match name {
+                    "docPartList" => KeptKind::Gallery { gallery: part("docPartGallery"), category: part("docPartCategory") },
+                    "docPartObj" => KeptKind::BuildingBlock {
+                        gallery: part("docPartGallery"),
+                        category: part("docPartCategory"),
+                        unique: child(c, "docPartUnique").is_some_and(on_off),
+                    },
+                    "citation" => KeptKind::Citation,
+                    "bibliography" => KeptKind::Bibliography,
+                    _ => KeptKind::Equation,
+                });
+                kind = Some((ControlKind::Other, raw()));
+            }
+            "temporary" => {
+                p.temporary = attr(c, "val").is_none_or(|v| v != "0" && v != "false");
+                p.rest.push((name.to_string(), raw()));
+            }
+            // The first of each, typed; all kept as read.
+            "appearance" | "color" | "rPr" | "id" => {
+                if !p.rest.iter().any(|(n, _)| n == name) {
+                    let val = c.attributes().find(|a| a.name() == "val").map(|a| a.value());
+                    match name {
+                        "appearance" => p.appearance = val.and_then(control_appearance),
+                        "color" => p.color = Some(val.and_then(|v| u32::from_str_radix(v, 16).ok())),
+                        "rPr" => p.run = Some(ControlRun { props: Rc::new(char_props::parse(c).0), xml: raw().into() }),
+                        _ => p.id = attr(c, "val").and_then(|v| v.trim().parse().ok()),
+                    }
+                }
+                p.rest.push((name.to_string(), raw()));
+            }
             _ => p.rest.push((name.to_string(), raw())),
         }
     }
     // No kind element: a rich-text control (Word's default).
     let (k, x) = kind.unwrap_or((ControlKind::RichText, String::new()));
+    // The last kind element is the control's.
+    if k != ControlKind::Other {
+        p.kept = None;
+    }
+    if k != ControlKind::DropDown {
+        (p.items, p.combo) = (Vec::new(), false);
+    }
+    p.kind_xml = (!x.is_empty()).then(|| KindXml { xml: x, kind: k.clone() });
     p.kind = k;
-    p.kind_xml = (!x.is_empty()).then_some(x);
     p
 }
 
@@ -3886,8 +4287,8 @@ struct DrawingSource<'r, 'p> {
     pkg: &'p mut Package,
 }
 
-impl crate::drawing::read::Source for DrawingSource<'_, '_> {
-    fn image(&mut self, rid: &str) -> Option<usize> {
+impl crate::docx::drawing::read::Source for DrawingSource<'_, '_> {
+    fn image(&mut self, rid: &str) -> Option<crate::docx::ResourceId> {
         self.reader.image(rid, self.pkg)
     }
 
@@ -3900,16 +4301,16 @@ impl crate::drawing::read::Source for DrawingSource<'_, '_> {
         let xml = self.pkg.read_str(&drawing)?;
         // The drawing's pictures are relative to its own part: they are not looked up.
         struct NoImages;
-        impl crate::drawing::read::Source for NoImages {
-            fn image(&mut self, _: &str) -> Option<usize> {
+        impl crate::docx::drawing::read::Source for NoImages {
+            fn image(&mut self, _: &str) -> Option<crate::docx::ResourceId> {
                 None
             }
             fn diagram(&mut self, _: &str) -> Option<crate::drawing::Shape> {
                 None
             }
         }
-        let mut ctx = crate::drawing::read::Ctx { source: &mut NoImages, unknown_presets: Vec::new() };
-        crate::drawing::read::diagram_drawing(&xml, &mut ctx)
+        let mut ctx = crate::docx::drawing::read::Ctx { source: &mut NoImages, unknown_presets: Vec::new() };
+        crate::docx::drawing::read::diagram_drawing(&xml, &mut ctx)
     }
 }
 
@@ -4004,7 +4405,7 @@ mod tests {
         ];
         let files: Vec<(&str, &str)> = files.iter().map(|(n, x)| (n.as_str(), x.as_str())).collect();
         let bytes = crate::layout::tests::package_bytes(&files).expect("a package");
-        for doc in [crate::docx::read(&bytes).expect("reads"), crate::docx::read_editable(&bytes).expect("reads for editing")] {
+        for doc in [crate::docx::read(&bytes).expect("reads"), crate::docx::read_editable(&bytes).expect("reads for editing").0] {
             let header = doc.stories.values().next().expect("the header");
             for (part, blocks) in [("body", &doc.sections[0].blocks), ("header", header)] {
                 let Some(crate::docx::Block::Para(p)) = blocks.first() else { panic!("a paragraph") };

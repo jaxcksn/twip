@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 use crate::docx::props::{Jc, VertAlign};
 use crate::docx::review::RangeKind;
-use crate::docx::{Block, Document, FieldKind, Inline, NoteKind, Paragraph, Run};
+use crate::docx::{Block, Document, FieldKind, Inline, ListSuffix, NoteKind, Paragraph, Run};
 
 /// Every feature name [`of`] can report, in the order the CLI lists them.
 pub const ALL: &[&str] = &[
@@ -47,7 +47,7 @@ pub fn of(doc: &Document) -> BTreeSet<&'static str> {
         if s.line_numbers.is_some() {
             f.insert("line_numbers");
         }
-        if !s.v_align.is_empty() && s.v_align != "top" {
+        if s.v_align != crate::docx::VerticalAlignment::Top {
             f.insert("valign");
         }
         let referenced = s.headers.iter().chain(&s.footers).flatten();
@@ -62,7 +62,7 @@ pub fn of(doc: &Document) -> BTreeSet<&'static str> {
     if !doc.comments.by_id.is_empty() {
         f.insert("comments");
     }
-    if doc.settings.compat_mode != 15 || !doc.settings.compat.is_empty() {
+    if doc.settings.policy.mode != 15 || doc.settings.policy.any_option() {
         f.insert("compat_non15");
     }
     for b in doc.stories.values().chain(doc.footnotes.values()).chain(doc.endnotes.values()) {
@@ -111,7 +111,7 @@ fn para(p: &Paragraph, depth: usize, f: &mut BTreeSet<&'static str>) {
     }
     if let Some(list) = &p.list {
         f.insert("lists");
-        if list.suff == "tab" || list.suff.is_empty() {
+        if list.suff == ListSuffix::Tab {
             f.insert("tabs");
         }
     }
@@ -166,7 +166,7 @@ fn para(p: &Paragraph, depth: usize, f: &mut BTreeSet<&'static str>) {
                 run(r, f);
             }
             Inline::FieldSep { run: r, .. } | Inline::FieldEnd { run: r, .. } => run(r, f),
-            Inline::Range(m) => {
+            Inline::Range(m) if m.is_review() => {
                 f.insert(match m.kind {
                     RangeKind::CommentStart | RangeKind::CommentEnd => "comments",
                     _ => "revisions",
@@ -176,7 +176,7 @@ fn para(p: &Paragraph, depth: usize, f: &mut BTreeSet<&'static str>) {
                 f.insert("comments");
                 run(r, f);
             }
-            Inline::Bookmark(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::Opaque(_) => {}
+            Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::FieldEdge { .. } | Inline::Foreign(_) => {}
         }
     }
 }

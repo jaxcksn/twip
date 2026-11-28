@@ -1,5 +1,6 @@
 //! Column widths
 
+use crate::docx::origin::FloatOrigin;
 use std::rc::Rc;
 
 use crate::docx::Compat;
@@ -191,7 +192,7 @@ fn content_widths_uncached(blocks: &[LaidBlock], env: &StoryEnv, fixed: bool, me
                 for i in &p.inlines {
                     if let Inline::Float(f, _) = i
                         && f.layout_in_cell
-                        && f.wrap != "none"
+                        && f.wrap != crate::docx::FloatWrap::None
                         && !(f.vml || f.hidden() || f.in_note || f.is_frame())
                     {
                         let box_w = (f.w * 20.0 + 1e-6).trunc() as i64;

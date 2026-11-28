@@ -68,13 +68,6 @@ fn reference(s: &Session, f: crate::docx::FieldId, r: &crate::editing::sub_templ
     SubTemplateReference { name: r.name.clone(), resolution, near_match, expanded: s.editor.reference_expanded(f) }
 }
 
-/// The value of attribute `name` (`w:xpath`) in an element's XML as written.
-fn attribute(xml: &str, name: &str) -> Option<String> {
-    let at = xml.find(&format!("{name}=\""))? + name.len() + 2;
-    let end = xml[at..].find('"')?;
-    Some(xml[at..at + end].replace("&quot;", "\"").replace("&apos;", "'").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&"))
-}
-
 /// A control kind's settings.
 fn options(s: &Session, e: &Element) -> Option<ControlOptions> {
     let p = e.props.as_ref()?;
@@ -82,27 +75,26 @@ fn options(s: &Session, e: &Element) -> Option<ControlOptions> {
         ControlKind::Checkbox { checked, .. } => {
             ControlOptions::Checkbox(CheckboxOptions { checked: Some(e.display == checked.to_string()), ..Default::default() })
         }
-        ControlKind::Date { format, lid } => {
+        ControlKind::Date { format, lid, .. } => {
             let d = crate::editing::date_settings(p);
             ControlOptions::Date(DateOptions {
                 format: Some(format.clone()).filter(|f| !f.is_empty()),
                 locale: lid.clone(),
                 calendar: d.as_ref().map(|d| crate::api::value::CalendarType::of_val(&d.calendar).unwrap_or_default()),
-                store_as: d.map(|d| d.storage.to_api()),
+                store_as: d.map(|d| d.storage.into()),
             })
         }
-        ControlKind::Other => match p.kept_kind()? {
+        ControlKind::Other => match p.kept.clone()? {
             crate::docx::KeptKind::Gallery { gallery, category } => ControlOptions::Gallery(crate::api::value::GalleryOptions { gallery, category }),
             _ => return None,
         },
         ControlKind::DropDown => {
-            let xml = p.kind_xml.as_deref().unwrap_or("");
-            let items = xml
-                .split("<w:listItem")
-                .skip(1)
-                .map(|item| {
-                    let text = attribute(item, "w:displayText").unwrap_or_default();
-                    ListItem { value: attribute(item, "w:value").unwrap_or_else(|| text.clone()), text }
+            let items = p
+                .items
+                .iter()
+                .map(|i| {
+                    let text = i.text.clone().unwrap_or_default();
+                    ListItem { value: i.value.clone().unwrap_or_else(|| text.clone()), text }
                 })
                 .collect();
             ControlOptions::List(ListOptions { items })
@@ -284,13 +276,9 @@ impl Session {
                 Lock::ContentLocked => ControlLock::Content,
                 Lock::Both => ControlLock::Both,
             },
-            placeholder: p.and_then(|p| p.placeholder.as_deref()).and_then(|x| attribute(x, "w:val").or_else(|| Some(x.to_string()))),
-            binding: p.and_then(|p| p.binding.as_deref()).and_then(|x| {
-                Some(DataBinding {
-                    xpath: attribute(x, "w:xpath")?,
-                    store_item_id: attribute(x, "w:storeItemID"),
-                    prefix_mappings: attribute(x, "w:prefixMappings"),
-                })
+            placeholder: p.and_then(|p| p.placeholder.clone()),
+            binding: p.and_then(|p| p.binding.as_ref()).and_then(|b| {
+                Some(DataBinding { xpath: b.xpath.clone()?, store_item_id: b.store_item_id.clone(), prefix_mappings: b.prefix_mappings.clone() })
             }),
             options: options(self, e),
             children: all.iter().filter(|c| c.parent == Some(want)).map(|c| ElementId(elements::id_str(c.id))).collect(),
@@ -425,7 +413,7 @@ mod tests {
         let all = unfilled(s);
         assert!(!all.is_empty(), "{all:?}");
         let obj = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-OBJ.docx")).expect("fixture");
-        let png = crate::docx::read(&obj).expect("reads").images.last().cloned().expect("an image");
+        let png = crate::docx::read(&obj).expect("reads").images.last().map(|(_, d)| d.to_vec()).expect("an image");
         let fill = crate::api::command::FillControl {
             id: all[0].id.clone(),
             text: None,

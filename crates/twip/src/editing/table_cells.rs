@@ -139,7 +139,7 @@ impl Editor {
                         let nw: Vec<i64> = picked.map(|j| w[j]).collect();
                         row.cells.splice(k..k, new);
                         w.splice(k..k, nw);
-                        row.src = None;
+                        row.detach();
                     }
                     widths.push((tw(0, row.grid_before), w));
                 }
@@ -197,7 +197,7 @@ impl Editor {
                 let mut added: Vec<Row> = Vec::with_capacity(n);
                 for _ in 0..n {
                     let mut r = rows[last].clone();
-                    r.src = None;
+                    r.detach();
                     r.rev = Default::default();
                     r.cells.iter_mut().for_each(|c| *c = empty_cell(c));
                     added.push(r);
@@ -330,9 +330,8 @@ impl Editor {
         let Some(t) = self.index.table(&self.doc, tg.table) else { return Outcome::Unchanged("no table") };
         let avg = heights[r0..=r1].iter().sum::<f64>() / (r1 - r0 + 1) as f64;
         let mut rows = t.rows.clone();
-        let cx = self.cx();
         for row in &mut rows[r0..=r1] {
-            super::table_format::set_height(row, Some((avg, "atLeast".into())), &cx);
+            super::table_format::set_height(row, Some((avg, crate::docx::HeightRule::AtLeast)));
         }
         let grid = t.grid.clone();
         self.rebuild("Distribute Rows", tg.table, rows, grid, (tg.rows.0, tg.cols.0), fonts)

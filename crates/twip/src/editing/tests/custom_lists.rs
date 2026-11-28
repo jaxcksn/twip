@@ -69,7 +69,7 @@ fn custom_lists_save_unchanged_byte_for_byte() {
         zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap().by_name(name).unwrap().read_to_string(&mut s).unwrap();
         s
     };
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let original = std::fs::read(path).expect("fixture");
     for part in ["word/numbering.xml", "word/document.xml", "word/styles.xml"] {
         assert_eq!(read(&saved, part), read(&original, part), "{part}");
@@ -87,7 +87,7 @@ fn label(e: &crate::editing::Editor, text: &str) -> String {
 }
 
 fn read_again(e: &crate::editing::Editor) -> crate::editing::Editor {
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     crate::editing::Editor::open(&bytes, super::fonts()).expect("reads again")
 }
 
@@ -219,14 +219,14 @@ fn galleries_list_the_library_recent_and_document_lists_and_apply_them() {
     assert!(e.list_entry_preview(&ListEntryId("library:bullet:9".into())).is_none());
 }
 
-/// The images the first page draws, by image index.
-fn drawn_images(doc: &crate::docx::Document) -> Vec<usize> {
-    let snap = crate::layout::layout(doc, super::fonts());
+/// The images the first page draws.
+fn drawn_images(doc: &crate::docx::Document) -> Vec<crate::docx::ResourceId> {
+    let snap = crate::layout::tests::layout(doc, super::fonts());
     let page = &snap.pages()[0];
     crate::layout::traverse::paint_items(page)
         .into_iter()
         .filter_map(|i| match i {
-            crate::layout::fragment::Item::Image { key, .. } => key.index,
+            crate::layout::fragment::Item::Image { key, .. } => key.image,
             _ => None,
         })
         .collect()
@@ -241,7 +241,7 @@ fn picture_bullets_draw_their_image_and_a_new_one_saves_with_its_part() {
     let levels = levels_of(&mut e, 4);
     let png = levels[0].picture.clone().expect("the picture bullet's image");
     assert!(png.0.starts_with(b"\x89PNG"));
-    let image = e.document().images.iter().position(|i| *i == png.0).expect("an image");
+    let image = e.document().images.find(&png.0).expect("an image");
     assert!(drawn_images(e.document()).contains(&image), "the label draws the image");
     // A new picture bullet for the Wingdings list.
     let mut levels = levels_of(&mut e, 1);
@@ -254,9 +254,9 @@ fn picture_bullets_draw_their_image_and_a_new_one_saves_with_its_part() {
         Command::SetListDefinition(ListDefinitionChange { levels: levels[..1].to_vec(), apply_to: ListApplyTo::WholeList, name: None }),
         fonts(),
     );
-    let at = e.document().images.iter().position(|i| *i == picture).expect("the new image");
+    let at = e.document().images.find(&picture).expect("the new image");
     assert!(drawn_images(e.document()).contains(&at), "the new bullet draws");
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(saved.clone())).expect("a package");
     let names: Vec<String> = z.file_names().filter_map(|n| n.ok().map(|n| n.to_string())).collect();
     let mut rels = String::new();
@@ -285,8 +285,8 @@ fn an_undecodable_picture_bullet_warns() {
         out.write_all(&data).unwrap();
     }
     let bytes = out.finish().unwrap().into_inner();
-    let doc = crate::docx::read_editable(&bytes).expect("reads");
-    assert_eq!(doc.diagnostics.count(crate::api::warning::WarningCode::PictureBulletUndecodable), 1);
+    let (_, docx) = crate::docx::read_editable(&bytes).expect("reads");
+    assert_eq!(docx.diagnostics.count(crate::api::warning::WarningCode::PictureBulletUndecodable), 1);
 }
 
 #[test]
@@ -319,10 +319,10 @@ fn a_self_closing_numbering_root_opens_for_a_new_list() {
     let bytes = out.finish().unwrap().into_inner();
     let mut e = crate::editing::Editor::open(&bytes, super::fonts()).expect("reads");
     // Nothing to add: the part is kept as it is.
-    assert_eq!(part(&crate::docx::write::save(e.document()).expect("saves")), EMPTY);
+    assert_eq!(part(&crate::docx::write::save(e.document(), e.docx()).expect("saves")), EMPTY);
     caret_in(&mut e, 0);
     e.execute(Command::ApplyListEntry(ListEntryId("library:bullet:1".into())), super::fonts());
-    let saved = crate::docx::write::save(e.document()).expect("saves with a new list");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves with a new list");
     let xml = part(&saved);
     assert!(xml.contains("<w:abstractNum ") && xml.contains("<w:num ") && xml.ends_with("</w:numbering>"), "{xml}");
     roxmltree::Document::parse(&xml).expect("the numbering part parses");
@@ -337,8 +337,8 @@ fn a_new_list_type_keeps_each_paragraphs_level() {
     e.complete(super::fonts());
     let ids = super::texts_ids(&e);
     let num = |e: &crate::editing::Editor, id| e.index().para(e.document(), id).expect("a paragraph").style.num;
-    let items: Vec<_> = ids.iter().copied().filter(|&i| num(&e, i).is_some_and(|n| n.0 == 1)).collect();
-    let before: Vec<i64> = items.iter().map(|&i| num(&e, i).expect("in a list").1).collect();
+    let items: Vec<_> = ids.iter().copied().filter(|&i| num(&e, i).is_some_and(|n| n.list.0 == 1)).collect();
+    let before: Vec<i64> = items.iter().map(|&i| num(&e, i).expect("in a list").level).collect();
     assert!(before.iter().any(|&l| l > 0));
     let (a, b) = (items[0], *items.last().expect("items"));
     let end = e.index().para(e.document(), b).map(|p| crate::editing::text::UnitText::of(p).len()).expect("the last item");
@@ -348,7 +348,7 @@ fn a_new_list_type_keeps_each_paragraphs_level() {
         unit: crate::editing::selection::Granularity::Char,
     });
     e.execute(crate::editing::commands::Command::SetList(Some(crate::api::command::ListKind::Bullet)), super::fonts());
-    let after: Vec<i64> = items.iter().map(|&i| num(&e, i).map_or(-1, |n| n.1)).collect();
+    let after: Vec<i64> = items.iter().map(|&i| num(&e, i).map_or(-1, |n| n.level)).collect();
     assert_eq!(after, before);
     assert!(items.iter().all(|&i| e.para_list(i) == Some(true)), "bullets now");
 }

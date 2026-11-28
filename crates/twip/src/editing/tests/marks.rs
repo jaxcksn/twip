@@ -3,6 +3,7 @@
 use super::super::Editor;
 use super::super::view::{MarkKind, MarkOptions};
 use super::{blank_body, fonts, open, para_id};
+use crate::docx::origin::ParagraphOrigin;
 use crate::layout::Unit;
 
 fn lay(body: &str) -> Editor {
@@ -180,12 +181,12 @@ fn a_mark_hidden_by_editing_shows_its_paragraphs_apart_while_hidden_text_shows()
 
 #[test]
 fn a_chain_of_joins_longer_than_the_parts_bound_stops_adding_parts_and_shows_joined() {
-    let n = crate::docx::resolve::MAX_PARTS + 40;
+    let n = crate::format::resolve::MAX_PARTS + 40;
     let joined = r#"<w:p><w:pPr><w:rPr><w:vanish/></w:rPr></w:pPr><w:r><w:t>a</w:t></w:r></w:p>"#.repeat(n);
     let mut e = lay(&format!("{joined}<w:p><w:r><w:t>end</w:t></w:r></w:p>"));
     let Some(crate::docx::Block::Para(p)) = e.document().sections[0].blocks.first() else { panic!("a paragraph") };
-    assert_eq!(p.src.as_ref().map(|s| s.joined.len()), Some(n), "one paragraph");
-    assert_eq!(p.style.parts.len(), crate::docx::resolve::MAX_PARTS, "the parts stop growing");
+    assert_eq!(p.origin.is_some().then(|| p.joined_parts().len()), Some(n), "one paragraph");
+    assert_eq!(p.style.parts.len(), crate::format::resolve::MAX_PARTS, "the parts stop growing");
     e.set_mark_options(MarkOptions { hidden: true, ..MarkOptions::default() });
     e.complete(fonts());
     let lines = e.page_geometries().into_iter().map(|(_, g)| g.lines.len()).sum::<usize>();
@@ -198,7 +199,7 @@ fn a_deletions_stand_in_is_no_space() {
     let del = r#"w:id="1" w:author="A" w:date="2026-01-01T00:00:00Z""#;
     let mut e =
         lay(&format!(r#"<w:p><w:r><w:t>ab</w:t></w:r><w:del {del}><w:r><w:delText>g</w:delText></w:r></w:del><w:r><w:t>cd</w:t></w:r></w:p>"#));
-    let mut style = e.document().review.markup.style.clone();
+    let mut style = e.review().markup.style.clone();
     style.deletions.mark = TextMark::Caret;
     e.set_markup_style(style);
     e.complete(fonts());

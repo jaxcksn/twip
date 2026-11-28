@@ -181,8 +181,8 @@ fn frame(f: Option<&crate::api::command::TocFrame>) -> TocFrame {
 impl Editor {
     /// The name the document (or Word's built-ins) gives style `id`, as a table of contents' code names it.
     fn style_name(&self, id: &StyleId) -> Option<String> {
-        if let Some(s) = self.doc.resolver.as_ref().and_then(|r| r.styles.by_id.get(&id.0)) {
-            return Some(s.name.clone());
+        if let Some(s) = self.doc.definitions.as_ref().and_then(|r| r.cascade().styles.get(&id.0).cloned()) {
+            return Some(s.name.as_deref().unwrap_or_default().to_string());
         }
         crate::services::styles::builtin::BUILT_IN.iter().find(|b| b.id == id.0).map(|b| b.name.to_string())
     }
@@ -191,15 +191,16 @@ impl Editor {
     /// of styles sharing a name, the first by id.
     pub fn style_ids_by_name(&self) -> HashMap<String, StyleId> {
         let mut ids = HashMap::new();
-        let Some(r) = self.doc.resolver.as_ref() else { return ids };
-        let mut styles: Vec<&crate::docx::styles::Style> = r.styles.by_id.values().collect();
+        let Some(r) = self.doc.definitions.as_ref() else { return ids };
+        let c = r.cascade();
+        let mut styles: Vec<&crate::format::Style> = c.styles.styles.values().map(|e| &*e.style).collect();
         styles.sort_unstable_by(|a, b| a.id.cmp(&b.id));
         for s in &styles {
-            ids.entry(s.name.to_ascii_lowercase()).or_insert_with(|| StyleId(s.id.clone()));
+            ids.entry(s.name.as_deref().unwrap_or_default().to_ascii_lowercase()).or_insert_with(|| StyleId(s.id.to_string()));
         }
         for s in &styles {
             for a in &s.aliases {
-                ids.entry(a.to_ascii_lowercase()).or_insert_with(|| StyleId(s.id.clone()));
+                ids.entry(a.to_ascii_lowercase()).or_insert_with(|| StyleId(s.id.to_string()));
             }
         }
         ids

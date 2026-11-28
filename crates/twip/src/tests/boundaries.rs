@@ -55,6 +55,12 @@ fn editing_stays_below_rendering_and_host() {
 }
 
 #[test]
+fn the_document_reader_and_writer_know_neither_layout_nor_the_api() {
+    let v = violations("docx", &["layout", "api"], &[]);
+    assert!(v.is_empty(), "docx imports layout or the API:\n{}", v.join("\n"));
+}
+
+#[test]
 fn layout_doesnt_know_the_editor() {
     let v = violations("layout", &["editing", "editor", "legacy", "render", "pdf", "host"], &[]);
     assert!(v.is_empty(), "layout imports a consumer:\n{}", v.join("\n"));
@@ -90,4 +96,19 @@ fn the_only_bundled_fonts_are_the_symbol_fallback_and_the_interface_font() {
     let mut want: Vec<String> = allowed.iter().map(|s| s.to_string()).collect();
     want.sort();
     assert_eq!(bundled, want, "fonts the engine bundles");
+}
+
+#[test]
+fn authored_formatting_names_no_xml() {
+    let forbidden = ["layout", "api", "docx::xml", "docx::reader", "docx::write", "docx::binding"];
+    let v = violations("format", &forbidden, &[]);
+    assert!(v.is_empty(), "format imports XML, layout or the API:\n{}", v.join("\n"));
+    let mut files = Vec::new();
+    sources(&Path::new(env!("CARGO_MANIFEST_DIR")).join("src/format"), &mut files);
+    for f in files {
+        let text = fs::read_to_string(&f).unwrap_or_default();
+        for word in ["roxmltree", "Node", "<w:", "RunProps", "props::ParaProps", "docx::xml", "docx::reader", "docx::write", "layout::", "api::"] {
+            assert!(!text.contains(word), "{} names {word}", f.display());
+        }
+    }
 }

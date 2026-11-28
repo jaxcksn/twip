@@ -6,9 +6,9 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-use crate::docx::resolve::Resolver;
+use crate::docx::definitions::Definitions;
 use crate::docx::review::{Comment, CommentId, RangeKind, RangeMark, Timestamp};
-use crate::docx::write::props::{Cx, Props};
+use crate::docx::write::props::Cx;
 use crate::docx::{Block, Inline, Paragraph, Raw, Run};
 use crate::font::Fonts;
 use crate::layout::{ParaId, Unit};
@@ -22,6 +22,7 @@ use super::step::{Edges, Step, StepError, run_of};
 use super::text::UnitText;
 use super::view::CommentView;
 use super::{Editor, Tx};
+use crate::docx::run_xml;
 
 /// The most characters of the text a thread comments on that it shows.
 const SCOPE_LIMIT: usize = crate::api::review::ANCHOR_TEXT_LIMIT;
@@ -99,7 +100,7 @@ fn marker(i: &Inline) -> Option<(CommentId, Which)> {
 }
 
 fn range_mark(kind: RangeKind, id: CommentId) -> Inline {
-    Inline::Range(RangeMark { kind, id: id.0, name: None })
+    Inline::Range(RangeMark { kind, id: id.0, name: None, permission: None })
 }
 
 fn markers_at(p: &Paragraph, u: Unit) -> u32 {
@@ -468,7 +469,7 @@ impl Editor {
     /// (a thread draws whole or not at all).
     pub fn comment_shown(&self, id: CommentId) -> bool {
         let comments = &self.doc.comments;
-        comments.by_id.contains_key(&id) && comments.by_id.get(&comments.root(id)).is_some_and(|c| self.doc.review.shows_comment(c.author))
+        comments.by_id.contains_key(&id) && comments.by_id.get(&comments.root(id)).is_some_and(|c| self.review.shows_comment(c.author))
     }
 
     pub(super) fn comment_views(&mut self, visible: std::ops::Range<usize>) -> (Vec<CommentView>, Vec<(CommentId, usize, [f64; 2])>) {
@@ -503,7 +504,7 @@ impl Editor {
         Some(Step::Text { para, range: Unit(at)..Unit(at), with, edges: Edges { under, ..Edges::default() } })
     }
 
-    fn new_comment(&mut self, id: CommentId, parent: Option<CommentId>, body: &RichText, author: &str, res: &Resolver, cx: &Cx) -> Comment {
+    fn new_comment(&mut self, id: CommentId, parent: Option<CommentId>, body: &RichText, author: &str, res: &Definitions) -> Comment {
         let who = self.doc.people.author(author, None);
         let initials = self.doc.people.get(who).and_then(|p| p.initials.clone()).unwrap_or_else(|| initials(author).into());
         let secs = crate::clock::unix_secs();
@@ -514,7 +515,7 @@ impl Editor {
             initials: Some(initials),
             date: Some(now.clone()),
             date_utc: Some(now),
-            body: body.to_blocks(res, cx),
+            body: body.to_blocks(res),
             para_id: self.doc.review_ids.next_para_id(),
             durable_id: Some(self.doc.review_ids.next_para_id()),
             parent,
@@ -523,13 +524,12 @@ impl Editor {
         }
     }
 
-    fn reference_run(&self, para: ParaId, at: Unit, res: &Resolver, cx: &Cx) -> Option<Run> {
-        if res.styles.by_id.contains_key("CommentReference") {
+    fn reference_run(&self, para: ParaId, at: Unit, res: &Definitions, cx: &Cx) -> Option<Run> {
+        if res.has_style("CommentReference") {
             let base = self.run_base(para, at, res, cx)?;
-            let mut p = Props::parse(None, "rPr", cx);
-            let w = &cx.w;
-            p.set("rStyle", format!("<{w}rStyle {w}val=\"CommentReference\"/>"));
-            return Some(res.run_from_xml(&base, p.xml().as_deref(), cx));
+            let p = crate::format::CharProps { style: Some("CommentReference".into()), ..Default::default() };
+            let direct = crate::docx::char_props::RunDirect::typed(Some(Rc::new(p)));
+            return Some(Rc::new(run_xml::resolve(res, &base, direct, false)));
         }
         Some(run_before(self.index.para(&self.doc, para)?, at))
     }
@@ -541,7 +541,7 @@ impl Editor {
         }
         let (Some((pa, oa)), Some((pb, ob))) = (a.para_offset(), b.para_offset()) else { return self.comment_refused("no text range") };
         let (oa, ob) = if a.same_place(&b) { self.word_around(pa, oa) } else { (oa, ob) };
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let cx = self.cx();
         let Some(run) = self.reference_run(pb, ob, &res, &cx) else { return Outcome::Unchanged("no paragraph") };
         let id = CommentId(self.doc.review_ids.next_revision_id());
@@ -563,7 +563,7 @@ impl Editor {
                 return Outcome::Unchanged("stale selection");
             }
         }
-        let comment = self.new_comment(id, None, body, author, &res, &cx);
+        let comment = self.new_comment(id, None, body, author, &res);
         if self.step(&mut tx, Step::Comment { id, after: Some(comment) }).is_err() {
             self.abort(tx);
             return Outcome::Unchanged("comment failed");
@@ -581,10 +581,10 @@ impl Editor {
             return self.comment_refused("no such comment");
         }
         let root = self.doc.comments.root(to);
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let cx = self.cx();
         let id = CommentId(self.doc.review_ids.next_revision_id());
-        let mut reply = self.new_comment(id, Some(root), body, author, &res, &cx);
+        let mut reply = self.new_comment(id, Some(root), body, author, &res);
         reply.done = self.doc.comments.by_id.get(&root).is_some_and(|c| c.done);
         let mut tx = self.begin("Reply");
         if self
@@ -602,7 +602,7 @@ impl Editor {
         out
     }
 
-    fn reply_markers(&mut self, tx: &mut Tx, root: CommentId, id: CommentId, res: &Resolver, cx: &Cx) -> Result<(), StepError> {
+    fn reply_markers(&mut self, tx: &mut Tx, root: CommentId, id: CommentId, res: &Definitions, cx: &Cx) -> Result<(), StepError> {
         let m = self.comment_marks().get(&root).copied().unwrap_or_default();
         let ranged = m.start.is_some() && m.end.is_some();
         if let Some(after) = m.reference.or(m.end) {
@@ -627,10 +627,9 @@ impl Editor {
     }
 
     pub fn edit_comment(&mut self, id: CommentId, body: &RichText, fonts: &Fonts) -> Outcome {
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
-        let cx = self.cx();
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let Some(mut c) = self.doc.comments.by_id.get(&id).cloned() else { return self.comment_refused("no such comment") };
-        c.body = body.to_blocks(&res, &cx);
+        c.body = body.to_blocks(&res);
         let mut tx = self.begin("Edit Comment");
         if self.step(&mut tx, Step::Comment { id, after: Some(c) }).is_err() {
             self.abort(tx);
@@ -657,8 +656,8 @@ impl Editor {
     pub fn review_counts(&mut self) -> (crate::editing::revisions::index::Counts, crate::editing::revisions::index::Counts) {
         self.review_marks();
         let marks = &self.review_marks.as_ref().expect("just found").2;
-        let (mut all, mut shown) = marks.counts(&self.doc.review.markup.show);
-        let markup = self.doc.review.markup.clone();
+        let (mut all, mut shown) = marks.counts(&self.review.markup.show);
+        let markup = self.review.markup.clone();
         let threads = match &self.counted {
             Some((edits, m, n)) if *edits == self.comment_edits && Rc::ptr_eq(m, &markup) => *n,
             _ => {
@@ -677,7 +676,7 @@ impl Editor {
     pub fn delete_all_comments(&mut self, shown_only: bool, fonts: &Fonts) -> Outcome {
         let comments = &self.doc.comments;
         let roots = if shown_only { comments.roots() } else { HashMap::new() };
-        let shown = |id: &CommentId| roots.get(id).and_then(|r| comments.by_id.get(r)).is_some_and(|c| self.doc.review.shows_comment(c.author));
+        let shown = |id: &CommentId| roots.get(id).and_then(|r| comments.by_id.get(r)).is_some_and(|c| self.review.shows_comment(c.author));
         let ids: Vec<CommentId> = comments.by_id.keys().copied().filter(|id| !shown_only || shown(id)).collect();
         if ids.is_empty() {
             return self.comment_refused(if shown_only { "no comment shown" } else { "no comment" });

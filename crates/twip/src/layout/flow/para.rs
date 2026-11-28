@@ -411,8 +411,8 @@ impl<'d> PageFill<'d, '_> {
     fn bare_closing_para(&self, bi: usize, prev: fn(&Block) -> bool) -> bool {
         let bare = |i: &Inline| match i {
             Inline::Text(t, _) => t.is_empty(),
-            Inline::Bookmark(_)
-            | Inline::Opaque(_)
+            Inline::Foreign(_)
+            | Inline::FieldEdge { .. }
             | Inline::Range(_)
             | Inline::ControlStart(_)
             | Inline::ControlEnd(_)

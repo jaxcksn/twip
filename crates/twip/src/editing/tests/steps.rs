@@ -1,13 +1,14 @@
 //! Step inversion
 
 use crate::docx::{Block, Document, Inline};
-use crate::layout::{DocumentLayout, ParaId, Revision, TableId, Unit, dump, layout};
+use crate::layout::tests::layout;
+use crate::layout::{ParaId, Revision, TableId, Unit, dump};
 
 use super::super::index::{Container, DocIndex};
 use super::super::step::{Step, para_len};
 use super::fonts;
 
-fn read(name: &str) -> Document {
+fn read(name: &str) -> (Document, crate::docx::Session) {
     let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor").join(name);
     crate::docx::read_editable(&std::fs::read(&p).unwrap_or_else(|e| panic!("{}: {e}", p.display()))).expect("reads")
 }
@@ -51,7 +52,8 @@ fn steps(doc: &Document, idx: &DocIndex) -> Vec<Step> {
             out.push(Step::Text { para: p, range: Unit(0)..Unit(2), with: Vec::new(), edges: Default::default() });
         }
         let par = idx.para(doc, p).expect("paragraph");
-        let second = crate::docx::Paragraph { inlines: Vec::new(), src: None, id: crate::docx::next_para_id(), ..par.clone() };
+        let mut second = crate::docx::Paragraph { inlines: Vec::new(), ..par.clone() };
+        second.renew_identity();
         out.push(Step::Split { para: p, at: mid, second, kept: Vec::new() });
     }
     for w in ps.windows(2).step_by((ps.len() / 4).max(1)) {
@@ -91,21 +93,23 @@ fn renew(b: &mut Block) {
 fn every_step_inverts_exactly_and_keeps_layout_incremental() {
     let fonts = fonts();
     for name in ["FX-TEXT.docx", "FX-TBL-MERGED.docx", "FX-NEST-3.docx"] {
-        let doc0 = read(name);
+        let (doc0, docx0) = read(name);
         let idx0 = DocIndex::build(&doc0);
         for (k, step) in steps(&doc0, &idx0).into_iter().enumerate() {
             let what = format!("{name} step {k}: {step:?}");
-            let (mut doc, mut idx) = (doc0.clone(), idx0.clone());
-            let mut dl = DocumentLayout::new();
+            let (mut doc, mut docx, mut idx) = (doc0.clone(), docx0.clone(), idx0.clone());
+            let mut dl = crate::layout::tests::document_layout(&doc0);
             dl.edit(Revision(1), None);
             dl.complete(&doc, fonts);
-            let applied = step.apply(&mut doc, &mut idx).unwrap_or_else(|e| panic!("{what}: {e:?}"));
+            let applied = step.apply(&mut doc, &mut docx, &mut idx).unwrap_or_else(|e| panic!("{what}: {e:?}"));
             assert_eq!(idx, DocIndex::build(&doc), "{what}: index after the step");
             dl.edit(Revision(2), applied.hint);
             dl.complete(&doc, fonts);
             assert_eq!(dump::page_text(&dl.snapshot(), &doc), dump::page_text(&layout(&doc, fonts), &doc), "{what}: incremental layout");
-            applied.inverse.apply(&mut doc, &mut idx).unwrap_or_else(|e| panic!("{what}: inverse {e:?}"));
-            assert_eq!(doc.sections, doc0.sections, "{what}: the inverse restores the document");
+            applied.inverse.apply(&mut doc, &mut docx, &mut idx).unwrap_or_else(|e| panic!("{what}: inverse {e:?}"));
+            let same = doc.sections.len() == doc0.sections.len()
+                && doc.sections.iter().zip(&doc0.sections).all(|(a, b)| crate::docx::page_borders::same_section(a, b));
+            assert!(same, "{what}: the inverse restores the document");
             assert_eq!(idx, idx0, "{what}: the inverse restores the index");
         }
     }

@@ -442,20 +442,20 @@ impl Graphics {
     }
 
     /// The page background's fill over a `size` page (in its points), when it has one: drawn as a shape's fill is.
-    pub(super) fn page_fill(&mut self, rec: &mut Recorder, r: &super::Renderer, size: [f64; 2], images: &[Vec<u8>]) {
+    pub(super) fn page_fill(&mut self, rec: &mut Recorder, r: &super::Renderer, size: [f64; 2], images: &crate::docx::Resources) {
         let Some(fill) = r.page_fill() else { return };
         let mut page = BezPath::new();
         rect_path(kurbo::Rect::new(0.0, 0.0, size[0], size[1])).into_iter().for_each(|e| page.push(e));
         self.fill(rec, &page, fill, PathFill::Norm, size, 0.0, [0.0, 0.0], images);
     }
 
-    pub(super) fn shape(&mut self, rec: &mut Recorder, s: &ShapeItem, images: &[Vec<u8>]) {
+    pub(super) fn shape(&mut self, rec: &mut Recorder, s: &ShapeItem, images: &crate::docx::Resources) {
         self.shape_with_text(rec, s, images, None);
     }
 
     /// [`Graphics::shape`], its reflection holding what `text` draws too (given the transform from the page to the
     /// shape's own box): a shape's text is reflected with it.
-    pub(super) fn shape_with_text(&mut self, rec: &mut Recorder, s: &ShapeItem, images: &[Vec<u8>], mut text: Option<ReflectedText>) {
+    pub(super) fn shape_with_text(&mut self, rec: &mut Recorder, s: &ShapeItem, images: &crate::docx::Resources, mut text: Option<ReflectedText>) {
         let [x0, y0, x1, y1] = s.rect;
         let m = shape_matrix(s);
         let e = &s.effects;
@@ -506,7 +506,7 @@ impl Graphics {
     }
 
     /// The shape's fill and line in its own box.
-    fn body(&mut self, rec: &mut Recorder, s: &ShapeItem, images: &[Vec<u8>]) {
+    fn body(&mut self, rec: &mut Recorder, s: &ShapeItem, images: &crate::docx::Resources) {
         let [x0, y0, x1, y1] = s.rect;
         let paths = self.outlines(s);
         let line = if s.picture { ResolvedLine { width: s.line.width * 2.0, ..s.line.clone() } } else { s.line.clone() };
@@ -661,7 +661,7 @@ impl Graphics {
         from: Rgba,
         to: Rgba,
         use_a: bool,
-        images: &[Vec<u8>],
+        images: &crate::docx::Resources,
     ) -> Option<twip_graphics::image::ImageId> {
         let base = self.image(key, images)?;
         let info = self.res.images.info(base)?;
@@ -676,7 +676,7 @@ impl Graphics {
         }
         self.recolour_decodes += 1;
         let made =
-            key.index.and_then(|i| images.get(i)).and_then(|bytes| twip_graphics::image::pixels_straight(bytes).ok()).and_then(|(w, h, mut px)| {
+            key.image.and_then(|i| images.get(i)).and_then(|bytes| twip_graphics::image::pixels_straight(bytes).ok()).and_then(|(w, h, mut px)| {
                 let near = |a: u8, b: u8| a.abs_diff(b) <= 1;
                 for p in px.as_chunks_mut::<4>().0 {
                     let seen = if use_a { near(p[3], from.a) } else { p[3] != 0 };
@@ -761,7 +761,7 @@ impl Graphics {
         size: [f64; 2],
         rot: f64,
         origin: [f64; 2],
-        images: &[Vec<u8>],
+        images: &crate::docx::Resources,
     ) {
         match fill {
             Fill::None => {}
@@ -787,7 +787,7 @@ impl Graphics {
                 let dst = kurbo::Rect::new(f[0] * w, f[1] * h, w - f[2] * w, h - f[3] * h);
                 rec.push_clip(Clip::Path(path.elements()));
                 let layered = adjusted(rec, adjust);
-                self.vector(rec, ImageKey { index: *image, generation: 0 }, images, dst, src.map(|v| v.fraction()));
+                self.vector(rec, ImageKey { image: *image, generation: 0 }, images, dst, src.map(|v| v.fraction()));
                 if layered {
                     rec.pop();
                 }
@@ -797,14 +797,14 @@ impl Graphics {
                 if image.and_then(|i| images.get(i)).is_some_and(|b| crate::docx::image::vector(b).is_some()) =>
             {
                 // A vector picture tiled: at its own size (an SVG without one fills the box), each tile its picture.
-                let bytes = image.and_then(|i| images.get(i)).map_or(&[][..], Vec::as_slice);
+                let bytes = image.and_then(|i| images.get(i)).unwrap_or_default();
                 let natural = match crate::docx::image::vector(bytes) {
                     Some(crate::docx::image::Vector::Emf(s) | crate::docx::image::Vector::Wmf(s)) => Some((s.0 / 0.75, s.1 / 0.75)),
                     _ => crate::render::svg::natural_size(bytes),
                 };
                 let (iw, ih) = natural.unwrap_or((size[0] / 0.75, size[1] / 0.75));
                 let (ox, oy, tw, th) = tile_place((iw, ih), (*tx, *ty, *sx, *sy, *align), size);
-                let key = ImageKey { index: *image, generation: 0 };
+                let key = ImageKey { image: *image, generation: 0 };
                 rec.push_clip(Clip::Path(path.elements()));
                 let layered = adjusted(rec, adjust);
                 self.vector_tiles(rec, key, images, (ox, oy, tw, th), src.map(|v| v.fraction()), *flip, path.bounding_box());
@@ -815,7 +815,7 @@ impl Graphics {
             }
             Fill::Picture { image, src, mode: blip, adjust, .. } => {
                 let (filters, alpha) = picture_adjust(adjust);
-                let key = ImageKey { index: *image, generation: 0 };
+                let key = ImageKey { image: *image, generation: 0 };
                 let change = adjust.iter().find_map(|a| match a {
                     ResolvedBlipAdjust::ClrChange { from, to, use_a } => Some((*from, *to, *use_a)),
                     _ => None,
@@ -884,7 +884,7 @@ impl Graphics {
         size: [f64; 2],
         rot: f64,
         origin: [f64; 2],
-        images: &[Vec<u8>],
+        images: &crate::docx::Resources,
     ) {
         if line.paint.is_none() {
             return;

@@ -4,7 +4,7 @@ use crate::api::command::{BorderStyle, ShadingPattern};
 use crate::api::drawing::ColourValue;
 use crate::api::state::Tri;
 use crate::api::value::{AutoOr, NoneOr, Points};
-use crate::docx::props::{Border, Shd};
+use crate::docx::props::{Border, BorderStyle as Line, Shd};
 use crate::docx::{ParaStyle, RunStyle, ThemeFont};
 
 use super::state::fold;
@@ -61,13 +61,13 @@ impl BorderLine {
 
     /// The `name` element (`w:bdr`, `w:top`) it is written as, its colour `c`.
     pub fn xml(&self, w: &str, name: &str, c: Option<WordColour>) -> String {
-        element(w, name, self.style.val(), self.width.0, self.space.0, self.shadow, c)
+        element(w, name, border_style(self.style), self.width.0, self.space.0, self.shadow, c)
     }
 
     /// A model border as read back; none for one that draws nothing.
     pub fn of(b: &Border) -> Option<BorderLine> {
         b.visible().then(|| BorderLine {
-            style: BorderStyle::of_val(&b.style),
+            style: api_border_style(b.style),
             width: Points(b.width),
             color: b.color.map_or(AutoOr::Auto, |c| AutoOr::Value(colour_value(c, b.color_theme))),
             space: Points(b.space),
@@ -76,21 +76,79 @@ impl BorderLine {
     }
 }
 
+/// The model's line for a border style.
+pub(crate) fn border_style(s: BorderStyle) -> Line {
+    match s {
+        BorderStyle::Single => Line::Single,
+        BorderStyle::Double => Line::Double,
+        BorderStyle::Dotted => Line::Dotted,
+        BorderStyle::Dashed => Line::Dashed,
+        BorderStyle::Thick => Line::Thick,
+        BorderStyle::DotDash => Line::DotDash,
+        BorderStyle::DotDotDash => Line::DotDotDash,
+        BorderStyle::Triple => Line::Triple,
+        BorderStyle::ThinThickSmallGap => Line::ThinThickSmallGap,
+        BorderStyle::ThickThinSmallGap => Line::ThickThinSmallGap,
+        BorderStyle::ThinThickThinSmallGap => Line::ThinThickThinSmallGap,
+        BorderStyle::Wave => Line::Wave,
+        BorderStyle::DoubleWave => Line::DoubleWave,
+        BorderStyle::ThreeDEmboss => Line::ThreeDEmboss,
+        BorderStyle::ThreeDEngrave => Line::ThreeDEngrave,
+        BorderStyle::Outset => Line::Outset,
+        BorderStyle::Inset => Line::Inset,
+        BorderStyle::DashSmallGap => Line::DashSmallGap,
+        BorderStyle::DashDotStroked => Line::DashDotStroked,
+        BorderStyle::ThinThickMediumGap => Line::ThinThickMediumGap,
+        BorderStyle::ThickThinMediumGap => Line::ThickThinMediumGap,
+        BorderStyle::ThinThickThinMediumGap => Line::ThinThickThinMediumGap,
+        BorderStyle::ThinThickLargeGap => Line::ThinThickLargeGap,
+        BorderStyle::ThickThinLargeGap => Line::ThickThinLargeGap,
+        BorderStyle::ThinThickThinLargeGap => Line::ThinThickThinLargeGap,
+    }
+}
+
+/// The border style a model line reads back as: single for the ones not offered (none, nil and art borders).
+pub(crate) fn api_border_style(s: Line) -> BorderStyle {
+    match s {
+        Line::Single => BorderStyle::Single,
+        Line::Double => BorderStyle::Double,
+        Line::Dotted => BorderStyle::Dotted,
+        Line::Dashed => BorderStyle::Dashed,
+        Line::Thick => BorderStyle::Thick,
+        Line::DotDash => BorderStyle::DotDash,
+        Line::DotDotDash => BorderStyle::DotDotDash,
+        Line::Triple => BorderStyle::Triple,
+        Line::ThinThickSmallGap => BorderStyle::ThinThickSmallGap,
+        Line::ThickThinSmallGap => BorderStyle::ThickThinSmallGap,
+        Line::ThinThickThinSmallGap => BorderStyle::ThinThickThinSmallGap,
+        Line::Wave => BorderStyle::Wave,
+        Line::DoubleWave => BorderStyle::DoubleWave,
+        Line::ThreeDEmboss => BorderStyle::ThreeDEmboss,
+        Line::ThreeDEngrave => BorderStyle::ThreeDEngrave,
+        Line::Outset => BorderStyle::Outset,
+        Line::Inset => BorderStyle::Inset,
+        Line::DashSmallGap => BorderStyle::DashSmallGap,
+        Line::DashDotStroked => BorderStyle::DashDotStroked,
+        Line::ThinThickMediumGap => BorderStyle::ThinThickMediumGap,
+        Line::ThickThinMediumGap => BorderStyle::ThickThinMediumGap,
+        Line::ThinThickThinMediumGap => BorderStyle::ThinThickThinMediumGap,
+        Line::ThinThickLargeGap => BorderStyle::ThinThickLargeGap,
+        Line::ThickThinLargeGap => BorderStyle::ThickThinLargeGap,
+        Line::ThinThickThinLargeGap => BorderStyle::ThinThickThinLargeGap,
+        Line::None | Line::Nil | Line::Art(_) => BorderStyle::Single,
+    }
+}
+
 /// A border element: `<w:top w:val w:sz w:space w:color [theme] w:shadow/>`, its colour `c` (none: automatic).
-pub fn element(w: &str, name: &str, style: &str, width: f64, space: f64, shadow: bool, c: Option<WordColour>) -> String {
+pub fn element(w: &str, name: &str, style: Line, width: f64, space: f64, shadow: bool, c: Option<WordColour>) -> String {
     let tag = format!(
         "<{w}{name} {w}val=\"{}\" {w}sz=\"{}\" {w}space=\"{}\"/>",
-        crate::docx::write::props::esc(style),
+        crate::docx::line_style::border_val(style),
         (width * 8.0).round() as i64,
         space.round() as i64
     );
     let tag = super::commands::colour_attrs(&tag, w, "color", super::commands::THEME_COLOR, c);
     if shadow { super::commands::with_attr(&tag, &format!("{w}shadow"), "1") } else { tag }
-}
-
-/// A model border's element, its colour as written.
-pub fn border_element(w: &str, name: &str, b: &Border) -> String {
-    element(w, name, &b.style, b.width, b.space, b.shadow, b.color.map(|rgb| WordColour { rgb, theme: b.color_theme }))
 }
 
 /// A paragraph's border edges to set: each set, removed (`Some(None)`) or kept (`None`).
@@ -114,7 +172,7 @@ pub use crate::api::state::Shading as ShadingValue;
 impl ShadingValue {
     /// A model shading as read back; none for no shading (`nil`, or a clear pattern without a fill).
     pub fn of(s: &Shd) -> Option<ShadingValue> {
-        let pattern = ShadingPattern::of_val(&s.pattern);
+        let pattern = ShadingPattern::of_val(&crate::docx::line_style::shading_val(s.pattern));
         if pattern == ShadingPattern::Nil || (pattern == ShadingPattern::Clear && s.fill.is_none()) {
             return None;
         }

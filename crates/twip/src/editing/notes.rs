@@ -2,11 +2,15 @@
 
 use std::rc::Rc;
 
-use crate::docx::props::RunProps;
-use crate::docx::resolve::Resolver;
-use crate::docx::write::props::{Cx, Props};
+use crate::docx::char_props::RunDirect;
+use crate::docx::char_props::RunXml;
+use crate::docx::definitions::Definitions;
+use crate::docx::para_props::ParaDirect;
+use crate::docx::para_props::ParaXml;
+use crate::docx::write::props::Cx;
 use crate::docx::{Block, Inline, NoteKind, Paragraph, Run};
 use crate::font::Fonts;
+use crate::format::{CharEdit, ParaEdit, ParaProp, ParaProps, Prop};
 use crate::layout::{ParaId, Unit};
 
 use super::commands::Outcome;
@@ -14,6 +18,7 @@ use super::position::{Place, Position, StoryId};
 use super::selection::Selection;
 use super::step::Step;
 use super::{Editor, Tx};
+use crate::docx::run_xml;
 
 fn story(kind: NoteKind, id: i64) -> StoryId {
     match kind {
@@ -40,40 +45,39 @@ fn note_styles(kind: NoteKind) -> (&'static str, &'static str) {
 }
 
 /// `run` in `to`'s reference style (superscript where the document has none), when it is in `from`'s.
-fn restyled_ref(res: &Resolver, cx: &Cx, base: &RunProps, run: &Run, from: NoteKind, to: NoteKind) -> Option<Run> {
+fn restyled_ref(res: &Definitions, base: &crate::format::CharProps, run: &Run, from: NoteKind, to: NoteKind) -> Option<Run> {
     let (old, new) = (note_styles(from).0, note_styles(to).0);
-    let mut p = Props::parse(run.direct.0.as_deref(), "rPr", cx);
-    if p.get("rStyle").and_then(|s| crate::docx::write::props::attr_of(s, "val")).as_deref() != Some(old) {
+    let mut e = run_xml::edit_of(run);
+    if e.style.as_deref() != Some(old) {
         return None;
     }
-    let w = &cx.w;
-    if res.styles.by_id.contains_key(new) {
-        p.set("rStyle", format!("<{w}rStyle {w}val=\"{new}\"/>"));
+    if res.has_style(new) {
+        e.style = Some(new.into());
     } else {
-        p.remove("rStyle");
-        p.set("vertAlign", format!("<{w}vertAlign {w}val=\"superscript\"/>"));
+        e.style = None;
+        e.vertical = Some(crate::docx::props::VertAlign::Superscript);
+        e.whole(Prop::Vertical);
     }
-    Some(res.run_from_xml(base, p.xml().as_deref(), cx))
+    e.whole(Prop::Style);
+    Some(run_xml::run_of(res, base, run.direct.edit(e)))
 }
 
 /// A converted note's paragraph in `to`'s text style when it is in `from`'s, and its marks in `to`'s reference
 /// style; whether it changed.
-fn restyle_note_para(res: &Resolver, cx: &Cx, p: &mut Paragraph, from: NoteKind, to: NoteKind) -> bool {
+fn restyle_note_para(res: &Definitions, cx: &Cx, p: &mut Paragraph, from: NoteKind, to: NoteKind) -> bool {
     let (old, new) = (note_styles(from).1, note_styles(to).1);
     let mut changed = false;
     if p.style.style_id.as_deref() == Some(old) {
-        let mut pp = Props::parse(p.style.direct.0.as_deref(), "pPr", cx);
-        if res.styles.by_id.contains_key(new) {
-            pp.set("pStyle", format!("<{w}pStyle {w}val=\"{new}\"/>", w = cx.w));
-        } else {
-            pp.remove("pStyle");
-        }
-        p.style = Rc::new(res.para_from_xml(pp.xml().as_deref(), None, cx).style);
+        let mut e = ParaEdit::new((**p.style.direct.get()).clone());
+        e.style = res.has_style(new).then(|| new.into());
+        e.whole(ParaProp::Style);
+        let direct = p.style.direct.edit(e);
+        p.style = Rc::new(crate::docx::para_xml::of(res, &direct, None, cx).style);
         changed = true;
     }
-    let base = res.para_from_xml(p.style.direct.0.as_deref(), None, cx).base;
+    let base = crate::docx::para_xml::of(res, &p.style.direct, None, cx).base;
     for i in &mut p.inlines {
-        if let Some(run) = i.run().and_then(|r| restyled_ref(res, cx, &base, r, from, to)) {
+        if let Some(run) = i.run().and_then(|r| restyled_ref(res, &base, r, from, to)) {
             *i = super::format::with_run(i, &run);
             changed = true;
         }
@@ -142,16 +146,17 @@ impl Editor {
         if !self.takes_notes() {
             return Outcome::unavailable("notes are inserted in the body");
         }
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let cx = self.cx();
-        let w = cx.w.clone();
         let (ref_style, text_style) = note_styles(kind);
-        let has = |s: &str| res.styles.by_id.contains_key(s);
-        let mark_prop = |p: &mut Props| {
+        let has = |s: &str| res.has_style(s);
+        let mark_prop = |e: &mut CharEdit| {
             if has(ref_style) {
-                p.set("rStyle", format!("<{w}rStyle {w}val=\"{ref_style}\"/>"));
+                e.style = Some(ref_style.into());
+                e.whole(Prop::Style);
             } else {
-                p.set("vertAlign", format!("<{w}vertAlign {w}val=\"superscript\"/>"));
+                e.vertical = Some(crate::docx::props::VertAlign::Superscript);
+                e.whole(Prop::Vertical);
             }
         };
         let refs = self.note_refs(kind);
@@ -177,9 +182,9 @@ impl Editor {
             self.abort(tx);
             return Outcome::Unchanged("no paragraph");
         };
-        let mut p = Props::parse(run.direct.0.as_deref(), "rPr", &cx);
-        mark_prop(&mut p);
-        let ref_run = res.run_from_xml(&base, p.xml().as_deref(), &cx);
+        let mut e = run_xml::edit_of(&run);
+        mark_prop(&mut e);
+        let ref_run = run_xml::run_of(&res, &base, run.direct.edit(e));
         // A custom mark follows its reference, in its run.
         let mut with = vec![Inline::NoteRef { kind, id, custom: custom.is_some(), run: ref_run.clone() }];
         with.extend(custom.map(|m| Inline::Text(m.to_string(), ref_run)));
@@ -187,15 +192,12 @@ impl Editor {
             self.abort(tx);
             return Outcome::Unchanged("stale caret");
         }
-        let mut pp = Props::parse(None, "pPr", &cx);
-        if has(text_style) {
-            pp.set("pStyle", format!("<{w}pStyle {w}val=\"{text_style}\"/>"));
-        }
-        let r = res.para_from_xml(pp.xml().as_deref(), None, &cx);
-        let text_run = res.run_from_xml(&r.base, None, &cx);
-        let mut mp = Props::parse(None, "rPr", &cx);
-        mark_prop(&mut mp);
-        let mark_run = res.run_from_xml(&r.base, mp.xml().as_deref(), &cx);
+        let props = ParaProps { style: has(text_style).then(|| text_style.into()), ..ParaProps::default() };
+        let r = crate::docx::para_xml::with(&res, ParaDirect::typed(Rc::new(props)), None, None);
+        let text_run = run_xml::plain(&res, &r.base);
+        let mut e = CharEdit::default();
+        mark_prop(&mut e);
+        let mark_run = run_xml::run_of(&res, &r.base, RunDirect::default().edit(e));
         let pid = crate::docx::next_para_id();
         let note = Paragraph {
             style: Rc::new(r.style),
@@ -208,7 +210,7 @@ impl Editor {
                 },
                 Inline::Text(" ".into(), text_run),
             ],
-            src: None,
+            origin: crate::docx::Origin::NONE,
             id: pid,
             div: None,
             controls: Vec::new(),
@@ -239,7 +241,7 @@ impl Editor {
     pub fn set_note_separator(&mut self, kind: NoteKind, part: crate::docx::NoteSeparator, text: Option<&str>, fonts: &Fonts) -> Outcome {
         use crate::docx::NoteSeparator as S;
         let key = part.key(kind);
-        let defaults = self.doc.source.as_ref().map(|s| &s.separator_defaults);
+        let defaults = self.docx.source.as_ref().map(|s| &s.separator_defaults);
         let builtin = |k: &str| defaults.and_then(|d| d.get(k)).map(|b| b.to_vec());
         let blocks = match text {
             None if part == S::Notice => None,
@@ -279,7 +281,7 @@ impl Editor {
             }
         };
         // The same paragraphs, whatever their ids
-        let bare = |p: &crate::docx::Paragraph| crate::docx::Paragraph { id: 0, src: None, ..p.clone() };
+        let bare = |p: &crate::docx::Paragraph| crate::docx::Paragraph { id: 0, origin: crate::docx::Origin::NONE, ..p.clone() };
         let same = |a: &[Block], b: &[Block]| {
             a.len() == b.len()
                 && a.iter().zip(b).all(|(x, y)| match (x, y) {
@@ -294,7 +296,7 @@ impl Editor {
         if unchanged {
             return Outcome::Unchanged("already so");
         }
-        let blocks = blocks.map(|b| b.iter().map(super::clipboard::fresh).collect());
+        let blocks = blocks.map(|b| b.iter().map(crate::docx::Block::fresh_identity).collect());
         let mut tx = self.begin("Note Separator");
         if self.step(&mut tx, Step::Separator { key, blocks }).is_err() {
             self.abort(tx);
@@ -355,7 +357,7 @@ impl Editor {
             if let Some(c) = p.columns {
                 page.footnote_columns = c;
             }
-            if page == s.page() {
+            if crate::docx::page_borders::same_page(&page, &s.page()) {
                 continue;
             }
             let change = s.change.clone();
@@ -433,7 +435,7 @@ impl Editor {
             let (para, offset) = f.para_offset()?;
             Some((story(other(kind), *map.get(&(kind, id))?), para, offset))
         });
-        let res = self.doc.resolver.clone();
+        let res = self.doc.definitions.clone();
         let cx = self.cx();
         let mut tx = self.begin("Convert Notes");
         for (from, id, _, _) in &moves {
@@ -470,7 +472,7 @@ impl Editor {
             let restyled = |run: &Run, from: NoteKind, at: u32| {
                 res.as_ref()
                     .zip(again.as_ref())
-                    .and_then(|(res, again)| restyled_ref(res, &cx, again.base(at), run, from, other(from)))
+                    .and_then(|(res, again)| restyled_ref(res, again.base(at), run, from, other(from)))
                     .unwrap_or_else(|| run.clone())
             };
             // Custom marks: the text after their reference

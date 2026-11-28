@@ -1,6 +1,8 @@
 //! Native editing tests
 
+pub(crate) mod authored;
 mod backgrounds;
+mod baseline;
 mod basics;
 mod bindings;
 mod checkboxes;
@@ -29,6 +31,7 @@ mod into_tables;
 mod json;
 mod keys;
 mod list_definitions;
+mod list_parts;
 mod marks;
 mod merge;
 mod multisel;
@@ -44,6 +47,7 @@ mod protection_ranges;
 mod provisional;
 mod readback;
 pub(crate) mod recorder;
+mod reuse;
 mod round_trips;
 mod saving;
 mod saving_objects;
@@ -56,8 +60,10 @@ mod snap;
 mod steps;
 mod stories;
 mod stories_and_steps;
+mod stripped;
 mod style_definitions;
 mod style_model;
+mod style_xml_route;
 mod styles;
 mod sub_template_settings;
 mod sub_templates;
@@ -160,6 +166,39 @@ pub fn para_id(e: &Editor, n: usize) -> crate::layout::ParaId {
     let mut out = Vec::new();
     e.document().sections.iter().for_each(|s| walk(&s.blocks, &mut out));
     crate::layout::ParaId(out[n])
+}
+
+/// The header or footer part `id` is saved as.
+pub fn part_name(e: &Editor, id: crate::docx::HeaderFooterId) -> String {
+    crate::docx::write::story_part(e.document(), e.docx(), id).expect("a part")
+}
+
+/// Each section's page, its headers and footers by part name (ids are new on every read).
+pub fn named_pages(e: &Editor) -> Vec<(crate::docx::SectionPage, Vec<Option<String>>)> {
+    let names = crate::docx::write::story_parts(e.document(), e.docx());
+    e.document()
+        .sections
+        .iter()
+        .map(|s| {
+            let mut page = s.page();
+            let refs = page.headers.iter().chain(&page.footers).map(|r| r.and_then(|id| names.get(&id).cloned())).collect();
+            (page.headers, page.footers) = Default::default();
+            (page, refs)
+        })
+        .collect()
+}
+
+/// Whether [`named_pages`] `a` and `b` are the same pages, their borders written alike, with the same parts.
+pub fn same_named_pages(a: &[(crate::docx::SectionPage, Vec<Option<String>>)], b: &[(crate::docx::SectionPage, Vec<Option<String>>)]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).all(|((p, n), (q, m))| crate::docx::page_borders::same_page(p, q) && n == m)
+}
+
+/// The headers and footers whose part names hold `part`, in name order.
+pub fn parts_named(e: &Editor, part: &str) -> Vec<crate::docx::HeaderFooterId> {
+    let names = crate::docx::write::story_parts(e.document(), e.docx());
+    let mut ids: Vec<_> = e.document().stories.keys().copied().filter(|id| names.get(id).is_some_and(|n| n.contains(part))).collect();
+    ids.sort_by_key(|id| &names[id]);
+    ids
 }
 
 pub fn blank_with(text: &str) -> Vec<u8> {

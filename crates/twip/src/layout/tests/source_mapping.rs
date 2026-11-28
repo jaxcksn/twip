@@ -3,9 +3,10 @@
 use std::collections::HashMap;
 
 use crate::docx::{Block, Document, Inline, Paragraph};
+use crate::layout::Snapshot;
 use crate::layout::ids::{ParaId, Unit};
+use crate::layout::tests::layout;
 use crate::layout::traverse::semantic_chars;
-use crate::layout::{Snapshot, layout};
 
 use super::{fonts, gate_set};
 

@@ -2,9 +2,12 @@
 
 use std::rc::Rc;
 
-use crate::docx::resolve::Resolver;
-use crate::docx::write::props::{Cx, Props};
+use crate::docx::char_props::RunDirect;
+use crate::docx::definitions::Definitions;
+use crate::docx::para_props::ParaDirect;
+use crate::docx::run_xml;
 use crate::docx::{Block, BreakKind, Inline, Paragraph, Run};
+use crate::format::{CharProps, ParaProps};
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RichText {
@@ -46,38 +49,35 @@ impl RichText {
         self.paragraphs.iter().map(|p| p.runs.iter().map(|r| r.text.as_str()).collect::<String>()).collect::<Vec<_>>().join("\n")
     }
 
-    pub fn to_blocks(&self, res: &Resolver, cx: &Cx) -> Vec<Block> {
-        let w = &cx.w;
-        let mut pp = Props::parse(None, "pPr", cx);
-        if res.styles.by_id.contains_key("CommentText") {
-            pp.set("pStyle", format!("<{w}pStyle {w}val=\"CommentText\"/>"));
-        }
-        let para = res.para_from_xml(pp.xml().as_deref(), None, cx);
+    pub fn to_blocks(&self, res: &Definitions) -> Vec<Block> {
+        let props = ParaProps { style: res.has_style("CommentText").then(|| "CommentText".into()), ..ParaProps::default() };
+        let para = crate::docx::para_xml::with(res, ParaDirect::typed(Rc::new(props)), None, None);
         let style = Rc::new(para.style);
-        let plain = res.run_from_xml(&para.base, None, cx);
+        let base = para.base.clone();
+        let plain = Rc::new(run_xml::resolve(res, &base, RunDirect::default(), false));
         let paragraphs: &[RichParagraph] = if self.paragraphs.is_empty() { &[RichParagraph { runs: Vec::new() }] } else { &self.paragraphs };
         paragraphs
             .iter()
             .map(|p| {
                 let mut inlines = Vec::new();
                 for r in p.runs.iter().filter(|r| !r.text.is_empty()) {
-                    let mut rp = Props::parse(None, "rPr", cx);
-                    for (on, name, xml) in [
-                        (r.bold, "b", format!("<{w}b/>")),
-                        (r.italic, "i", format!("<{w}i/>")),
-                        (r.underline, "u", format!("<{w}u {w}val=\"single\"/>")),
-                        (r.strike, "strike", format!("<{w}strike/>")),
-                    ] {
+                    use crate::format::Toggle as T;
+                    let mut q = CharProps::default();
+                    for (on, t) in [(r.bold, T::BOLD), (r.italic, T::ITALIC), (r.strike, T::STRIKE)] {
                         if on {
-                            rp.set(name, xml);
+                            q.toggles.put(t, true);
                         }
+                    }
+                    if r.underline {
+                        q.underline = Some(crate::format::UnderlineProps { style: crate::docx::Underline::Single, color: None });
                     }
                     // A link to follow; any other address shows as text.
                     let link = r.link.as_deref().and_then(crate::editing::html::web_address);
-                    if link.is_some() && res.styles.by_id.contains_key("Hyperlink") {
-                        rp.set("rStyle", format!("<{w}rStyle {w}val=\"Hyperlink\"/>"));
+                    if link.is_some() && res.has_style("Hyperlink") {
+                        q.style = Some("Hyperlink".into());
                     }
-                    let run = res.run_from_xml(&para.base, rp.xml().as_deref(), cx);
+                    let direct = RunDirect::typed((q != CharProps::default()).then(|| Rc::new(q)));
+                    let run = Rc::new(run_xml::resolve(res, &base, direct, false));
                     match link {
                         Some(address) => {
                             let code = crate::docx::fields::link_code(&address);
@@ -94,7 +94,7 @@ impl RichText {
                     mark: plain.clone(),
                     list: None,
                     inlines,
-                    src: None,
+                    origin: crate::docx::Origin::NONE,
                     id: crate::docx::next_para_id(),
                     div: None,
                     controls: Vec::new(),
@@ -165,7 +165,7 @@ fn paragraph(p: &Paragraph) -> RichParagraph {
             text: text.to_string(),
             bold: r.bold,
             italic: r.italic,
-            underline: r.underline.as_deref().is_some_and(|u| u != "none"),
+            underline: r.underline.is_some_and(|u| u != crate::docx::Underline::None),
             strike: r.strike,
             link: link[k].clone(),
         };

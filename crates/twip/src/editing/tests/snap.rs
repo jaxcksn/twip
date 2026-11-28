@@ -269,7 +269,7 @@ fn a_floating_picture_turns_and_keeps_its_angle_when_saved() {
     r.e.pointer_input(PointerKind::Up, b.0, b.1, 0, Mods::default(), fonts());
     let rot = |e: &Editor, f: FloatId| e.float_of(f).and_then(|fl| fl.shape.as_deref()).map(|s| s.xfrm.rot.0);
     assert_eq!(rot(&r.e, f), Some(30 * 60000));
-    let bytes = crate::docx::write::save(r.e.document()).expect("saves");
+    let bytes = crate::docx::write::save(r.e.document(), r.e.docx()).expect("saves");
     let mut again = Editor::open(&bytes, fonts()).expect("reopens");
     again.complete(fonts());
     let turned: Vec<i32> = again

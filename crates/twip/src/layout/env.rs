@@ -103,68 +103,69 @@ pub fn is_dark(c: u32) -> bool {
 }
 
 impl TextEnv {
-    pub fn new(doc: &Document) -> TextEnv {
+    /// The document's text environment in `view`, hyphenated with the host's `hyphenation` patterns when it asks for it.
+    pub fn new(doc: &Document, view: &ReviewView, hyphenation: Option<&super::hyphenate::Hyphenation>) -> TextEnv {
         let s = &doc.settings;
-        let bottom = s.compat() == Compat::Generic && !s.has("allowHyphenationAtTrackBottom");
+        let bottom = s.compat() == Compat::Generic && !s.policy.allow_hyphenation_at_track_bottom;
         TextEnv {
             compat: s.compat(),
             default_tab: s.default_tab,
-            do_not_expand_shift_return: s.has("doNotExpandShiftReturn"),
-            split_pg_break_and_para_mark: s.has("splitPgBreakAndParaMark"),
-            allow_space_of_same_style_in_table: s.has("allowSpaceOfSameStyleInTable"),
-            do_not_use_html_paragraph_auto_spacing: s.has("doNotUseHTMLParagraphAutoSpacing"),
-            align_tables_row_by_row: s.has("alignTablesRowByRow"),
-            do_not_vert_align_cell_with_sp: s.has("doNotVertAlignCellWithSp"),
-            do_not_break_wrapped_tables: s.has("doNotBreakWrappedTables"),
-            raw_table_width: s.has("layoutRawTableWidth"),
+            do_not_expand_shift_return: s.policy.do_not_expand_shift_return,
+            split_pg_break_and_para_mark: s.policy.split_pg_break_and_para_mark,
+            allow_space_of_same_style_in_table: s.policy.allow_space_of_same_style_in_table,
+            do_not_use_html_paragraph_auto_spacing: s.policy.do_not_use_html_paragraph_auto_spacing,
+            align_tables_row_by_row: s.policy.align_tables_row_by_row,
+            do_not_vert_align_cell_with_sp: s.policy.do_not_vert_align_cell_with_sp,
+            do_not_break_wrapped_tables: s.policy.do_not_break_wrapped_tables,
+            raw_table_width: s.policy.layout_raw_table_width,
             box_story: false,
-            no_constrained_autofit: s.has("doNotAutofitConstrainedTables"),
-            wp_justification: s.has("wpJustification"),
-            word97_line_breaks: s.has("useWord97LineBreakRules"),
-            no_leading: s.compat() == Compat::Legacy && s.has("noLeading"),
-            no_raise_lower: s.compat() == Compat::Legacy && s.has("noSpaceRaiseLower"),
-            whole_point_spacing: s.compat() == Compat::Legacy && s.has("spacingInWholePoints"),
-            mac_small_caps: s.compat() == Compat::Legacy && s.has("mwSmallCaps"),
-            wp_line_heights: s.compat() == Compat::Legacy && s.has("suppressTopSpacingWP"),
-            exact_on_top: s.has("noExtraLineSpacing"),
-            exact_extra_after: s.has("suppressBottomSpacing"),
-            drop_cut_indents: s.compat() == Compat::Legacy && s.has("doNotSuppressIndentation"),
-            no_tab_hang_ind: s.compat() == Compat::Legacy && s.has("noTabHangInd"),
-            no_number_hang_stop: s.compat() == Compat::Legacy && s.has("doNotUseIndentAsNumberingTabStop"),
-            show_breaks_in_frames: s.compat() == Compat::Legacy && s.has("showBreaksInFrames"),
-            suppress_top_spacing: s.has("suppressTopSpacing"),
-            suppress_spacing_at_top: s.compat() == Compat::Legacy && s.has("suppressSpacingAtTopOfPage"),
-            suppress_before_after_page_break: s.compat() == Compat::Legacy && s.has("suppressSpBfAfterPgBrk"),
-            single_cell_borders: s.compat() == Compat::Legacy && s.has("useSingleBorderforContiguousCells"),
-            breaking_rules: s.compat_mode >= 14 || s.has("applyBreakingRules"),
-            dash_breaks: s.compat_mode >= 14,
+            no_constrained_autofit: s.policy.do_not_autofit_constrained_tables,
+            wp_justification: s.policy.wp_justification,
+            word97_line_breaks: s.policy.use_word97_line_break_rules,
+            no_leading: s.compat() == Compat::Legacy && s.policy.no_leading,
+            no_raise_lower: s.compat() == Compat::Legacy && s.policy.no_space_raise_lower,
+            whole_point_spacing: s.compat() == Compat::Legacy && s.policy.spacing_in_whole_points,
+            mac_small_caps: s.compat() == Compat::Legacy && s.policy.mw_small_caps,
+            wp_line_heights: s.compat() == Compat::Legacy && s.policy.suppress_top_spacing_wp,
+            exact_on_top: s.policy.no_extra_line_spacing,
+            exact_extra_after: s.policy.suppress_bottom_spacing,
+            drop_cut_indents: s.compat() == Compat::Legacy && s.policy.do_not_suppress_indentation,
+            no_tab_hang_ind: s.compat() == Compat::Legacy && s.policy.no_tab_hang_ind,
+            no_number_hang_stop: s.compat() == Compat::Legacy && s.policy.do_not_use_indent_as_numbering_tab_stop,
+            show_breaks_in_frames: s.compat() == Compat::Legacy && s.policy.show_breaks_in_frames,
+            suppress_top_spacing: s.policy.suppress_top_spacing,
+            suppress_spacing_at_top: s.compat() == Compat::Legacy && s.policy.suppress_spacing_at_top_of_page,
+            suppress_before_after_page_break: s.compat() == Compat::Legacy && s.policy.suppress_sp_bf_after_pg_brk,
+            single_cell_borders: s.compat() == Compat::Legacy && s.policy.use_single_border_for_contiguous_cells,
+            breaking_rules: s.policy.mode >= 14 || s.policy.apply_breaking_rules,
+            dash_breaks: s.policy.mode >= 14,
             strict_kinsoku: s.strict_kinsoku,
-            default_style: doc.resolver.as_ref().and_then(|r| r.styles.default_paragraph.as_deref().map(Into::into)),
-            grow_autofit: s.compat() == Compat::Legacy && s.has("growAutofit"),
-            balance_spaces: s.has("balanceSingleByteDoubleByteWidth"),
-            ul_trail_space: s.has("ulTrailSpace"),
+            default_style: doc.definitions.as_ref().and_then(|r| r.cascade().styles.default_paragraph.as_deref().map(Into::into)),
+            grow_autofit: s.compat() == Compat::Legacy && s.policy.grow_autofit,
+            balance_spaces: s.policy.balance_single_byte_double_byte_width,
+            ul_trail_space: s.policy.ul_trail_space,
             compress_punctuation: s.compress_punctuation,
-            review: doc.review.clone(),
+            review: view.clone(),
             line_grid: None,
-            default_east_asia: doc.resolver.as_ref().and_then(|r| match &r.styles.doc_rpr.east_asia {
-                Some(crate::docx::props::FontRef::Theme(t)) if r.theme.ea_unset(t) => Some("".into()),
-                f => r.font(f).map(Into::into),
+            default_east_asia: doc.definitions.as_ref().and_then(|r| {
+                let c = r.cascade();
+                crate::format::resolve::default_east_asian(&c.theme, &c.doc_char().fonts.east_asian).map(Into::into)
             }),
-            adjust_line_height_in_table: s.has("adjustLineHeightInTable"),
+            adjust_line_height_in_table: s.policy.adjust_line_height_in_table,
             theme: doc.theme.clone(),
             colour_map: doc.colour_map,
             backdrop: None,
             page_colour: doc.shown_background().0,
             vertical: None,
-            hyphenation: doc.hyphenation.clone().filter(|_| s.auto_hyphenation).map(|patterns| HyphenEnv {
-                patterns,
+            hyphenation: hyphenation.filter(|_| s.auto_hyphenation).map(|patterns| HyphenEnv {
+                patterns: patterns.clone(),
                 zone: s.hyphenation_zone,
                 limit: s.consecutive_hyphen_limit,
                 caps: s.do_not_hyphenate_caps,
             }),
-            bottom_unhyphenated: bottom && s.has("useWord2013TrackBottomHyphenation=0"),
-            bottom_hyphen_moves: bottom && !s.has("useWord2013TrackBottomHyphenation=0"),
-            text_after_table_break: s.compat() == Compat::Generic && s.has("allowTextAfterFloatingTableBreak"),
+            bottom_unhyphenated: bottom && s.policy.word2013_track_bottom_hyphenation_off,
+            bottom_hyphen_moves: bottom && !s.policy.word2013_track_bottom_hyphenation_off,
+            text_after_table_break: s.compat() == Compat::Generic && s.policy.allow_text_after_floating_table_break,
         }
     }
 }
@@ -260,25 +261,31 @@ thread_local! {
 }
 
 impl LayoutEnv {
-    pub fn new(doc: &Document) -> LayoutEnv {
-        LayoutEnv::with_chains(doc, None)
+    /// The document's environment in `view`, with the host's `hyphenation` patterns.
+    pub fn new(doc: &Document, view: &ReviewView, hyphenation: Option<&super::hyphenate::Hyphenation>) -> LayoutEnv {
+        LayoutEnv::with_chains(doc, view, None, hyphenation)
     }
 
     /// [`LayoutEnv::new`] with the document's text box chains when they are known.
-    pub fn with_chains(doc: &Document, chains: Option<Rc<[Chain]>>) -> LayoutEnv {
+    pub fn with_chains(
+        doc: &Document,
+        view: &ReviewView,
+        chains: Option<Rc<[Chain]>>,
+        hyphenation: Option<&super::hyphenate::Hyphenation>,
+    ) -> LayoutEnv {
         #[cfg(test)]
         BUILT.set(BUILT.get() + 1);
         let s = &doc.settings;
         LayoutEnv {
-            text: TextEnv::new(doc),
+            text: TextEnv::new(doc, view, hyphenation),
             even_and_odd: s.even_and_odd,
             mirror_margins: s.mirror_margins,
             gutter_at_top: s.gutter_at_top,
             book_fold: s.book_fold,
             line_number_run: doc.line_number_run.clone(),
             chains: chains.unwrap_or_else(|| self::chains(doc)),
-            notes_like_ww8: s.compat() == Compat::Legacy && s.has("footnoteLayoutLikeWW8"),
-            normal: doc.resolver.as_ref().map(|r| Rc::new(r.paragraph(&Default::default(), None).style)),
+            notes_like_ww8: s.compat() == Compat::Legacy && s.policy.footnote_layout_like_ww8,
+            normal: doc.definitions.as_ref().map(|r| Rc::new(crate::docx::para_xml::resolve(r, &Default::default(), None, None).style)),
         }
     }
 }

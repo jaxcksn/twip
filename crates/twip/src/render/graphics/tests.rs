@@ -109,8 +109,12 @@ fn draw_sized(graphic: &str, size: (i64, i64), image: Option<&[u8]>) -> Shot {
 
 /// [`draw_sized`] with the graphics `g`, as a session draws a second document with the first one's.
 fn draw_in(g: &mut Graphics, graphic: &str, size: (i64, i64), image: Option<&[u8]>) -> Shot {
-    let d = crate::docx::read(&package(graphic, size, image)).expect("the document reads");
-    let snap = crate::layout::layout(&d, &fonts());
+    draw_doc(g, &crate::docx::read(&package(graphic, size, image)).expect("the document reads"))
+}
+
+/// Document `d` drawn by `g`.
+fn draw_doc(g: &mut Graphics, d: &crate::docx::Document) -> Shot {
+    let snap = crate::layout::tests::layout(d, &fonts());
     let picture = g.page_picture(&Renderer::default(), &snap.pages()[0], &d.images);
     let mut px = vec![0u8; SIZE.0 * SIZE.1 * 4];
     let mut target = Target::new(&mut px, SIZE.0 as u32, SIZE.1 as u32, SIZE.0 * 4, Format::Rgba8).expect("a target");
@@ -454,7 +458,7 @@ fn a_new_document_lets_the_last_ones_images_go() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-OBJ.docx");
     let doc = crate::docx::read(&std::fs::read(path).expect("fixture")).expect("reads");
     let mut g = super::Graphics::default();
-    let key = crate::layout::fragment::ImageKey { index: Some(0), generation: 0 };
+    let key = crate::layout::fragment::ImageKey { image: doc.images.iter().next().map(|(k, _)| k), generation: 0 };
     let id = g.image(key, &doc.images).expect("an image");
     g.clear_images();
     assert!(g.res.images.info(id).is_none(), "the registry holds the old document's bytes no longer");
@@ -506,9 +510,9 @@ fn a_picture_that_does_not_decode_keeps_its_colours() {
         !c
     };
     png[29..33].copy_from_slice(&crc.to_be_bytes());
-    let images = vec![png];
+    let mut images = crate::docx::Resources::default();
     let mut g = Graphics::default();
-    let key = crate::layout::fragment::ImageKey { index: Some(0), generation: 0 };
+    let key = crate::layout::fragment::ImageKey { image: Some(images.add(png)), generation: 0 };
     let plain = g.image(key, &images).expect("registered by its header");
     let from = crate::drawing::colour::Rgba::rgb(0xFF0000);
     assert_eq!(g.recoloured(key, from, from, true, &images), Some(plain));
@@ -596,7 +600,7 @@ fn a_reflection_fades_along_a_flipped_or_turned_shape() {
 fn an_inline_pictures_reflection_stops_at_its_paragraph() {
     let at = |after: &str| {
         let d = crate::docx::read(&inline_package(after, "")).expect("reads");
-        let snap = crate::layout::layout(&d, &fonts());
+        let snap = crate::layout::tests::layout(&d, &fonts());
         let mut g = Graphics::default();
         let picture = g.page_picture(&Renderer::default(), &snap.pages()[0], &d.images);
         let mut px = vec![0u8; SIZE.0 * SIZE.1 * 4];
@@ -639,13 +643,14 @@ fn a_new_document_does_not_draw_the_last_ones_changed_pictures() {
 fn changed_pictures_in_use_stay_over_the_cap_and_unused_ones_go() {
     let rect = wsp("rect", CLEAR_RED);
     let mut g = Graphics::default();
-    let first = draw_in(&mut g, &rect, (100, 60), Some(&picture()));
+    let d = crate::docx::read(&package(&rect, (100, 60), Some(&picture()))).expect("the document reads");
+    let first = draw_doc(&mut g, &d);
     assert_eq!((g.recolour_decodes, g.recoloured.len()), (1, 1));
     let id = g.recoloured.values().next().and_then(|r| r.id).expect("decoded");
     // Over the cap (0), frame after frame of the same pages: nothing is dropped, nothing is decoded again.
     for _ in 0..3 {
         g.trim_recoloured(0);
-        let again = draw_in(&mut g, &rect, (100, 60), Some(&picture()));
+        let again = draw_doc(&mut g, &d);
         assert_eq!(first.0, again.0);
     }
     assert_eq!((g.recolour_decodes, g.recoloured.len()), (1, 1), "kept while drawn");
@@ -653,14 +658,14 @@ fn changed_pictures_in_use_stay_over_the_cap_and_unused_ones_go() {
     g.trim_recoloured(0);
     g.trim_recoloured(0);
     assert!(g.recoloured.is_empty() && g.recoloured_bytes == 0 && g.res.images.info(id).is_none());
-    let back = draw_in(&mut g, &rect, (100, 60), Some(&picture()));
+    let back = draw_doc(&mut g, &d);
     assert_eq!((first.0, g.recolour_decodes), (back.0, 2));
 }
 
 #[test]
 fn an_inline_reflection_runs_to_the_bottom_of_a_longer_paragraph() {
     let d = crate::docx::read(&inline_package("0", r#"<w:r><w:br/></w:r><w:r><w:t>second line</w:t></w:r>"#)).expect("reads");
-    let snap = crate::layout::layout(&d, &fonts());
+    let snap = crate::layout::tests::layout(&d, &fonts());
     let mut g = Graphics::default();
     let picture = g.page_picture(&Renderer::default(), &snap.pages()[0], &d.images);
     let mut px = vec![0u8; SIZE.0 * SIZE.1 * 4];
@@ -721,7 +726,7 @@ fn reflected_group(text_in_reflected: bool) -> String {
 
 /// The reflected shapes of a page: whether each holds text in its reflection.
 fn reflections_with_text(doc: &crate::docx::Document) -> Vec<bool> {
-    let snap = crate::layout::layout(doc, &fonts());
+    let snap = crate::layout::tests::layout(doc, &fonts());
     crate::layout::traverse::paint_items(&snap.pages()[0])
         .into_iter()
         .filter_map(|i| match i {
@@ -749,7 +754,7 @@ fn an_inline_reflection_stops_at_the_part_of_a_split_paragraph_on_its_page() {
     let br = "<w:r><w:br/></w:r>".repeat(40);
     let body = format!(r#"<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/></w:pPr>{br}{INLINE_REFLECTED}{br}</w:p>"#);
     let d = crate::docx::read(&package_body(&body, Some(&picture()))).expect("reads");
-    let snap = crate::layout::layout(&d, &fonts());
+    let snap = crate::layout::tests::layout(&d, &fonts());
     assert!(snap.pages().len() >= 2, "the paragraph splits");
     let clips: Vec<f64> = crate::layout::traverse::paint_items(&snap.pages()[0])
         .into_iter()
@@ -772,7 +777,7 @@ fn a_reflected_picture_in_an_inline_group_stops_at_its_paragraph_too() {
     );
     let body = format!(r#"<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/></w:pPr>{group}</w:p>"#);
     let d = crate::docx::read(&package_body(&body, Some(&picture()))).expect("reads");
-    let snap = crate::layout::layout(&d, &fonts());
+    let snap = crate::layout::tests::layout(&d, &fonts());
     let shapes: Vec<_> = crate::layout::traverse::paint_items(&snap.pages()[0])
         .into_iter()
         .filter_map(|i| if let crate::layout::fragment::Item::Shape(s) = i { Some(s) } else { None })
@@ -793,7 +798,7 @@ fn an_inline_text_boxs_reflection_holds_its_text() {
     };
     let shot = |text: &str| {
         let d = crate::docx::read(&package_body(&run(text), None)).expect("reads");
-        let snap = crate::layout::layout(&d, &fonts());
+        let snap = crate::layout::tests::layout(&d, &fonts());
         let mut g = Graphics::default();
         let picture = g.page_picture(&Renderer::default(), &snap.pages()[0], &d.images);
         let mut px = vec![0u8; SIZE.0 * SIZE.1 * 4];
@@ -813,7 +818,7 @@ fn text_path(w: i64, textpath: &str, shape: &str) -> Shot {
         r##"<w:p><w:r><w:pict xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office"><v:shapetype id="_x0000_t136" coordsize="21600,21600" o:spt="136" adj="10800" path="m@7,l@8,m@5,21600l@6,21600e"><v:path textpathok="t"/><v:textpath on="t" fitshape="t"/></v:shapetype><v:shape type="#_x0000_t136" style="position:absolute;margin-left:100pt;margin-top:100pt;width:{w}pt;height:60pt;mso-position-horizontal-relative:page;mso-position-vertical-relative:page{shape}" fillcolor="red" stroked="f"><v:textpath style="font-family:&quot;JetBrains Mono&quot;;font-size:1pt" {textpath}/></v:shape></w:pict></w:r></w:p>"##
     );
     let d = crate::docx::read(&package_body(&pict, None)).expect("the document reads");
-    let snap = crate::layout::layout(&d, &crate::layout::tests::output::bundled_fonts());
+    let snap = crate::layout::tests::layout(&d, &crate::layout::tests::output::bundled_fonts());
     let mut g = Graphics::default();
     let picture = g.page_picture(&Renderer::default(), &snap.pages()[0], &d.images);
     let mut px = vec![0u8; SIZE.0 * SIZE.1 * 4];
@@ -887,14 +892,14 @@ fn a_page_background_takes_its_theme_tint_or_shade_and_shows_only_when_word_show
     assert!(matches!(r.page_fill, Some(crate::drawing::paint::Paint::Gradient { .. })));
     let picture = fixture("page-picture.docx");
     let Some(crate::drawing::paint::Fill::Blip(b)) = &picture.page_fill else { panic!("{:?}", picture.page_fill) };
-    assert!(b.image.is_some_and(|i| i < picture.images.len()), "the tile's picture is read");
+    assert!(b.image.is_some_and(|i| picture.images.contains(i)), "the tile's picture is read");
 }
 
 #[test]
 fn a_picture_watermark_is_drawn_behind_the_body_text() {
     use crate::layout::fragment::Item;
     let d = fixture("watermark-picture.docx");
-    let snap = crate::layout::layout(&d, &crate::layout::tests::output::bundled_fonts());
+    let snap = crate::layout::tests::layout(&d, &crate::layout::tests::output::bundled_fonts());
     for page in snap.pages() {
         let mut order = Vec::new();
         crate::layout::traverse::paint(page, &mut |p| match p.item {
@@ -925,7 +930,7 @@ fn abutting_shading_leaves_no_seam() {
         p("8EAADB").repeat(3)
     );
     let d = crate::docx::read(&package_body(&body, None)).expect("the document reads");
-    let snap = crate::layout::layout(&d, &fonts());
+    let snap = crate::layout::tests::layout(&d, &fonts());
     let page = &snap.pages()[0];
     let shaded: Vec<[f64; 4]> = crate::layout::traverse::paint_items(page)
         .into_iter()
@@ -995,9 +1000,10 @@ fn a_tiled_fill_with_no_width_or_mirrored_tiles_leaves_no_gaps() {
     // An area with no width on a tile edge, a trillion points tall, draws nothing and returns.
     let mut g = Graphics::default();
     let mut rec = twip_graphics::scene::Recorder::new();
-    let key = crate::layout::fragment::ImageKey { index: Some(0), generation: 0 };
+    let mut images = crate::docx::Resources::default();
+    let key = crate::layout::fragment::ImageKey { image: Some(images.add(emf)), generation: 0 };
     let area = twip_graphics::kurbo::Rect::new(4.0, 0.0, 4.0, 1e12);
-    g.vector_tiles(&mut rec, key, &[emf], (0.0, 0.0, 2.0, 2.0), [0.0; 4], crate::drawing::paint::TileFlip::None, area);
+    g.vector_tiles(&mut rec, key, &images, (0.0, 0.0, 2.0, 2.0), [0.0; 4], crate::drawing::paint::TileFlip::None, area);
 }
 
 #[test]
@@ -1013,7 +1019,7 @@ fn a_namespaced_svg_is_a_vector_picture() {
 fn a_page_thumbnail_fits_its_page_into_the_pixels() {
     let shape = sized("rect", 412, 592, "", r#"<a:solidFill><a:srgbClr val="000000"/></a:solidFill>"#);
     let d = crate::docx::read(&package(&shape, (412, 592), None)).expect("the document reads");
-    let snap = crate::layout::layout(&d, &fonts());
+    let snap = crate::layout::tests::layout(&d, &fonts());
     let mut g = Graphics::default();
     let grey = Color::rgba(128, 128, 128, 255);
     let mut px = vec![0u8; 100 * 100 * 4];
@@ -1036,7 +1042,7 @@ fn a_page_thumbnail_fits_its_page_into_the_pixels() {
 fn a_page_thumbnail_leaves_out_what_reaches_off_the_page() {
     let shape = sized("rect", 800, 200, "", r#"<a:solidFill><a:srgbClr val="000000"/></a:solidFill>"#);
     let d = crate::docx::read(&package(&shape, (800, 200), None)).expect("the document reads");
-    let snap = crate::layout::layout(&d, &fonts());
+    let snap = crate::layout::tests::layout(&d, &fonts());
     let mut g = Graphics::default();
     let grey = Color::rgba(128, 128, 128, 255);
     let mut px = vec![0u8; 100 * 100 * 4];

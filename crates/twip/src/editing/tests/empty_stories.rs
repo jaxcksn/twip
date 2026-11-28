@@ -48,7 +48,7 @@ fn open(bytes: &[u8]) -> Editor {
 }
 
 fn reopen(e: &Editor) -> Editor {
-    open(&crate::docx::write::save(e.document()).expect("saves"))
+    open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"))
 }
 
 fn p(text: &str) -> String {

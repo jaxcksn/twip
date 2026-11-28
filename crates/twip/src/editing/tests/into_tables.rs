@@ -7,7 +7,7 @@ use super::super::commands::{Command, Dir, MoveBy};
 use super::{blank_body, del, fonts, mv, texts};
 
 fn saved_body(e: &Editor) -> String {
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).expect("a package");
     let mut s = String::new();
     z.by_name("word/document.xml").expect("document.xml").read_to_string(&mut s).expect("utf8");

@@ -22,6 +22,7 @@ use twip_graphics::scene::{Clip, Recorder};
 use crate::api::error::{Error, ErrorCode};
 use crate::api::session::PdfOptions;
 use crate::api::warning::Warning;
+use crate::docx::review::ReviewView;
 use crate::docx::{Block, Document, Paragraph};
 use crate::font::Fonts;
 use crate::layout::{Snapshot, traverse};
@@ -45,14 +46,17 @@ pub(crate) fn convert(
         return Err(Error::new(ErrorCode::ExportFailed, "the font library has no font to draw text with"));
     }
     crate::api::session::documents::unsupported_package(docx)?;
-    let doc = crate::docx::read(docx).map_err(|e| Error::new(ErrorCode::ImportFailed, e))?;
+    let (doc, read) = crate::docx::read_reported(docx).map_err(|e| Error::new(ErrorCode::ImportFailed, e))?;
     // Its imported HTML drawn as a session draws it
-    let mut doc = crate::editing::opened(doc, fonts);
-    doc.review.view = crate::docx::review::MarkupView::NoMarkup;
-    doc.review.show_hidden = options.hidden_text.unwrap_or(false);
-    let snapshot = crate::layout::layout_until(&doc, fonts, || cancel.is_some_and(|c| c.load(Ordering::Relaxed))).ok_or_else(aborted)?;
-    let (bytes, written) = export_with(&doc, &snapshot, "", options, cancel, Some(fonts))?;
-    let mut warnings = doc.diagnostics.warnings.clone();
+    let doc = crate::editing::opened(doc, fonts);
+    let view = ReviewView {
+        view: crate::docx::review::MarkupView::NoMarkup,
+        show_hidden: options.hidden_text.unwrap_or(false),
+        ..ReviewView::opening(&doc.settings)
+    };
+    let snapshot = crate::layout::layout_until(&doc, &view, fonts, || cancel.is_some_and(|c| c.load(Ordering::Relaxed))).ok_or_else(aborted)?;
+    let (bytes, written) = export_with(&doc, &view, None, &snapshot, "", options, cancel, Some(fonts))?;
+    let mut warnings = read.diagnostics.warnings;
     let state = crate::api::session::unopened_document_fonts(&doc, fonts);
     warnings.extend(crate::api::session::documents::fallback_warnings(&state));
     warnings.extend(written);
@@ -71,21 +75,27 @@ fn aborted() -> Error {
     Error::new(ErrorCode::Aborted, "the conversion was cancelled")
 }
 
-/// The document's laid-out pages (`snapshot`, laid out completely) as PDF bytes, with what `options` adds, and the
-/// warnings writing them gave. Stops with `Aborted` between pages once `cancel` is set. Metafile pictures draw no text.
+/// The document's laid-out pages (`snapshot`, laid out completely in `view`) as PDF bytes, with what `options` adds,
+/// and the warnings writing them gave; `file_name` titles it when nothing else does. Stops with `Aborted` between pages
+/// once `cancel` is set. Metafile pictures draw no text.
 pub fn export(
     doc: &Document,
+    view: &ReviewView,
+    file_name: Option<&str>,
     snapshot: &Snapshot,
     title: &str,
     options: &PdfOptions,
     cancel: Option<&AtomicBool>,
 ) -> Result<(Vec<u8>, Vec<Warning>), Error> {
-    export_with(doc, snapshot, title, options, cancel, None)
+    export_with(doc, view, file_name, snapshot, title, options, cancel, None)
 }
 
 /// [`export`], metafile pictures' text drawn with `fonts`.
+#[allow(clippy::too_many_arguments)]
 pub fn export_with(
     doc: &Document,
+    view: &ReviewView,
+    file_name: Option<&str>,
     snapshot: &Snapshot,
     title: &str,
     options: &PdfOptions,
@@ -93,9 +103,9 @@ pub fn export_with(
     fonts: Option<&Fonts>,
 ) -> Result<(Vec<u8>, Vec<Warning>), Error> {
     cancelled(cancel)?;
-    let tags = Tags::of(doc, first_language(doc).as_deref().unwrap_or("en-US"), cancel).ok_or_else(aborted)?;
+    let tags = Tags::of(doc, view, first_language(doc).as_deref().unwrap_or("en-US"), cancel).ok_or_else(aborted)?;
     let mut info = pdf::Info {
-        title: if title.trim().is_empty() { tags::title(doc, &tags) } else { title.into() },
+        title: if title.trim().is_empty() { tags::title(doc, file_name, &tags) } else { title.into() },
         language: Some(tags.lang.clone()),
         keywords: options.keywords_line().into_iter().collect(),
         creator: "Twip".into(),
@@ -235,7 +245,7 @@ mod tests {
             };
             let mut e = crate::editing::Editor::open(&bytes, &fonts).unwrap();
             e.complete(&fonts);
-            let (pdf, _) = export(e.document(), &e.snapshot(), "Fixture", &PdfOptions::default(), None).expect("exports");
+            let (pdf, _) = export(e.document(), e.review(), e.file_name(), &e.snapshot(), "Fixture", &PdfOptions::default(), None).expect("exports");
             let text = String::from_utf8_lossy(&pdf);
             assert!(pdf.starts_with(b"%PDF-") && text.contains("%%EOF"), "{}", f.display());
             assert!(text.contains("/StructTreeRoot") && text.contains("/MarkInfo"), "{}: untagged", f.display());

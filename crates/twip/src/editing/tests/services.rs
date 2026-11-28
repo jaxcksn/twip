@@ -1,5 +1,6 @@
 //! Host services on the document as it reads: find, spelling, word count, headings, dialogs and accessibility
 
+use crate::docx::definitions::DefinitionsXml;
 use std::io::{Read, Write};
 
 use super::fonts;
@@ -266,7 +267,7 @@ fn check_accessibility_skips_decorative_pictures_and_lists_floating_ones() {
 #[test]
 fn set_defaults_writes_only_what_changed() {
     with_session(&package(&p("x"), "", ""), |s| {
-        let raw = |s: &mut Session| s.with_editor(|e| e.document().resolver.as_ref().and_then(|r| r.styles.defaults_raw.clone()).unwrap_or_default());
+        let raw = |s: &mut Session| s.with_editor(|e| e.document().definitions.as_ref().and_then(|r| r.defaults_xml()).unwrap_or_default());
         let before = raw(s);
         assert!(!before.contains("w:color") && !before.contains("w:ind"), "no colour or indents set: {before}");
         let m = s.dialog_open(DialogKind::ManageStyles).expect("opens");
@@ -413,7 +414,7 @@ fn find_replace_and_spelling_reach_every_story() {
 fn check_accessibility_reaches_an_inline_shapes_text() {
     use crate::docx::{Block, Inline, Paragraph};
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-OBJ.docx");
-    let mut doc = crate::docx::read_editable(&std::fs::read(path).expect("the fixture")).expect("reads");
+    let (mut doc, _) = crate::docx::read_editable(&std::fs::read(path).expect("the fixture")).expect("reads");
     let floats = |doc: &crate::docx::Document| crate::services::dialogs::issues(doc).into_iter().filter(|i| i.id.starts_with("float:")).count();
     let before = floats(&doc);
     let paras = || doc.sections.iter().flat_map(|s| &s.blocks).filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None });

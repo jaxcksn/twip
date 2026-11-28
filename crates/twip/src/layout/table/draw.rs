@@ -372,11 +372,11 @@ pub fn draw_row(tb: &TableLayout, ri: usize, left: f64, top: f64, height: f64, p
         // Every cell aligns in the row's box: below the row's widest top border and margin, above its largest bottom
         // margin.
         let inner = height - row.top_border - c.margins[0] - below_margin;
-        let off = match c.v_align.as_str() {
+        let off = match c.v_align {
             _ if part.cont => 0.0,
-            "center" => ((inner - ch) / 2.0).max(0.0),
-            "bottom" => (inner - ch).max(0.0),
-            _ => 0.0,
+            VerticalAlignment::Center => ((inner - ch) / 2.0).max(0.0),
+            VerticalAlignment::Bottom => (inner - ch).max(0.0),
+            VerticalAlignment::Top | VerticalAlignment::Both => 0.0,
         };
         let base_y = top + row.top_border + c.margins[0] + off;
         let base_x = x0 + c.x + c.cx;

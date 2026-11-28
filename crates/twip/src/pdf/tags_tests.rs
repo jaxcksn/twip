@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use super::*;
 use crate::api::session::PdfOptions;
-use crate::docx::{CellIds, Raw};
+use crate::docx::CellIds;
 use crate::layout::tests::output::{bundled_fonts, root};
 
 const W: &str = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships""#;
@@ -53,7 +53,17 @@ fn package(body: &str, parts: &[(&str, &str, String)]) -> Vec<u8> {
 fn export(bytes: &[u8]) -> Vec<u8> {
     let doc = crate::docx::read(bytes).expect("reads");
     let fonts = bundled_fonts();
-    super::super::export::export(&doc, &crate::layout::layout(&doc, &fonts), "", &PdfOptions::default(), None).expect("exports").0
+    super::super::export::export(
+        &doc,
+        &crate::layout::tests::view(&doc),
+        None,
+        &crate::layout::tests::layout(&doc, &fonts),
+        "",
+        &PdfOptions::default(),
+        None,
+    )
+    .expect("exports")
+    .0
 }
 
 #[test]
@@ -103,7 +113,7 @@ fn notes_referencing_notes_are_walked_without_recursion() {
     let body = r#"<w:p><w:r><w:t>Body</w:t></w:r><w:r><w:footnoteReference w:id="1"/></w:r></w:p>"#;
     let bytes = package(body, &[("footnotes.xml", "footnotes", format!("<w:footnotes {W}>{notes}</w:footnotes>"))]);
     let doc = crate::docx::read(&bytes).expect("reads");
-    let tags = Tags::of(&doc, "en-US", None).expect("not cancelled");
+    let tags = Tags::of(&doc, &crate::layout::tests::view(&doc), "en-US", None).expect("not cancelled");
     let note = |n: &Node| matches!(n, Node::Element(e) if e.kind == Kind::Note);
     let notes_after_body = tags.root.iter().filter(|n| note(n)).count();
     assert_eq!(notes_after_body, n - 1, "the first note follows its reference; each next one follows the body");
@@ -146,12 +156,12 @@ fn headings_by_style_header_cells_and_link_targets() {
 
 #[test]
 fn cell_ids_and_headers_are_written_back() {
-    let mut d = crate::docx::read_editable(&fixture()).expect("reads");
+    let (mut d, dx) = crate::docx::read_editable(&fixture()).expect("reads");
     let t = d.sections[0].blocks.iter_mut().find_map(|b| if let crate::docx::Block::Table(t) = b { Some(t) } else { None }).expect("the table");
     // One cell's headers changed as read, another's properties written from the model.
     t.rows[1].cells[0].ids = Some(Rc::new(CellIds { id: Some("n1".into()), headers: vec!["h1".into(), "h2".into()] }));
-    t.rows[2].cells[0].direct = Raw::default();
-    let again = crate::docx::read_editable(&crate::docx::write::save(&d).expect("saves")).expect("reads again");
+    t.rows[2].cells[0].direct = Default::default();
+    let (again, _) = crate::docx::read_editable(&crate::docx::write::save(&d, &dx).expect("saves")).expect("reads again");
     let t = again.sections[0].blocks.iter().find_map(|b| if let crate::docx::Block::Table(t) = b { Some(t) } else { None }).expect("the table");
     let ids = |r: usize| t.rows[r].cells[0].ids.as_deref().cloned().unwrap_or_default();
     assert_eq!(ids(0), CellIds { id: Some("h1".into()), headers: Vec::new() });
@@ -166,13 +176,13 @@ fn a_rewritten_row_keeps_header_cells_past_the_read_bound() {
     let body = format!(
         r#"<w:tbl><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc w:id="c"><w:tcPr><w:tcW w:w="2000" w:type="dxa"/><w:headers>{refs}</w:headers></w:tcPr><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#
     );
-    let mut d = crate::docx::read_editable(&package(&body, &[])).expect("reads");
+    let (mut d, dx) = crate::docx::read_editable(&package(&body, &[])).expect("reads");
     let crate::docx::Block::Table(t) = &mut d.sections[0].blocks[0] else { panic!("a table") };
     assert_eq!(t.rows[0].cells[0].ids.as_ref().map(|i| i.headers.len()), Some(crate::docx::MAX_CELL_HEADERS), "reading is bounded");
     // A cell more: the row is written again, its first cell from its properties as read.
     let extra = crate::docx::Cell { ids: None, ..t.rows[0].cells[0].clone() };
     t.rows[0].cells.push(extra);
-    let saved = crate::docx::write::save(&d).expect("saves");
+    let saved = crate::docx::write::save(&d, &dx).expect("saves");
     let xml = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part");
     let first = &xml[xml.find("<w:tc").expect("a cell")..xml.find("</w:tc>").expect("its end")];
     assert_eq!(first.matches("<w:header ").count(), n, "every header the source lists is kept");
@@ -182,12 +192,12 @@ fn a_rewritten_row_keeps_header_cells_past_the_read_bound() {
 #[test]
 fn a_rewritten_row_keeps_header_cells_however_quoted() {
     let body = r#"<w:tbl><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/><w:headers><w:header w:val='a&#x26;"b'/></w:headers></w:tcPr><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#;
-    let mut d = crate::docx::read_editable(&package(body, &[])).expect("reads");
+    let (mut d, dx) = crate::docx::read_editable(&package(body, &[])).expect("reads");
     let crate::docx::Block::Table(t) = &mut d.sections[0].blocks[0] else { panic!("a table") };
     assert_eq!(t.rows[0].cells[0].ids.as_ref().map(|i| i.headers.clone()), Some(vec![r#"a&"b"#.to_string()]));
     let extra = crate::docx::Cell { ids: None, ..t.rows[0].cells[0].clone() };
     t.rows[0].cells.push(extra);
-    let saved = crate::docx::write::save(&d).expect("saves");
+    let saved = crate::docx::write::save(&d, &dx).expect("saves");
     let xml = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part");
     assert!(xml.contains(r#"<w:header w:val='a&#x26;"b'/>"#), "kept as written: {xml}");
 }
@@ -211,7 +221,7 @@ fn an_inline_picture_in_turned_text_is_a_figure() {
     let text = String::from_utf8_lossy(&pdf);
     assert!(text.contains("/Alt(A turned red box)"), "the figure is tagged");
     let doc = crate::docx::read(&package(&body, &[])).expect("reads");
-    let snap = crate::layout::layout(&doc, &bundled_fonts());
+    let snap = crate::layout::tests::layout(&doc, &bundled_fonts());
     let turned = crate::layout::traverse::paint_items(&snap.pages()[0]).into_iter().any(|i| {
         matches!(&i, crate::layout::fragment::Item::Turned(t) if t.items.iter().any(|i| matches!(i, crate::layout::fragment::Item::Shape(s) if s.of != crate::layout::fragment::PictureOf::None)))
     });
@@ -225,14 +235,31 @@ fn list_numbers_languages_and_pictures_without_alt_text() {
     let fonts = bundled_fonts();
     let read = |path: &str| crate::docx::read(&std::fs::read(root().join(path)).expect("the fixture")).expect("reads");
     let doc = read("fixtures/editor/FX-A11Y-STRUCTURE.docx");
-    let (pdf, _) = super::super::export::export(&doc, &crate::layout::layout(&doc, &fonts), "", &PdfOptions::default(), None).expect("exports");
+    let (pdf, _) = super::super::export::export(
+        &doc,
+        &crate::layout::tests::view(&doc),
+        None,
+        &crate::layout::tests::layout(&doc, &fonts),
+        "",
+        &PdfOptions::default(),
+        None,
+    )
+    .expect("exports");
     let text = String::from_utf8_lossy(&pdf);
     for key in ["/S/Lbl", "/ListNumbering/Decimal", "/ListNumbering/Disc", "/S/Span", "/Lang(fr-FR)", "/Lang(he-IL)"] {
         assert!(text.contains(key), "{key} is written");
     }
     let doc = read("fixtures/objects.docx");
-    let (pdf, warnings) =
-        super::super::export::export(&doc, &crate::layout::layout(&doc, &fonts), "", &PdfOptions::default(), None).expect("exports");
+    let (pdf, warnings) = super::super::export::export(
+        &doc,
+        &crate::layout::tests::view(&doc),
+        None,
+        &crate::layout::tests::layout(&doc, &fonts),
+        "",
+        &PdfOptions::default(),
+        None,
+    )
+    .expect("exports");
     let missing = warnings.iter().find(|w| w.code == crate::api::warning::WarningCode::PdfFigureWithoutAlt).expect("a warning");
     let text = String::from_utf8_lossy(&pdf);
     let figures = text.matches("/S/Figure").count();
@@ -271,10 +298,11 @@ fn tracked_deletions_stay_out_of_titles_outlines_and_links() {
         del("Dropheading"),
         field(&code, &format!(r#"<w:r><w:t xml:space="preserve">Kept link </w:t></w:r>{}"#, del("Droplink")))
     );
-    let mut doc = crate::docx::read(&package(&body, &[("styles.xml", "styles", styles)])).expect("reads");
-    doc.review.view = crate::docx::review::MarkupView::NoMarkup;
+    let doc = crate::docx::read(&package(&body, &[("styles.xml", "styles", styles)])).expect("reads");
     let fonts = bundled_fonts();
-    let (pdf, _) = super::super::export::export(&doc, &crate::layout::layout(&doc, &fonts), "", &PdfOptions::default(), None).expect("exports");
+    let view = crate::layout::tests::no_markup(&doc);
+    let (pdf, _) = super::super::export::export(&doc, &view, None, &crate::layout::layout(&doc, &view, &fonts), "", &PdfOptions::default(), None)
+        .expect("exports");
     for kept in ["Kept title", "Kept heading", "Kept link"] {
         assert!(holds(&pdf, kept), "{kept} is written");
     }
@@ -342,10 +370,18 @@ fn a_link_through_columns_has_an_area_per_column_line() {
 #[test]
 fn tagging_stops_when_cancelled() {
     let doc = crate::docx::read(&fixture()).expect("reads");
-    assert!(Tags::of(&doc, "en-US", Some(&std::sync::atomic::AtomicBool::new(true))).is_none());
-    let snap = crate::layout::layout(&doc, &bundled_fonts());
-    let err = super::super::export::export(&doc, &snap, "", &PdfOptions::default(), Some(&std::sync::atomic::AtomicBool::new(true)))
-        .expect_err("cancelled");
+    assert!(Tags::of(&doc, &crate::layout::tests::view(&doc), "en-US", Some(&std::sync::atomic::AtomicBool::new(true))).is_none());
+    let snap = crate::layout::tests::layout(&doc, &bundled_fonts());
+    let err = super::super::export::export(
+        &doc,
+        &crate::layout::tests::view(&doc),
+        None,
+        &snap,
+        "",
+        &PdfOptions::default(),
+        Some(&std::sync::atomic::AtomicBool::new(true)),
+    )
+    .expect_err("cancelled");
     assert_eq!(err.code, crate::api::error::ErrorCode::Aborted);
 }
 
@@ -353,7 +389,7 @@ fn tagging_stops_when_cancelled() {
 #[test]
 fn an_exact_rows_cells_clip_their_content() {
     let doc = crate::docx::read(&std::fs::read(root().join("fixtures/editor/FX-ROW-CLIP.docx")).expect("the fixture")).expect("reads");
-    let snap = crate::layout::layout(&doc, &bundled_fonts());
+    let snap = crate::layout::tests::layout(&doc, &bundled_fonts());
     let mut runs = Vec::new();
     crate::layout::traverse::paint(&snap.pages()[0], &mut |p| {
         if let crate::layout::fragment::Item::Glyphs(r) = p.item {

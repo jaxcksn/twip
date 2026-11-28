@@ -110,9 +110,12 @@ fn a_field_value_shows_its_revisions_text_mark() {
         parts.push((name, data));
     }
     let bytes = crate::docx::write::repackage(&crate::docx::blank::blank_docx(), &parts, zip::CompressionMethod::Deflated).expect("repackages");
-    let mut d = crate::docx::read_at(&bytes, 1_794_096_000).expect("reads");
-    let after = |d: &crate::docx::Document| super::page_chars(d)[0].iter().find(|c| c.0 == 'Q').map(|c| c.1).expect("the text after the field");
-    let plain = after(&d);
-    std::rc::Rc::make_mut(&mut d.review.markup).style.insertions.mark = TextMark::Bold;
-    assert!(after(&d) > plain, "the field's value is bold like the rest of the insertion");
+    let d = crate::docx::read_at(&bytes, 1_794_096_000).expect("reads");
+    let after = |view: &crate::docx::review::ReviewView| {
+        super::page_chars_in(&d, view)[0].iter().find(|c| c.0 == 'Q').map(|c| c.1).expect("the text after the field")
+    };
+    let mut view = super::view(&d);
+    let plain = after(&view);
+    std::rc::Rc::make_mut(&mut view.markup).style.insertions.mark = TextMark::Bold;
+    assert!(after(&view) > plain, "the field's value is bold like the rest of the insertion");
 }

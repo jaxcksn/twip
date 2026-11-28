@@ -1,6 +1,7 @@
 //! Styles
 
 use super::model::Compat;
+pub use crate::document::format::ThemeFonts;
 use std::collections::HashMap;
 
 use roxmltree::Node;
@@ -281,61 +282,32 @@ pub enum StyleEditError {
 pub const REGION_ORDER: [&str; 12] =
     ["band1Horz", "band2Horz", "band1Vert", "band2Vert", "lastCol", "firstCol", "lastRow", "firstRow", "seCell", "swCell", "neCell", "nwCell"];
 
-#[derive(Clone, Debug, Default)]
-pub struct ThemeFonts {
-    pub major: String,
-    pub minor: String,
-    pub major_ea: Option<String>,
-    pub minor_ea: Option<String>,
-    pub major_cs: Option<String>,
-    pub minor_cs: Option<String>,
-}
-
-impl ThemeFonts {
-    pub fn parse(theme: Option<&str>) -> ThemeFonts {
-        let mut t = ThemeFonts { major: "Calibri Light".into(), minor: "Calibri".into(), ..Default::default() };
-        let Some(xml) = theme else { return t };
-        let Ok(doc) = roxmltree::Document::parse(xml) else { return t };
-        let face = |scheme: Node, kind: &str| {
-            scheme.children().find(|c| is(*c, A, kind)).and_then(|n| n.attribute("typeface")).filter(|s| !s.is_empty()).map(str::to_string)
-        };
-        for n in doc.descendants().filter(|n| is(*n, A, "majorFont") || is(*n, A, "minorFont")) {
-            let major = n.tag_name().name() == "majorFont";
-            let (latin, ea, cs) = (face(n, "latin"), face(n, "ea"), face(n, "cs"));
-            if major {
-                if let Some(l) = latin {
-                    t.major = l;
-                }
-                t.major_ea = ea;
-                t.major_cs = cs;
-            } else {
-                if let Some(l) = latin {
-                    t.minor = l;
-                }
-                t.minor_ea = ea;
-                t.minor_cs = cs;
+/// The fonts of a theme part's XML (Calibri Light and Calibri without one).
+pub fn theme_fonts(theme: Option<&str>) -> ThemeFonts {
+    let mut t = ThemeFonts { major: "Calibri Light".into(), minor: "Calibri".into(), ..Default::default() };
+    let Some(xml) = theme else { return t };
+    let Ok(doc) = roxmltree::Document::parse(xml) else { return t };
+    let face = |scheme: Node, kind: &str| {
+        scheme.children().find(|c| is(*c, A, kind)).and_then(|n| n.attribute("typeface")).filter(|s| !s.is_empty()).map(str::to_string)
+    };
+    for n in doc.descendants().filter(|n| is(*n, A, "majorFont") || is(*n, A, "minorFont")) {
+        let major = n.tag_name().name() == "majorFont";
+        let (latin, ea, cs) = (face(n, "latin"), face(n, "ea"), face(n, "cs"));
+        if major {
+            if let Some(l) = latin {
+                t.major = l;
             }
-        }
-        t
-    }
-
-    /// A `w:*Theme` value as a family name.
-    /// An East Asian theme slot without a typeface ([`Self::resolve`] gives the Latin font).
-    pub fn ea_unset(&self, theme: &str) -> bool {
-        theme.ends_with("EastAsia") && if theme.starts_with("major") { self.major_ea.is_none() } else { self.minor_ea.is_none() }
-    }
-
-    pub fn resolve(&self, theme: &str) -> String {
-        let major = theme.starts_with("major");
-        let (latin, ea, cs) = if major { (&self.major, &self.major_ea, &self.major_cs) } else { (&self.minor, &self.minor_ea, &self.minor_cs) };
-        if theme.ends_with("EastAsia") {
-            ea.clone().unwrap_or_else(|| latin.clone())
-        } else if theme.ends_with("Bidi") {
-            cs.clone().unwrap_or_else(|| latin.clone())
+            t.major_ea = ea;
+            t.major_cs = cs;
         } else {
-            latin.clone()
+            if let Some(l) = latin {
+                t.minor = l;
+            }
+            t.minor_ea = ea;
+            t.minor_cs = cs;
         }
     }
+    t
 }
 
 #[derive(Clone, Debug, Default)]

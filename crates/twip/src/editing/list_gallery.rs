@@ -5,13 +5,14 @@ use std::rc::Rc;
 
 use crate::api::command::{ListApplyTo, ListDefinitionChange, ListLevel, NumberFormat};
 use crate::api::services::{ListEntry, ListEntryId, ListGalleryKind, ListGallerySection, ListGallerySectionKind};
-use crate::docx::{Block, Inline, ListLabel, Paragraph, RunStyle, next_para_id};
+use crate::docx::{Block, Inline, Paragraph, RunStyle, next_para_id};
 use crate::font::Fonts;
 use crate::layout::ParaId;
 use crate::services::lists;
 
 use super::Editor;
 use super::commands::Outcome;
+use crate::docx::run_xml;
 
 /// Recent entries kept per gallery.
 const RECENT: usize = 8;
@@ -84,7 +85,8 @@ impl Editor {
             ListGallerySection { kind: ListGallerySectionKind::Library, entries: library },
             ListGallerySection { kind: ListGallerySectionKind::RecentlyUsed, entries: recent },
         ];
-        let Some(res) = self.doc.resolver.as_ref() else { return out };
+        let Some(res) = self.doc.definitions.as_ref() else { return out };
+        let c = res.cascade();
         let mut nums: Vec<i64> = self.list_paras().into_iter().map(|(_, n, _)| n).collect();
         nums.dedup();
         let mut seen = std::collections::HashSet::new();
@@ -93,24 +95,24 @@ impl Editor {
             .filter(|n| seen.insert(*n))
             .filter_map(|n| {
                 let levels = self.list_levels(n)?;
-                let multi = res
-                    .numbering
-                    .abstract_of(n, &res.styles)
-                    .and_then(|a| res.numbering.abstracts.get(&a))
-                    .is_some_and(|a| a.multi_level_type.as_deref() == Some("multilevel"));
+                let multi = c
+                    .abstract_of(crate::document::paragraph::ListId(n))
+                    .and_then(|a| c.lists.defs.get(&a))
+                    .is_some_and(|a| crate::docx::list_xml::multi_level_name(a.multi_level_type.as_ref()) == Some("multilevel"));
                 (gallery_of(&levels, multi) == k).then(|| entry(format!("document:{n}"), levels))
             })
             .collect();
         out.push(ListGallerySection { kind: ListGallerySectionKind::Document, entries: document });
         if k == ListGalleryKind::Multilevel {
-            let mut styles: Vec<_> = res.styles.by_id.values().filter(|s| s.kind == crate::docx::styles::StyleKind::Numbering).collect();
-            styles.sort_by(|a, b| a.name.cmp(&b.name));
+            let name = |s: &crate::format::Style| s.name.as_deref().unwrap_or_default().to_string();
+            let mut styles: Vec<_> = c.styles.styles.values().map(|e| &*e.style).filter(|s| s.kind == crate::format::StyleKind::Numbering).collect();
+            styles.sort_by_key(|s| name(s));
             let entries = styles
                 .into_iter()
                 .filter_map(|s| {
-                    let num = res.styles.chain_ppr(Some(&s.id)).num_id?;
+                    let num = crate::docx::para_props::num_id(c.chain_para(Some(&s.id)).list)?;
                     let levels = self.list_levels(num)?;
-                    Some(ListEntry { id: ListEntryId(format!("style:{}", s.id)), label: s.name.clone(), levels })
+                    Some(ListEntry { id: ListEntryId(format!("style:{}", s.id)), label: name(s), levels })
                 })
                 .collect();
             out.push(ListGallerySection { kind: ListGallerySectionKind::ListStyles, entries });
@@ -133,8 +135,7 @@ impl Editor {
                 Some((gallery_of(&levels, false), levels, Some(n)))
             }
             ("style", s, None) => {
-                let res = self.doc.resolver.as_ref()?;
-                let num = res.styles.chain_ppr(Some(s)).num_id?;
+                let num = crate::docx::para_props::num_id(self.doc.definitions.as_ref()?.cascade().chain_para(Some(s)).list)?;
                 Some((ListGalleryKind::Multilevel, self.list_levels(num)?, Some(num)))
             }
             _ => None,
@@ -199,47 +200,39 @@ impl Editor {
 
     /// A list's preview: three items at its first level, or at its first three levels.
     pub fn list_preview(&self, levels: &[ListLevel], multilevel: bool) -> Option<Vec<Block>> {
-        let res = self.doc.resolver.as_ref()?;
+        let res = self.doc.definitions.as_ref()?;
         let mut next = (**res).clone();
-        let (abstract_id, num_id) = next.numbering.free_ids();
-        let cx = next.numbering.cx();
-        let w = cx.w.clone();
-        let colours = next.styles.colours;
-        next.numbering.set_abstract_xml(
-            super::list_defs::abstract_xml(
-                abstract_id,
-                None,
-                super::list_defs::Levels::Shown(&super::list_defs::complete(levels)),
-                None,
-                &[],
-                &[],
-                &cx,
-                &colours,
-            ),
-            &colours,
-        )?;
-        next.numbering.set_num_xml(format!("<{w}num {w}numId=\"{num_id}\"><{w}abstractNumId {w}val=\"{abstract_id}\"/></{w}num>"), &colours)?;
-        let scx = next.styles.cx();
-        let mut counters = crate::docx::numbering::Counters::default();
+        let typed = next.typed();
+        let (abstract_id, num_id) = typed.cascade.lists.free_ids();
+        let (abstract_id, num_id) = (abstract_id.0, num_id.0);
+        let colours = typed.cascade.colours;
+        let levels = super::list_defs::complete(levels);
+        next.set_list_def(super::list_defs::definition(abstract_id, None, super::list_defs::Levels::Shown(&levels), None, &[], &[], &colours));
+        next.set_list(super::list_defs::new_list(num_id, abstract_id, &[]));
+        let c = next.cascade();
+        let mut counters = crate::format::counters::Counters::default();
         let ilvls: [i64; 3] = if multilevel { [0, 1, 2] } else { [0, 0, 0] };
         let mut out = Vec::new();
         for ilvl in ilvls {
-            let ppr = format!("<{w}pPr><{w}numPr><{w}ilvl {w}val=\"{ilvl}\"/><{w}numId {w}val=\"{num_id}\"/></{w}numPr></{w}pPr>");
-            let para = next.para_from_xml(Some(&ppr), None, &scx);
-            let text = counters.next(&next.numbering, &next.styles, num_id, ilvl)?;
-            let level = next.numbering.level(num_id, ilvl, &next.styles)?.clone();
-            let mut lp = next.run_props(&para.base, &Default::default());
-            lp.merge(&level.rpr);
-            let picture = next.numbering.bullet_image(&level);
-            let label = ListLabel { text, run: next.run_style(&lp), jc: level.jc.clone(), suff: level.suff.clone(), picture, legacy: level.legacy };
-            let base = next.run_from_xml(&para.base, None, &scx);
+            let ppr = crate::format::ParaProps {
+                list: Some(crate::format::ListChoice::In(crate::document::paragraph::ListId(num_id))),
+                list_level: Some(ilvl),
+                ..Default::default()
+            };
+            let para = crate::docx::para_xml::resolve(&next, &ppr, None, None);
+            let list = crate::document::paragraph::ListId(num_id);
+            let text = counters.next(&c, list, ilvl)?;
+            let level = c.level(list, ilvl)?.clone();
+            let under = run_xml::folded(&next, &para.base, None, false);
+            let label = crate::docx::para_xml::label(&next, text, &under, &level);
+            let base = Rc::new(run_xml::resolve(&next, &para.base, Default::default(), false));
             let grey = Rc::new(RunStyle { color: Some(0x80_8080), ..(*base).clone() });
             out.push(Block::Para(Paragraph {
                 style: Rc::new(para.style),
                 mark: grey.clone(),
                 list: Some(label),
                 inlines: vec![Inline::Text("\u{2014}".repeat(10), grey)],
-                src: None,
+                origin: crate::docx::Origin::NONE,
                 id: next_para_id(),
                 div: None,
                 controls: Vec::new(),

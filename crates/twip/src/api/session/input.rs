@@ -355,7 +355,7 @@ impl Session {
                 });
                 match dropped {
                     Some(_) => {
-                        let menu = crate::services::menu::drop_menu(self.editor.document().file_name.is_some());
+                        let menu = crate::services::menu::drop_menu(self.editor.file_name().is_some());
                         self.emit(Event::ContextMenu(ContextMenuEvent { menu, at: client(at), via: MenuVia::Pointer }));
                     }
                     // Not dragged, or dropped on the selection: the context menu, as Word opens it on the release.

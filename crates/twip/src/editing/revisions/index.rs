@@ -284,7 +284,7 @@ pub(super) fn found(doc: &Document, idx: &DocIndex) -> Found {
     let others = doc
         .stories
         .iter()
-        .filter_map(|(name, b)| Some((idx.header_footer(name)?, b)))
+        .filter_map(|(id, b)| Some((idx.header_footer(*id)?, b)))
         .chain(notes(&doc.footnotes).into_iter().map(|(k, b)| (StoryId::Footnote(k), b)))
         .chain(notes(&doc.endnotes).into_iter().map(|(k, b)| (StoryId::Endnote(k), b)));
     for (story, blocks) in others {

@@ -1,14 +1,21 @@
 //! HTML paste: paragraphs, headings, lists, tables, links and character formatting from another application's HTML
 
 use std::collections::HashMap;
+use std::rc::Rc;
 
-use crate::docx::write::props::{Cx, Props};
+use crate::docx::definitions::Definitions;
 use crate::docx::{AltContent, Block, Inline, Paragraph, VMerge};
 use crate::font::Fonts;
 
 use super::Editor;
 use super::clipboard::Fragment;
 use super::commands::Outcome;
+use crate::document::format::Jc;
+use crate::document::paragraph::ListId;
+use crate::docx::char_props::RunDirect;
+use crate::docx::para_props::ParaDirect;
+use crate::docx::run_xml;
+use crate::format::{CharProps, ListChoice, ParaProps};
 
 /// The most HTML read; more pastes as text.
 pub(super) const MAX_HTML: usize = 8 << 20;
@@ -66,7 +73,7 @@ enum Kind {
 #[derive(Clone, Debug, PartialEq)]
 struct Para {
     kind: Kind,
-    align: Option<&'static str>,
+    align: Option<Jc>,
     runs: Vec<Run>,
 }
 
@@ -102,7 +109,7 @@ struct Open {
     name: String,
     fmt: Fmt,
     link: Option<String>,
-    align: Option<&'static str>,
+    align: Option<Jc>,
 }
 
 struct Reader {
@@ -358,7 +365,7 @@ fn css(style: &str, property: &str) -> Option<String> {
 }
 
 impl Reader {
-    fn fmt(&self) -> (Fmt, Option<String>, Option<&'static str>) {
+    fn fmt(&self) -> (Fmt, Option<String>, Option<Jc>) {
         self.open.last().map_or((Fmt::default(), None, None), |o| (o.fmt, o.link.clone(), o.align))
     }
 
@@ -490,9 +497,9 @@ impl Reader {
         }
         if let Some(a) = css(&style, "text-align").or_else(|| attr(tag, "align").map(|a| a.to_ascii_lowercase())) {
             align = match a.as_str() {
-                "center" => Some("center"),
-                "right" | "end" => Some("right"),
-                "justify" => Some("both"),
+                "center" => Some(Jc::Center),
+                "right" | "end" => Some(Jc::Right),
+                "justify" => Some(Jc::Both),
                 _ => None,
             };
         }
@@ -588,7 +595,7 @@ impl Reader {
         self.push_open(name, fmt, link, align);
     }
 
-    fn push_open(&mut self, name: &str, fmt: Fmt, link: Option<String>, align: Option<&'static str>) {
+    fn push_open(&mut self, name: &str, fmt: Fmt, link: Option<String>, align: Option<Jc>) {
         if self.open.len() < MAX_OPEN {
             self.open.push(Open { name: name.to_string(), fmt, link, align });
         } else {
@@ -835,17 +842,21 @@ impl Editor {
                 nums = used.iter().map(|&(list, numbered)| (list, self.new_list(&mut tx, !numbered))).collect();
                 self.commit(tx, None, fonts);
             }
-            let Some(res) = self.doc.resolver.clone() else { break 'paste Outcome::Unchanged("no styles") };
-            let cx = self.cx();
-            let mut images = Vec::new();
-            let blocks = self.html_blocks(&read, &res, &cx, &nums, &template, width, &mut images);
+            let Some(res) = self.doc.definitions.clone() else { break 'paste Outcome::Unchanged("no styles") };
+            let mut images = crate::docx::Resources::default();
+            let blocks = self.html_blocks(&read, &res, &nums, &template, width, &mut images);
             // A last paragraph of a kind or alignment of its own is pasted with its mark; plain text joins the caret's.
             let open_end = matches!(read.last(), Some(HBlock::Para(p)) if p.kind == Kind::Body && p.align.is_none());
             let mut f = Fragment { id: 0, blocks, open_end, ..Default::default() };
             if !images.is_empty() {
-                // Its pictures, by their index in `images`, become this document's as another document's do.
-                let o =
-                    super::import::Origin { key: super::import::next_key(), images, resolver: None, people: Default::default(), main: String::new() };
+                // Its pictures, by their id in `images`, become this document's as another document's do.
+                let o = super::import::Origin {
+                    key: super::import::next_key(),
+                    images,
+                    definitions: None,
+                    people: Default::default(),
+                    main: String::new(),
+                };
                 f.origin = Some(std::rc::Rc::new(o));
             }
             if choice == super::paste::PasteChoice::Merge {
@@ -861,60 +872,63 @@ impl Editor {
         if matches!(end, Outcome::Changed(_)) { end } else { out }
     }
 
-    #[allow(clippy::too_many_arguments, reason = "the blocks, how they resolve, their lists, template and width, and their pictures")]
     fn html_blocks(
         &mut self,
         blocks: &[HBlock],
-        res: &crate::docx::resolve::Resolver,
-        cx: &Cx,
+        res: &Definitions,
         nums: &[(usize, i64)],
         template: &Paragraph,
         width: f64,
-        images: &mut Vec<(usize, Vec<u8>)>,
+        images: &mut crate::docx::Resources,
     ) -> Vec<Block> {
-        let w = &cx.w;
         let mut out = Vec::new();
         for b in blocks {
             match b {
                 HBlock::Para(p) => {
-                    let mut pp = Props::parse(None, "pPr", cx);
+                    let mut pp = ParaProps::default();
                     match p.kind {
-                        Kind::Heading(n) if res.styles.by_id.contains_key(&format!("Heading{n}")) => {
-                            pp.set("pStyle", format!("<{w}pStyle {w}val=\"Heading{n}\"/>"));
+                        Kind::Heading(n) => {
+                            let id = format!("Heading{n}");
+                            if res.has_style(&id) {
+                                pp.style = Some(id.into());
+                            }
                         }
                         Kind::Item { list, level, .. } => {
                             if let Some(&(_, num)) = nums.iter().find(|(l, _)| *l == list) {
-                                pp.set("numPr", format!("<{w}numPr><{w}ilvl {w}val=\"{level}\"/><{w}numId {w}val=\"{num}\"/></{w}numPr>"));
+                                pp.list = Some(if num == 0 { ListChoice::None } else { ListChoice::In(ListId(num)) });
+                                pp.list_level = Some(i64::from(level));
                             }
                         }
-                        _ => {}
+                        Kind::Body => {}
                     }
-                    if let Some(jc) = p.align {
-                        pp.set("jc", format!("<{w}jc {w}val=\"{jc}\"/>"));
-                    }
-                    let para = res.para_from_xml(pp.xml().as_deref(), None, cx);
-                    let mark = res.run_from_xml(&para.base, None, cx);
+                    pp.align = p.align;
+                    let para = crate::docx::para_xml::with(res, ParaDirect::typed(Rc::new(pp)), None, None);
+                    let base = para.base.clone();
+                    let mark = Rc::new(run_xml::resolve(res, &base, RunDirect::default(), false));
                     let mut inlines = Vec::new();
                     for r in &p.runs {
-                        let mut rp = Props::parse(None, "rPr", cx);
+                        use crate::format::Toggle as T;
                         let f = r.fmt;
-                        for (on, name, xml) in [
-                            (f.bold, "b", format!("<{w}b/>")),
-                            (f.italic, "i", format!("<{w}i/>")),
-                            (f.underline || r.link.is_some(), "u", format!("<{w}u {w}val=\"single\"/>")),
-                            (f.strike, "strike", format!("<{w}strike/>")),
-                            (f.sup, "vertAlign", format!("<{w}vertAlign {w}val=\"superscript\"/>")),
-                            (f.sub && !f.sup, "vertAlign", format!("<{w}vertAlign {w}val=\"subscript\"/>")),
-                        ] {
+                        let mut q = CharProps::default();
+                        for (on, t) in [(f.bold, T::BOLD), (f.italic, T::ITALIC), (f.strike, T::STRIKE)] {
                             if on {
-                                rp.set(name, xml);
+                                q.toggles.put(t, true);
                             }
                         }
-                        if r.link.is_some() && res.styles.by_id.contains_key("Hyperlink") {
-                            rp.remove("u");
-                            rp.set("rStyle", format!("<{w}rStyle {w}val=\"Hyperlink\"/>"));
+                        if f.underline || r.link.is_some() {
+                            q.underline = Some(crate::format::UnderlineProps { style: crate::docx::Underline::Single, color: None });
                         }
-                        let run = res.run_from_xml(&para.base, rp.xml().as_deref(), cx);
+                        if f.sup {
+                            q.vertical = Some(crate::docx::props::VertAlign::Superscript);
+                        } else if f.sub {
+                            q.vertical = Some(crate::docx::props::VertAlign::Subscript);
+                        }
+                        if r.link.is_some() && res.has_style("Hyperlink") {
+                            q.underline = None;
+                            q.style = Some("Hyperlink".into());
+                        }
+                        let direct = RunDirect::typed((q != CharProps::default()).then(|| Rc::new(q)));
+                        let run = Rc::new(run_xml::resolve(res, &base, direct, false));
                         if let Some(img) = &r.image {
                             let pic = self.html_picture(img, width, images, &run);
                             match &r.link {
@@ -955,7 +969,7 @@ impl Editor {
                         mark,
                         list: None,
                         inlines,
-                        src: None,
+                        origin: crate::docx::Origin::NONE,
                         id: crate::docx::next_para_id(),
                         div: None,
                         controls: Vec::new(),
@@ -978,7 +992,7 @@ impl Editor {
                             cell.span = s.span;
                             cell.v_merge = s.merge;
                             cell.width = Some(crate::docx::props::Width::Dxa(col * s.span as f64));
-                            let blocks = self.html_blocks(&s.blocks, res, cx, nums, template, col * s.span as f64, images);
+                            let blocks = self.html_blocks(&s.blocks, res, nums, template, col * s.span as f64, images);
                             if !blocks.is_empty() {
                                 let end = std::mem::replace(&mut cell.blocks, blocks);
                                 // A cell ends in a paragraph
@@ -1010,7 +1024,7 @@ impl Editor {
         if self.doc.alt_chunks.is_empty() {
             return;
         }
-        if self.doc.resolver.is_none() {
+        if self.doc.definitions.is_none() {
             return;
         }
         let chunks = std::mem::take(&mut self.doc.alt_chunks);
@@ -1055,11 +1069,10 @@ impl Editor {
             self.abort(tx);
         }
         // Read after the lists step: it holds their numbering.
-        let Some(res) = self.doc.resolver.clone() else {
+        let Some(res) = self.doc.definitions.clone() else {
             (self.doc.alt_chunks, self.doc.settings.track_revisions) = (chunks, tracking);
             return;
         };
-        let cx = self.cx();
         let mut tx = self.begin("Open");
         let mut taken = super::clipboard::Taken::default();
         // One step a container: its blocks from its first placeholder to its last, each placeholder its HTML's.
@@ -1083,14 +1096,17 @@ impl Editor {
                 let mut f = Fragment { id: 0, open_end: false, ..Default::default() };
                 let mut blocks: Vec<Block> = match read {
                     Chunk::Html(read) => {
-                        let mut images = Vec::new();
-                        let blocks =
-                            self.html_blocks(read, &res, &cx, &nums[j], template, width, &mut images).iter().map(super::clipboard::fresh).collect();
+                        let mut images = crate::docx::Resources::default();
+                        let blocks = self
+                            .html_blocks(read, &res, &nums[j], template, width, &mut images)
+                            .iter()
+                            .map(crate::docx::Block::fresh_identity)
+                            .collect();
                         if !images.is_empty() {
                             let o = super::import::Origin {
                                 key: super::import::next_key(),
                                 images,
-                                resolver: None,
+                                definitions: None,
                                 people: Default::default(),
                                 main: String::new(),
                             };
@@ -1103,7 +1119,7 @@ impl Editor {
                         Ok(d) => {
                             f = d;
                             f.look = if *match_src { super::clipboard::Look::Source } else { super::clipboard::Look::Destination };
-                            f.blocks.iter().map(super::clipboard::fresh).collect()
+                            f.blocks.iter().map(crate::docx::Block::fresh_identity).collect()
                         }
                         Err(_) => Vec::new(),
                     },
@@ -1133,7 +1149,7 @@ impl Editor {
 
     /// An HTML picture in line: its own size, or the width and height it is given (one of them keeping its shape),
     /// no wider than `width`; its bytes go in `images` under the index it shows.
-    fn html_picture(&mut self, img: &Image, width: f64, images: &mut Vec<(usize, Vec<u8>)>, run: &crate::docx::Run) -> Inline {
+    fn html_picture(&mut self, img: &Image, width: f64, images: &mut crate::docx::Resources, run: &crate::docx::Run) -> Inline {
         let (pw, ph, dx, dy) = crate::docx::image::image_info(&img.data).unwrap_or((96.0, 96.0, 96.0, 96.0));
         let natural = (pw * 72.0 / if dx > 1.0 { dx } else { 96.0 }, ph * 72.0 / if dy > 1.0 { dy } else { 96.0 });
         let pt = 72.0 / 96.0;
@@ -1151,8 +1167,7 @@ impl Editor {
         let k = (MAX_PICTURE_SIDE / w.max(h)).min(1.0);
         let side = |v: f64| ((v * k * 20.0).round() / 20.0).clamp(1.0, MAX_PICTURE_SIDE);
         let (w, h) = (side(w), side(h));
-        let k = images.len();
-        images.push((k, img.data.clone()));
+        let k = images.add(img.data.clone());
         let emu = crate::drawing::units::Emu::from_pt;
         let mut shape = crate::drawing::Shape::picture(k, emu(w), emu(h));
         shape.nv.name = self.new_object_name("Picture");
@@ -1166,7 +1181,7 @@ impl Editor {
                 effect: [0.0; 4],
                 shape: Some(Box::new(shape)),
                 text: None,
-                src: Default::default(),
+                origin: crate::docx::Origin::NONE,
             },
             run.clone(),
         )

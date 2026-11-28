@@ -107,7 +107,7 @@ impl Default for WordCountScope {
 pub fn word_count_in(e: &mut crate::editing::Editor, scope: WordCountScope) -> crate::api::services::WordCount {
     use crate::docx::review::MarkupView;
     use crate::editing::position::StoryId;
-    let view = match e.document().review.view {
+    let view = match e.review().view {
         MarkupView::All => MarkupView::Simple,
         v => v,
     };
@@ -186,7 +186,7 @@ pub fn headings(e: &mut crate::editing::Editor) -> Vec<crate::api::services::Hea
     spelling::paras_in_order(e)
         .into_iter()
         .filter_map(|id| {
-            let (level, text) = listed_heading(doc, index.para(doc, id)?)?;
+            let (level, text) = listed_heading(doc, e.review(), index.para(doc, id)?)?;
             Some(crate::api::services::Heading {
                 id: crate::api::value::HeadingId(id.0.to_string()),
                 level,
@@ -198,9 +198,9 @@ pub fn headings(e: &mut crate::editing::Editor) -> Vec<crate::api::services::Hea
 }
 
 /// `p`'s heading level and the text it shows under the review view, when it is a heading [`headings`] lists.
-fn listed_heading(doc: &crate::docx::Document, p: &crate::docx::Paragraph) -> Option<(u32, String)> {
+fn listed_heading(doc: &crate::docx::Document, review: &crate::docx::review::ReviewView, p: &crate::docx::Paragraph) -> Option<(u32, String)> {
     let level = a11y::roles::heading_level(doc, p)?;
-    let t = crate::editing::text::Seen::of(p, |r| !doc.review.hides(&r.rev), true);
+    let t = crate::editing::text::Seen::of(p, |r| !review.hides(&r.rev), true);
     let text: String = t.chars.into_iter().map(|c| if c.is_control() || c == crate::editing::text::OBJECT { ' ' } else { c }).collect();
     let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
     (!text.is_empty()).then_some((level, text))
@@ -215,7 +215,7 @@ pub fn current_heading(e: &crate::editing::Editor) -> Option<crate::api::value::
     let body = e.editing_sub_template().map_or(StoryId::Body, StoryId::BuildingBlock);
     let (para, _) = at.para_offset().filter(|_| at.story == body)?;
     let doc = e.document();
-    let h = e.heading_of(para, |p| listed_heading(doc, p).is_some())?;
+    let h = e.heading_of(para, |p| listed_heading(doc, e.review(), p).is_some())?;
     Some(crate::api::value::HeadingId(h.0.to_string()))
 }
 
@@ -228,7 +228,7 @@ pub fn headings_over(e: &crate::editing::Editor, paras: &[crate::layout::ParaId]
     let (doc, index) = (e.document(), e.index());
     let mut current = None;
     for id in spelling::paras_in_order(e) {
-        if index.para(doc, id).is_some_and(|p| listed_heading(doc, p).is_some()) {
+        if index.para(doc, id).is_some_and(|p| listed_heading(doc, e.review(), p).is_some()) {
             current = Some(id);
         }
         if let Some(h) = under.get_mut(&id) {

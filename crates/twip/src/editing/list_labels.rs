@@ -1,17 +1,24 @@
 //! List number selection
 
 use crate::api::command::Command;
-use crate::docx::props::RunProps;
-use crate::docx::resolve::Resolver;
-use crate::docx::write::props::{Cx, Props, RPR};
+use crate::docx::char_props::RunDirect;
+use crate::docx::char_props::RunXml;
+use crate::docx::definitions::Definitions;
+use crate::docx::list_xml::ListXml;
+use crate::docx::list_xml::NumberingXml;
+use crate::docx::list_xml::{ListDefDirect, ListDirect};
+use crate::docx::write::props::Cx;
 use crate::docx::{Run, RunStyle};
 use crate::font::Fonts;
+use crate::format::{CharEdit, CharProps, LevelOverride, LevelProp, ListDefProp, ListLevel as Level, ListProp, OverrideProp, Set};
 use crate::layout::{ParaId, Unit};
+use std::rc::Rc;
 
-use super::Editor;
 use super::commands::Outcome;
 use super::position::{Place, Position};
 use super::selection::Selection;
+use super::{Editor, list_defs};
+use crate::document::paragraph::{ListId, ListRef};
 
 /// The numbers (or bullets) of one level of a list, selected by a click on one of them: character formatting goes to
 /// that level's number formatting, so every number of the level shows it.
@@ -77,14 +84,14 @@ impl Editor {
     pub fn list_label_selection(&self) -> Option<&ListLabelSelection> {
         let hold = self.list_label.as_ref().filter(|h| h.holds(&self.selection))?;
         let num = self.index.para(&self.doc, hold.label.para)?.style.num?;
-        (num == (hold.label.list, hold.label.level)).then_some(&hold.label)
+        (num == ListRef { list: ListId(hold.label.list), level: hold.label.level }).then_some(&hold.label)
     }
 
     /// Selects the numbers of `para`'s list at its level, as a click on its number does: the caret goes to the
     /// paragraph's start. False when it isn't numbered or bulleted.
     pub fn select_list_label(&mut self, para: ParaId) -> bool {
         let Some(p) = self.index.para(&self.doc, para) else { return false };
-        let Some((list, level)) = p.style.num.filter(|(n, _)| *n != 0) else { return false };
+        let Some(ListRef { list: ListId(list), level }) = p.style.num.filter(|ListRef { list: ListId(n), level: _ }| *n != 0) else { return false };
         if p.list.is_none() {
             return false;
         }
@@ -133,7 +140,10 @@ impl Editor {
                 let first = line.para().is_some_and(|p| !seen.contains(&p));
                 seen.extend(line.paras.iter().copied());
                 let (Some(para), Some((a, b)), true) = (line.para(), line.label, first) else { continue };
-                let numbered = self.index.para(&self.doc, para).is_some_and(|p| p.list.is_some() && p.style.num == Some((l.list, l.level)));
+                let numbered = self
+                    .index
+                    .para(&self.doc, para)
+                    .is_some_and(|p| p.list.is_some() && p.style.num == Some(ListRef { list: ListId(l.list), level: l.level }));
                 if numbered {
                     out.push((page, line.strip(a, b)));
                 }
@@ -172,9 +182,10 @@ impl Editor {
         if self.mode == super::Mode::ReadOnly {
             return self.refuse_read_only();
         }
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let Some(p) = self.index.para(&self.doc, para) else { return Outcome::unavailable("no such paragraph") };
-        let Some((list, level)) = p.style.num.filter(|(n, _)| *n != 0 && p.list.is_some()) else {
+        let Some(ListRef { list: ListId(list), level }) = p.style.num.filter(|ListRef { list: ListId(n), level: _ }| *n != 0 && p.list.is_some())
+        else {
             return Outcome::unavailable("the paragraph isn't numbered");
         };
         let story = self.index.para_slot(para).map_or(super::position::StoryId::Body, |s| self.index.story(s.container));
@@ -184,39 +195,52 @@ impl Editor {
         }
         let Some(p) = self.index.para(&self.doc, para) else { return Outcome::unavailable("no such paragraph") };
         let base = self.label_base(para, p, &res, &self.cx());
-        let ncx = res.numbering.cx();
+        let typed = res.typed();
+        let c = &*typed.cascade;
+        let ncx = typed.numbering.cx();
         let level = level.clamp(0, 8);
-        let Some(m) = res.numbering.nums.get(&list) else { return Outcome::unavailable("no such list") };
-        let own = m.level_overrides.contains_key(&level);
-        let Some(abstract_id) = res.numbering.abstract_of(list, &res.styles) else { return Outcome::unavailable("no such list") };
-        let abstract_raw = res.numbering.abstracts.get(&abstract_id).map(|a| a.raw.clone()).unwrap_or_default();
-        let raw = if own { m.raw.clone() } else { abstract_raw.clone() };
+        let Some(m) = c.lists.lists.get(&ListId(list)) else { return Outcome::unavailable("no such list") };
+        let own = m.override_of(level).and_then(|o| o.def.clone());
+        let Some(abstract_id) = c.abstract_of(ListId(list)) else { return Outcome::unavailable("no such list") };
         // A level other lists share stays theirs: this list's formatting goes in an override of its own.
-        let write_own = own || res.numbering.nums.keys().any(|&n| n != list && res.numbering.abstract_of(n, &res.styles) == Some(abstract_id));
-        let Some(lvl) = level_in(&raw, level, own, &ncx) else { return Outcome::unavailable("the list doesn't define that level") };
-        let mut lp = Props::parse(Some(&lvl), "lvl", &ncx);
-        let rpr = lp.get("rPr").map(str::to_string);
-        self.label_target = Some(Box::new(LabelTarget { cx: ncx.clone(), rpr: rpr.clone(), base }));
+        let write_own = own.is_some() || c.lists.lists.keys().any(|&n| n != ListId(list) && c.abstract_of(n) == Some(abstract_id));
+        let Some(lvl) = own.clone().or_else(|| c.lists.defs.get(&abstract_id)?.levels[level as usize].clone()) else {
+            return Outcome::unavailable("the list doesn't define that level");
+        };
+        let (Some(def), Some(num)) = (list_defs::def_holder(&typed, abstract_id), list_defs::list_holder(&typed, ListId(list))) else {
+            return Outcome::unavailable("no such list");
+        };
+        let start = (lvl.char != CharProps::default()).then(|| Rc::new(lvl.char.clone()));
+        self.label_target = Some(Box::new(LabelTarget { cx: ncx.clone(), direct: RunDirect::typed(start), set: Vec::new(), base }));
         for c in commands {
             if let Outcome::Refused(e) = self.execute(c, fonts) {
                 self.label_target = None;
                 return Outcome::Refused(e);
             }
         }
-        let now = self.label_target.take().and_then(|t| t.rpr);
-        if now == rpr {
+        let Some(t) = self.label_target.take() else { return Outcome::Unchanged("already so") };
+        let label = t.direct.props().map_or_else(CharProps::default, |p| (**p).clone());
+        let edited = labelled(&lvl, label, &t.set, level, write_own.then_some(&num).ok_or(&def));
+        let colours = c.colours;
+        let same = match &edited {
+            Edited::List(n) => n.xml(&colours, &ncx) == num.xml(&colours, &ncx),
+            Edited::Def(d) => d.xml(&colours, &ncx) == def.xml(&colours, &ncx),
+        };
+        if same {
             return Outcome::Unchanged("already so");
         }
-        match now {
-            Some(x) => lp.set("rPr", x),
-            None => lp.remove("rPr"),
-        }
-        let Some(lvl) = lp.xml() else { return Outcome::Unchanged("no level") };
-        let replaced = with_level(if write_own { &m.raw } else { &raw }, level, write_own, &lvl, &ncx);
         self.edit_numbering(
             "Font",
-            |n, _, colours| {
-                if write_own { n.set_num_xml(replaced, colours).map(|_| ()) } else { n.set_abstract_xml(replaced, colours).map(|_| ()) }
+            |n, _, _| {
+                match edited {
+                    Edited::List(m) => {
+                        n.set_list(m);
+                    }
+                    Edited::Def(d) => {
+                        n.set_list_def(d);
+                    }
+                }
+                Some(())
             },
             &[],
             false,
@@ -227,73 +251,84 @@ impl Editor {
     /// Runs a character formatting command's edit on the number formatting being formatted ([`LabelTarget`]).
     pub(super) fn format_label_part(
         &mut self,
-        edit: &dyn Fn(&mut Props, &str, &RunStyle),
-        settle: &dyn Fn(&mut Props, &str, &RunStyle) -> bool,
+        edit: &dyn Fn(&mut CharEdit, &RunStyle),
+        settle: &dyn Fn(&mut CharEdit, &RunStyle) -> bool,
     ) -> Outcome {
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let Some(t) = self.label_target.as_deref_mut() else { return Outcome::Unchanged("no list number") };
-        let w = t.cx.w.clone();
-        let mut p = Props::parse(t.rpr.as_deref(), "rPr", &t.cx);
-        edit(&mut p, &w, &t.run(&res, t.rpr.as_deref()));
-        let new = t.run(&res, p.xml().as_deref());
-        settle(&mut p, &w, &new);
-        p.reorder(RPR);
-        t.rpr = p.xml();
+        let run = t.run(&res);
+        let mut e = t.edit();
+        edit(&mut e, &run);
+        t.apply(e);
+        let new = t.run(&res);
+        let mut e = t.edit();
+        if settle(&mut e, &new) {
+            t.apply(e);
+        }
         Outcome::Moved
+    }
+}
+
+/// A list's definition or the list itself, as a label's formatting leaves it.
+pub(super) enum Edited {
+    /// The definition.
+    Def(ListDefDirect),
+    /// The list.
+    List(ListDirect),
+}
+
+/// Level `level` (`lvl`) with the label properties `label`, which an edit that set `set` left: in the list's override
+/// of it (`Ok`, one added where it has none) or in its definition (`Err`).
+pub(super) fn labelled(lvl: &Level, label: CharProps, set: &[Set], level: i64, to: Result<&ListDirect, &ListDefDirect>) -> Edited {
+    let mut l = lvl.clone();
+    l.char = label;
+    let l = Rc::new(l);
+    let chars = set.iter().map(|s| LevelProp::Char(*s));
+    match to {
+        Ok(num) => {
+            let mut n = (**num.get()).clone();
+            match n.overrides.binary_search_by_key(&level, |o| o.level) {
+                Ok(i) => n.overrides[i].def = Some(l),
+                Err(i) => n.overrides.insert(i, LevelOverride { level, start: None, def: Some(l), foreign: None }),
+            }
+            let set: Vec<ListProp> = chars.map(|p| ListProp::Override(level, OverrideProp::Level(p))).collect();
+            Edited::List(num.edited(n, &set))
+        }
+        Err(def) => {
+            let mut d = (**def.get()).clone();
+            d.levels[level as usize] = Some(l);
+            let set: Vec<ListDefProp> = chars.map(|p| ListDefProp::Level(level as u8, p)).collect();
+            Edited::Def(def.edited(d, &set))
+        }
     }
 }
 
 /// A list level's number formatting while formatting commands edit it.
 pub(super) struct LabelTarget {
-    /// The numbering part's names, which its `w:rPr` is written with.
+    /// The numbering part's names, which the level is written with.
     pub(super) cx: Cx,
-    /// The level's `w:rPr`, as the commands so far leave it.
-    rpr: Option<String>,
+    /// The level's label properties, as the commands so far leave them.
+    direct: RunDirect,
+    /// What the commands so far set, in order.
+    set: Vec<Set>,
     /// What the number is formatted over where it was clicked ([`Editor::label_base`]).
-    base: RunProps,
+    base: CharProps,
 }
 
 impl LabelTarget {
-    /// The number as it draws with `rpr` as its level's formatting.
-    fn run(&self, res: &Resolver, rpr: Option<&str>) -> Run {
-        let own = rpr.and_then(|x| self.cx.parse(x, |_, el| RunProps::parse(Some(el), &res.styles.colours))).unwrap_or_default();
-        let mut lp = self.base.clone();
-        lp.merge(&own);
-        res.run_style(&lp)
+    /// The number as it draws with the level's formatting as the commands so far leave it.
+    fn run(&self, res: &Definitions) -> Run {
+        crate::docx::run_xml::label(res, &self.base, self.direct.props().map(|p| &**p))
     }
-}
 
-/// Level `k`'s `w:lvl` in a `w:abstractNum`, or in a `w:num`'s `w:lvlOverride` (`over`).
-fn level_in(raw: &str, k: i64, over: bool, cx: &Cx) -> Option<String> {
-    let parent = Props::parse(Some(raw), if over { "num" } else { "abstractNum" }, cx);
-    let ilvl = |x: &str| cx.parse(x, |_, n| crate::docx::xml::attr(n, "ilvl").and_then(|v| v.parse::<i64>().ok())).flatten();
-    let (name, x) = parent.kids.iter().find(|(n, x)| n == if over { "lvlOverride" } else { "lvl" } && ilvl(x) == Some(k))?;
-    if name == "lvlOverride" { Props::parse(Some(x), "lvlOverride", cx).get("lvl").map(str::to_string) } else { Some(x.clone()) }
-}
+    /// An edit of the label properties as they are.
+    fn edit(&self) -> CharEdit {
+        CharEdit::new(self.direct.props().map_or_else(CharProps::default, |p| (**p).clone()))
+    }
 
-/// The `w:abstractNum` (or `w:num`, `over`) with level `k`'s `w:lvl` replaced by `lvl`; a `w:num` without an override
-/// of that level gets one, in level order.
-fn with_level(raw: &str, k: i64, over: bool, lvl: &str, cx: &Cx) -> String {
-    let mut parent = Props::parse(Some(raw), if over { "num" } else { "abstractNum" }, cx);
-    let ilvl = |x: &str| cx.parse(x, |_, n| crate::docx::xml::attr(n, "ilvl").and_then(|v| v.parse::<i64>().ok())).flatten();
-    let mut found = false;
-    for (name, x) in parent.kids.iter_mut() {
-        if ilvl(x) != Some(k) {
-            continue;
-        }
-        if name == "lvlOverride" && over {
-            let mut o = Props::parse(Some(x), "lvlOverride", cx);
-            o.set("lvl", lvl.to_string());
-            *x = o.xml().unwrap_or_default();
-            found = true;
-        } else if name == "lvl" && !over {
-            *x = lvl.to_string();
-        }
+    /// The label properties `e` leaves, with what it set.
+    fn apply(&mut self, e: CharEdit) {
+        self.set.extend_from_slice(&e.set);
+        self.direct = self.direct.edit(e);
     }
-    if over && !found {
-        let w = &cx.w;
-        let at = parent.kids.iter().position(|(n, x)| n == "lvlOverride" && ilvl(x) > Some(k)).unwrap_or(parent.kids.len());
-        parent.kids.insert(at, ("lvlOverride".to_string(), format!("<{w}lvlOverride {w}ilvl=\"{k}\">{lvl}</{w}lvlOverride>")));
-    }
-    parent.xml().unwrap_or_else(|| raw.to_string())
 }

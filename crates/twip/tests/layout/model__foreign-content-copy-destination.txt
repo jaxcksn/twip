@@ -1,0 +1,6 @@
+page 0 12240 15840
+  1440 1616 DESTINATION DOCUMENT
+  1440 2093 Body paste target: the main namespace is bound to x, and math, Word 2010 and drawing
+  1440 2331 namespaces are not declared.
+  1440 2808 Second paste target, after the first.
+  7794 864 Destination header: paste target

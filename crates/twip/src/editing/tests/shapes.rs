@@ -140,7 +140,7 @@ fn drag(e: &mut Editor, from: [f64; 2], to: [f64; 2], mods: Mods) {
 fn same_as_full(e: &mut Editor) {
     e.complete(fonts());
     let ours = crate::layout::dump::page_text(&e.snapshot(), e.document());
-    let fresh = crate::layout::dump::page_text(&crate::layout::layout(e.document(), fonts()), e.document());
+    let fresh = crate::layout::dump::page_text(&crate::layout::tests::layout(e.document(), fonts()), e.document());
     assert!(ours == fresh, "incremental layout differs from a full layout");
 }
 
@@ -222,7 +222,7 @@ fn typing_into_a_shape_gives_it_a_story_and_a_line_takes_none() {
     assert!(matches!(e.selection().focus().map(|p| p.story), Some(super::super::position::StoryId::TextBox(_))), "the caret is in the shape");
     assert!(matches!(shape_of(&e).sp().map(|s| &s.text), Some(crate::drawing::ShapeText::Story)));
     same_as_full(&mut e);
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let again = Editor::open(&bytes, fonts()).expect("reopens");
     assert_eq!(box_text(&again).as_deref(), Some("Hi"));
     let line = sp(0, 0, 200, 0, "line", "", "FF0000");
@@ -264,7 +264,7 @@ fn a_click_or_a_drag_inserts_a_shape_there() {
     assert_eq!(floats(&e).len(), 3);
     e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(floats(&e).len(), 2, "one undo step");
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let again = Editor::open(&bytes, fonts()).expect("reopens");
     assert_eq!(floats(&again).len(), 2);
     let style = shape_of(&again).sp().and_then(|s| s.style.clone()).expect("style references");
@@ -337,7 +337,7 @@ fn format_operations_change_the_selected_shapes_in_one_step_each() {
     e.arrange_object(Arrange::BehindText, fonts());
     assert!(shape_by_id(&e, a).behind);
     same_as_full(&mut e);
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let again = Editor::open(&bytes, fonts()).expect("reopens");
     let (s, t) = (shape_by_id(&again, floats(&again)[0]), shape_by_id(&e, a));
     assert_eq!((s.z, s.behind, s.shape.as_ref().map(|s| s.xfrm)), (t.z, t.behind, t.shape.as_ref().map(|s| s.xfrm)));
@@ -363,7 +363,7 @@ fn a_shape_goes_in_line_with_text_and_floats_again() {
     };
     assert_eq!((floats(&e).len(), inline_shapes(&e).len()), (0, 1));
     same_as_full(&mut e);
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut again = Editor::open(&bytes, fonts()).expect("reopens");
     let back = inline_shapes(&again);
     assert_eq!(back.len(), 1);
@@ -408,7 +408,7 @@ fn group_and_ungroup_keep_every_shape_where_it_is() {
     assert_eq!(shape_of(&e).group().map(|g| g.children.len()), Some(2));
     assert_eq!(drawn_boxes(&mut e), was, "grouped, every shape where it was");
     same_as_full(&mut e);
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut again = Editor::open(&bytes, fonts()).expect("reopens");
     assert_eq!(floats(&again).len(), 1);
     assert_eq!(drawn_boxes(&mut again), was);
@@ -467,7 +467,7 @@ fn dragging_a_group_child_moves_it_alone_and_grows_the_group() {
     let g = shape_of(&e);
     assert_eq!(g.xfrm.ext[1].0, 120 * crate::layout::tests::shapes::PT);
     same_as_full(&mut e);
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut again = Editor::open(&bytes, fonts()).expect("reopens");
     assert_eq!(drawn_boxes(&mut again), drawn_boxes(&mut e));
     e.execute(Command::Undo(Default::default()), fonts());
@@ -498,7 +498,7 @@ fn with_tracking_a_shape_inserted_or_deleted_is_a_revision() {
     assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");
     let runs = float_runs(&e);
     assert!(matches!(runs[..], [(_, true, false)]), "an insertion: {runs:?}");
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let again = Editor::open(&bytes, fonts()).expect("reopens");
     assert!(matches!(float_runs(&again)[..], [(_, true, false)]), "{:?}", float_runs(&again));
     e.execute(Command::RejectAllRevisions(Default::default()), fonts());
@@ -511,7 +511,7 @@ fn with_tracking_a_shape_inserted_or_deleted_is_a_revision() {
     click(&mut e, 150.0, 350.0);
     e.execute(Command::Delete(crate::api::command::DeleteOptions { direction: crate::api::value::Direction::Forward, unit: None }), fonts());
     assert!(matches!(float_runs(&e)[..], [(_, false, true)]), "{:?}", float_runs(&e));
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let again = Editor::open(&bytes, fonts()).expect("reopens");
     assert!(matches!(float_runs(&again)[..], [(_, false, true)]), "saved as a deletion: {:?}", float_runs(&again));
     e.execute(Command::AcceptAllRevisions(Default::default()), fonts());
@@ -575,7 +575,7 @@ fn an_inline_shape_lays_out_its_text_and_takes_typing() {
     let text = inline_text(&e).expect("the story");
     assert!(text.contains('X') && text.len() == 7, "{text}");
     same_as_full(&mut e);
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let again = Editor::open(&bytes, fonts()).expect("reopens");
     assert_eq!(inline_text(&again), Some(text));
 }
@@ -600,7 +600,7 @@ fn an_inline_shape_with_text_floats_and_goes_in_line_again_with_its_text() {
     assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");
     assert_eq!(inline_text(&e).as_deref(), Some("Inside"), "inline again with the text");
     same_as_full(&mut e);
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let again = Editor::open(&bytes, fonts()).expect("reopens");
     assert_eq!(inline_text(&again).as_deref(), Some("Inside"));
 }
@@ -650,7 +650,7 @@ fn linked_boxes_show_their_story_in_turn_and_take_typing_in_any_box() {
     let text = box_text(&e).expect("the story");
     assert!(text.contains("XP2") || text.contains("PX2"), "{text}");
     same_as_full(&mut e);
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let again = Editor::open(&bytes, fonts()).expect("reopens");
     assert_eq!(box_text(&again), Some(text));
     assert_eq!(page_lines(&again).iter().map(|l| l.0.clone()).collect::<Vec<_>>(), page_lines(&e).iter().map(|l| l.0.clone()).collect::<Vec<_>>());
@@ -750,7 +750,7 @@ fn a_relative_size_from_the_other_axis_is_refused() {
     use super::super::position::{Position, StoryId};
     use crate::api::command::{ObjectSize, RelativeSize, RelativeSizeReference};
     use crate::api::value::{NoneOr, ObjectWrap};
-    let data = super::open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let data = super::open("FX-OBJ.docx").document().images.last().map(|(_, d)| d.to_vec()).expect("an image");
     let mut e = Editor::open(&super::blank_body(r#"<w:p><w:r><w:t>text</w:t></w:r></w:p>"#), fonts()).expect("opens");
     let p = super::para_id(&e, 0);
     e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, p, crate::layout::Unit(0))));
@@ -829,7 +829,7 @@ fn break_link_leaves_the_boxes_after_it_a_chain_of_their_own_and_saves() {
     same_as_full(&mut e);
     let lines = page_lines(&e);
     assert!(!lines.iter().any(|l| l.0.starts_with('P') && l.1 > 250.0), "the story stops in the first box: {lines:?}");
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut again = Editor::open(&bytes, fonts()).expect("reopens");
     again.set_selection(Selection::Object(ObjectRef::Floating(FloatId(floats(&again)[1]))));
     assert_eq!(again.text_box_link().map(|l| (l.index, l.count)), Some((0, 2)), "the rest are a chain");
@@ -865,7 +865,7 @@ fn create_link_takes_a_click_on_an_empty_text_box_and_the_text_flows_into_it() {
     same_as_full(&mut e);
     let lines = page_lines(&e);
     assert!(lines.iter().any(|l| l.0.starts_with("P2") && l.1 > 250.0), "the text goes on in the second box: {lines:?}");
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let xml = crate::docx::package::read(&bytes, &[], "word/document.xml").expect("reads").expect("the main part");
     assert!(xml.contains(r#"<wps:txbx id="1">"#) && xml.contains(r#"<wps:linkedTxbx id="1" seq="1"/>"#), "{xml}");
     let mut again = Editor::open(&bytes, fonts()).expect("reopens");

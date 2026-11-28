@@ -44,7 +44,7 @@ pub struct CellBox {
     pub content_h: f64,
     pub align_h: f64,
     pub fixed_floats: Box<[u64]>,
-    pub v_align: String,
+    pub v_align: crate::docx::VerticalAlignment,
     pub v_merge: VMerge,
     pub col: usize,
     pub span: usize,
@@ -660,7 +660,7 @@ fn hidden_tail(t: &Table) -> bool {
 fn mark_only(p: &crate::docx::Paragraph) -> bool {
     p.inlines.iter().all(|i| match i {
         Inline::Text(t, r) => t.is_empty() || r.hidden,
-        Inline::Bookmark(..) | Inline::Opaque(..) | Inline::Range(..) => true,
+        Inline::Foreign(..) | Inline::FieldEdge { .. } | Inline::Range(..) => true,
         i => i.run().is_some_and(|r| r.hidden),
     })
 }

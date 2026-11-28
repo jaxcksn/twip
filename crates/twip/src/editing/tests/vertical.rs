@@ -698,7 +698,7 @@ fn a_float_dragged_in_a_tbrl_section_moves_with_the_pointer_and_anchors_to_the_l
 
 #[test]
 fn an_inline_picture_floated_in_a_tbrl_section_stays_where_it_was_drawn() {
-    let data = super::open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let data = super::open("FX-OBJ.docx").document().images.last().map(|(_, d)| d.to_vec()).expect("an image");
     let mut e = editor("<w:p><w:r><w:t>Body text here</w:t></w:r></w:p>");
     e.execute(
         crate::api::command::Command::SetSectionTextDirection(crate::api::command::SectionValue::here(crate::api::command::TextFlow::TbRl)),

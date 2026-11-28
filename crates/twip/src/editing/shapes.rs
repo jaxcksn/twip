@@ -7,6 +7,7 @@ use super::Editor;
 use super::selection::{ObjectRef, Selection};
 use super::snap::SnapLine;
 use super::view::ShapeFrame;
+use crate::docx::run_xml;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum ShapeHandle {
@@ -394,7 +395,7 @@ impl Editor {
     fn dragged_float(&self, d: &ShapeDrag) -> Option<crate::docx::Float> {
         let ObjectRef::Floating(f) = d.obj else { return None };
         let mut n = self.float_of(f)?.clone();
-        let compat = self.doc.settings.compat_mode;
+        let compat = self.doc.settings.policy.mode;
         let s = n.shape.as_deref_mut()?.at_mut(&d.child)?;
         match d.handle {
             ShapeHandle::Rotate => {
@@ -505,17 +506,17 @@ impl Editor {
         if r - l <= 0.0 || b - t <= 0.0 {
             return false;
         }
-        let Some(res) = self.doc.resolver.clone() else { return false };
-        let cx = self.cx();
-        let style = res.para_from_xml(Some(r#"<w:pPr><w:jc w:val="center"/></w:pPr>"#), None, &cx);
-        let mark = res.run_from_xml(&style.base, None, &cx);
+        let Some(res) = self.doc.definitions.clone() else { return false };
+        let props = crate::format::ParaProps { align: Some(crate::document::format::Jc::Center), ..Default::default() };
+        let style = crate::docx::para_xml::with(&res, crate::docx::para_props::ParaDirect::typed(std::rc::Rc::new(props)), None, None);
+        let mark = run_xml::plain(&res, &style.base);
         let pid = crate::docx::next_para_id();
         let para = crate::docx::Paragraph {
             style: std::rc::Rc::new(style.style),
             mark,
             list: None,
             inlines: Vec::new(),
-            src: None,
+            origin: crate::docx::Origin::NONE,
             id: pid,
             div: None,
             controls: Vec::new(),
@@ -614,14 +615,14 @@ impl Editor {
             alt: "".into(),
             lock_aspect: false,
             text_box: None,
-            h_relative: "column".into(),
+            h_relative: crate::docx::HorizontalRelation::Column,
             h_align: None,
             h_offset: twips(rect[0]),
-            v_relative: "paragraph".into(),
+            v_relative: crate::docx::VerticalRelation::Paragraph,
             v_align: None,
             v_offset: twips(rect[1]),
-            wrap: "none".into(),
-            wrap_text: "bothSides".into(),
+            wrap: crate::docx::FloatWrap::None,
+            wrap_text: crate::docx::WrapText::BothSides,
             dist: [0.0, 0.0, 9.0, 9.0],
             effect: [0.0; 4],
             poly: None,
@@ -631,9 +632,8 @@ impl Editor {
             layout_in_cell: true,
             order: usize::MAX / 2,
             z: self.front_z(),
-            src: None,
+            origin: crate::docx::Origin::NONE,
             locked: false,
-            frame_src: None,
             in_note: false,
             parts: Vec::new(),
             shape: Some(Box::new(Shape::new(kind, emu(rect[2]), emu(rect[3]), &name))),
@@ -898,7 +898,7 @@ impl Editor {
             return self.edit_inline("Rotate", |p| rotate_inline(p, deg), fonts);
         }
         let ids = self.selected_floats();
-        let compat = self.doc.settings.compat_mode;
+        let compat = self.doc.settings.policy.mode;
         self.edit_floats("Rotate", &ids, |n, path| rotate_to(n, path, deg, compat), fonts)
     }
 
@@ -1085,7 +1085,7 @@ impl Editor {
     fn group_floats(&mut self, ids: &[FloatId], label: &'static str, fonts: &crate::font::Fonts) -> super::commands::Outcome {
         use super::commands::Outcome;
         use crate::drawing::units::Emu;
-        use crate::drawing::{GroupShape, NonVisual, Shape, ShapeKind, Spans, Xfrm};
+        use crate::drawing::{GroupShape, NonVisual, Shape, ShapeKind, Xfrm};
         if ids.len() < 2 {
             return Outcome::unavailable("select two or more objects to group");
         }
@@ -1135,7 +1135,7 @@ impl Editor {
             nv: NonVisual { name: self.new_object_name("Group"), ..NonVisual::default() },
             xfrm: Xfrm { ext: [emu(gw), emu(gh)], ..Xfrm::default() },
             kind: ShapeKind::Group(GroupShape { child_off: [Emu(0), Emu(0)], child_ext: [emu(gw), emu(gh)], fill: None, children, canvas: false }),
-            spans: Spans::default(),
+            spans: crate::document::origin::Origin::NONE,
         };
         let g = crate::docx::Float {
             id: crate::docx::next_para_id(),
@@ -1148,8 +1148,7 @@ impl Editor {
             rot_swap: false,
             vml: false,
             relative: Default::default(),
-            src: None,
-            frame_src: None,
+            origin: crate::docx::Origin::NONE,
             in_note: false,
             z: members.iter().map(|(m, ..)| m.z).max().unwrap_or(first.z),
             order: usize::MAX / 2,
@@ -1169,7 +1168,7 @@ impl Editor {
         };
         let Some(anchor) = self.index.float_anchor(g) else { return Outcome::Unchanged("no anchor") };
         let Some((_, r)) = self.float_box(g, fonts) else { return Outcome::Unchanged("not laid out") };
-        let compat = self.doc.settings.compat_mode;
+        let compat = self.doc.settings.policy.mode;
         let emu = |v: f64| Emu((v * 12700.0).round() as i64);
         let Some(tree) = m.shape.as_deref() else { return Outcome::unavailable("not a group") };
         // The group's own box, unswapped about its laid-out centre
@@ -1212,8 +1211,7 @@ impl Editor {
                 rot_swap: false,
                 vml: false,
                 relative: Default::default(),
-                src: None,
-                frame_src: None,
+                origin: crate::docx::Origin::NONE,
                 in_note: false,
                 z: m.z,
                 order: usize::MAX / 2,
@@ -1257,7 +1255,7 @@ impl Editor {
                 let fill = match v.to_model(&mut |data| {
                     crate::docx::image::image_info(data).map(|_| {
                         images.push(data.to_vec());
-                        0
+                        crate::docx::ResourceId(0)
                     })
                 }) {
                     Ok(f) => f,
@@ -1441,20 +1439,19 @@ impl Editor {
                 });
                 let refs = sp.style.as_ref();
                 let fill = match &sp.fill {
-                    Some(f) => FillState::Explicit(FillValue::of(f, None, &[])),
+                    Some(f) => FillState::Explicit(FillValue::of(f, None, &Default::default())),
                     None => FillState::FromStyle(match refs.and_then(|r| style(&r.fill)) {
-                        Some((i, c)) => {
-                            style_entry(&theme.fills, Some(&theme.bg_fills), i).map_or(FillValue::None, |f| FillValue::of(f, c.as_ref(), &[]))
-                        }
+                        Some((i, c)) => style_entry(&theme.fills, Some(&theme.bg_fills), i)
+                            .map_or(FillValue::None, |f| FillValue::of(f, c.as_ref(), &Default::default())),
                         None => FillValue::None,
                     }),
                 };
                 let none = crate::drawing::paint::Line { fill: Some(crate::drawing::paint::Fill::None), ..Default::default() };
                 let line = match &sp.line {
-                    Some(l) => LineState::Explicit(LineValue::of(l, None, &[])),
+                    Some(l) => LineState::Explicit(LineValue::of(l, None, &Default::default())),
                     None => LineState::FromStyle(match refs.and_then(|r| style(&r.line)) {
-                        Some((i, c)) => LineValue::of(style_entry(&theme.lines, None, i).unwrap_or(&none), c.as_ref(), &[]),
-                        None => LineValue::of(&none, None, &[]),
+                        Some((i, c)) => LineValue::of(style_entry(&theme.lines, None, i).unwrap_or(&none), c.as_ref(), &Default::default()),
+                        None => LineValue::of(&none, None, &Default::default()),
                     }),
                 };
                 let effects = match &sp.effects {
@@ -1479,13 +1476,13 @@ impl Editor {
                 info.state = Some(ShapeState {
                     preset: p.geom.preset().map(ShapePreset),
                     adjust: p.geom.adjust_values(),
-                    fill: FillState::Explicit(FillValue::of(&crate::drawing::paint::Fill::Blip(p.blip.clone()), None, &[])),
+                    fill: FillState::Explicit(FillValue::of(&crate::drawing::paint::Fill::Blip(p.blip.clone()), None, &Default::default())),
                     line: match &p.line {
-                        Some(l) => LineState::Explicit(LineValue::of(l, None, &[])),
+                        Some(l) => LineState::Explicit(LineValue::of(l, None, &Default::default())),
                         None => LineState::FromStyle(LineValue::of(
                             &crate::drawing::paint::Line { fill: Some(crate::drawing::paint::Fill::None), ..Default::default() },
                             None,
-                            &[],
+                            &Default::default(),
                         )),
                     },
                     effects: p.effects.as_ref().map(|e| EffectsValue::of(e, None)).unwrap_or_default(),
@@ -1498,11 +1495,14 @@ impl Editor {
                 info.state = Some(ShapeState {
                     preset: None,
                     adjust: Vec::new(),
-                    fill: g.fill.as_ref().map_or(FillState::FromStyle(FillValue::None), |f| FillState::Explicit(FillValue::of(f, None, &[]))),
+                    fill: g
+                        .fill
+                        .as_ref()
+                        .map_or(FillState::FromStyle(FillValue::None), |f| FillState::Explicit(FillValue::of(f, None, &Default::default()))),
                     line: LineState::FromStyle(LineValue::of(
                         &crate::drawing::paint::Line { fill: Some(crate::drawing::paint::Fill::None), ..Default::default() },
                         None,
-                        &[],
+                        &Default::default(),
                     )),
                     effects: EffectsValue::default(),
                     text: None,

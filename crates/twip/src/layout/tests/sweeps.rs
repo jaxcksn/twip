@@ -4,28 +4,22 @@ use std::path::Path;
 
 use crate::docx::Document;
 use crate::layout::cache::LayoutCache;
+use crate::layout::dump;
 use crate::layout::ids::Revision;
-use crate::layout::{DocumentLayout, dump, layout, layout_with};
+use crate::layout::tests::{layout, layout_with};
 
 use super::{doc, fixture, fonts};
-
-fn toggle(d: &mut Document, name: &str) {
-    let c = &mut d.settings.compat;
-    if !c.remove(name) {
-        c.insert(name.to_string());
-    }
-}
 
 type Sweep = (&'static str, fn(&mut Document));
 
 fn sweeps() -> Vec<Sweep> {
     vec![
-        ("compat mode", |d| d.settings.compat_mode = if d.settings.compat_mode >= 15 { 14 } else { 15 }),
+        ("compat mode", |d| d.settings.policy.mode = if d.settings.policy.mode >= 15 { 14 } else { 15 }),
         ("default tab", |d| d.settings.default_tab += 18.0),
-        ("doNotExpandShiftReturn", |d| toggle(d, "doNotExpandShiftReturn")),
-        ("splitPgBreakAndParaMark", |d| toggle(d, "splitPgBreakAndParaMark")),
-        ("allowSpaceOfSameStyleInTable", |d| toggle(d, "allowSpaceOfSameStyleInTable")),
-        ("doNotUseHTMLParagraphAutoSpacing", |d| toggle(d, "doNotUseHTMLParagraphAutoSpacing")),
+        ("doNotExpandShiftReturn", |d| d.settings.policy.do_not_expand_shift_return ^= true),
+        ("splitPgBreakAndParaMark", |d| d.settings.policy.split_pg_break_and_para_mark ^= true),
+        ("allowSpaceOfSameStyleInTable", |d| d.settings.policy.allow_space_of_same_style_in_table ^= true),
+        ("doNotUseHTMLParagraphAutoSpacing", |d| d.settings.policy.do_not_use_html_paragraph_auto_spacing ^= true),
         ("even and odd headers", |d| d.settings.even_and_odd = !d.settings.even_and_odd),
         ("mirror margins", |d| {
             d.settings.mirror_margins = !d.settings.mirror_margins;
@@ -40,7 +34,12 @@ fn sweeps() -> Vec<Sweep> {
                 d.sections.iter().flat_map(|s| &s.blocks).find_map(|b| if let crate::docx::Block::Para(p) = b { Some(p.mark.clone()) } else { None });
             d.line_number_run = run.map(|r| std::rc::Rc::new(crate::docx::model::RunStyle { size: r.size + 3.0, ..(*r).clone() }));
             d.sections.iter_mut().for_each(|s| {
-                s.line_numbers = Some(crate::docx::model::LineNumbering { count_by: 1, start: 1, distance: 18.0, restart: "newPage".into() })
+                s.line_numbers = Some(crate::docx::model::LineNumbering {
+                    count_by: 1,
+                    start: 1,
+                    distance: 18.0,
+                    restart: crate::docx::LineNumberingRestart::NewPage,
+                })
             });
         }),
     ]
@@ -68,7 +67,7 @@ fn settings_sweeps_with_a_warm_cache() {
             change(&mut changed);
             let want = dump::page_text(&layout(&changed, &fonts), &changed);
             assert_eq!(dump::page_text(&layout_with(&changed, &fonts, &mut cache), &changed), want, "{name}: warm cache");
-            let mut dl = DocumentLayout::new();
+            let mut dl = crate::layout::tests::document_layout(&d);
             dl.edit(Revision(1), None);
             dl.complete(&d, &fonts);
             dl.edit(Revision(2), None);

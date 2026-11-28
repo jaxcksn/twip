@@ -3,6 +3,7 @@
 use super::{fonts, open};
 use crate::api::command::*;
 use crate::api::value::{Alignment, Points, StyleId};
+use crate::document::paragraph::{ListId, ListRef};
 use crate::docx::{Block, Paragraph};
 use crate::editing::Editor;
 use crate::editing::position::{Position, StoryId};
@@ -82,7 +83,7 @@ fn part(bytes: &[u8], name: &str) -> String {
 }
 
 fn saved(e: &Editor) -> Vec<u8> {
-    crate::docx::write::save(e.document()).expect("saves")
+    crate::docx::write::save(e.document(), e.docx()).expect("saves")
 }
 
 fn para(e: &Editor, n: usize) -> &Paragraph {
@@ -200,7 +201,10 @@ fn a_text_box_paragraph_takes_and_loses_a_bullet() {
     let (id, para) = text_box_para(&e);
     e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::TextBox(crate::layout::FloatId(id)), para, crate::layout::Unit(0))));
     e.execute(Command::SetList(Some(ListKind::Bullet)), fonts());
-    assert!(e.index().para(e.document(), para).unwrap().style.num.is_some_and(|(n, _)| n != 0), "setup: numPr was set");
+    assert!(
+        e.index().para(e.document(), para).unwrap().style.num.is_some_and(|ListRef { list: ListId(n), level: _ }| n != 0),
+        "setup: numPr was set"
+    );
     assert!(text_box_list(&e).is_some(), "the text box paragraph shows a bullet");
     e.execute(Command::SetList(None), fonts());
     assert!(text_box_list(&e).is_none(), "the bullet goes");
@@ -218,8 +222,8 @@ fn a_footnote_list_is_defined_and_restarted() {
     e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Footnote(fid), para, crate::layout::Unit(0))));
     e.execute(Command::SetList(Some(ListKind::Numbered)), fonts());
     let (_, before) = first(&e);
-    assert!(before.is_some_and(|(n, _)| n != 0), "setup: in a list");
-    let mut ls = e.list_levels(before.unwrap().0).unwrap();
+    assert!(before.is_some_and(|ListRef { list: ListId(n), level: _ }| n != 0), "setup: in a list");
+    let mut ls = e.list_levels(before.unwrap().list.0).unwrap();
     (ls[0].number_position, ls[0].text_indent) = (Points(36.0), Points(54.0));
     e.execute(Command::SetListDefinition(ListDefinitionChange { levels: ls, apply_to: ListApplyTo::WholeList, name: None }), fonts());
     let indent = |e: &Editor| match &e.document().footnotes[&fid][..] {
@@ -229,7 +233,7 @@ fn a_footnote_list_is_defined_and_restarted() {
     assert_eq!(indent(&e), 54.0, "the footnote item takes the new indent");
     e.execute(Command::RestartNumbering, fonts());
     let (_, after) = first(&e);
-    assert_ne!(after.map(|x| x.0), before.map(|x| x.0), "restart gives the footnote item a new numId");
+    assert_ne!(after.map(|x| x.list.0), before.map(|x| x.list.0), "restart gives the footnote item a new numId");
 }
 
 #[test]
@@ -278,12 +282,12 @@ fn turning_bullets_off_overrides_a_styles_numbering() {
     let styles = "<w:style w:type=\"paragraph\" w:styleId=\"ListBullet\"><w:name w:val=\"List Bullet\"/><w:basedOn w:val=\"Normal\"/><w:pPr><w:numPr><w:numId w:val=\"1\"/></w:numPr></w:pPr></w:style>";
     let nums = numbering(&(abstract_of(0, &levels("bullet", |_| "o".into())) + &num(1, 0)));
     let mut e = editor(&pkg(&p("One", "<w:pStyle w:val=\"ListBullet\"/>"), Some(&nums), styles));
-    assert_eq!(para(&e, 0).style.num, Some((1, 0)), "setup: numbered by its style");
+    assert_eq!(para(&e, 0).style.num, Some(ListRef { list: ListId(1), level: 0 }), "setup: numbered by its style");
     caret_in(&mut e, 0);
     e.execute(Command::SetListLevel(LevelChange::Increase), fonts());
-    assert_eq!(para(&e, 0).style.num, Some((1, 1)), "setup: a direct numPr");
+    assert_eq!(para(&e, 0).style.num, Some(ListRef { list: ListId(1), level: 1 }), "setup: a direct numPr");
     e.execute(Command::SetList(None), fonts());
-    assert!(para(&e, 0).style.num.is_none_or(|(n, _)| n == 0), "no longer in a list: {:?}", para(&e, 0).style.num);
+    assert!(para(&e, 0).style.num.is_none_or(|ListRef { list: ListId(n), level: _ }| n == 0), "no longer in a list: {:?}", para(&e, 0).style.num);
 }
 
 #[test]
@@ -412,7 +416,7 @@ fn duplicate_list_ids_are_saved_unchanged() {
 
 #[test]
 fn a_picture_bullet_definition_adds_its_image_once() {
-    let png = open("FX-CUSTOM-LISTS.docx").document().images[0].clone();
+    let png = open("FX-CUSTOM-LISTS.docx").document().images.iter().next().unwrap().1.to_vec();
     let nums = numbering(&(abstract_of(0, &levels("decimal", |i| format!("%{}.", i + 1))) + &num(1, 0)));
     let mut e = editor(&pkg(&np("A", 1, 0), Some(&nums), ""));
     let mut ls = e.list_levels(1).unwrap();
@@ -428,7 +432,7 @@ fn a_picture_bullet_definition_adds_its_image_once() {
     assert_eq!(e.document().images.len(), images + 1, "the picture, once");
     e.execute(Command::Undo(Default::default()), fonts());
     e.execute(Command::Undo(Default::default()), fonts());
-    assert!(e.document().resolver.as_ref().unwrap().numbering.pic_bullets.is_empty(), "undone");
+    assert!(e.document().definitions.as_ref().unwrap().typed().numbering.pictures.is_empty(), "undone");
 }
 
 #[test]
@@ -502,7 +506,7 @@ fn numbering_a_bullet_into_a_list_without_its_level_takes_the_lists_level() {
     assert_eq!((label(&e, 0), label(&e, 1)), ("1.".into(), "o".into()), "setup");
     caret_in(&mut e, 1);
     e.execute(Command::SetList(Some(ListKind::Numbered)), fonts());
-    assert_eq!(para(&e, 1).style.num, Some((1, 0)), "the list's own level");
+    assert_eq!(para(&e, 1).style.num, Some(ListRef { list: ListId(1), level: 0 }), "the list's own level");
     assert_eq!(label(&e, 1), "2.");
 }
 
@@ -529,11 +533,11 @@ fn increase_indent_moves_the_whole_list_only_from_its_first_item() {
         let was = left(&e);
         caret_in(&mut e, 1);
         e.execute(Command::IncreaseIndent, fonts());
-        assert_eq!(para_at(&e, 1).style.num, Some((1, 1)), "a later item goes a level down: {body}");
+        assert_eq!(para_at(&e, 1).style.num, Some(ListRef { list: ListId(1), level: 1 }), "a later item goes a level down: {body}");
         assert_eq!(left(&e), was, "the list stays");
         caret_in(&mut e, 0);
         e.execute(Command::IncreaseIndent, fonts());
-        assert_eq!((para_at(&e, 0).style.num, left(&e)), (Some((1, 0)), was + 36.0), "the first item moves the list");
+        assert_eq!((para_at(&e, 0).style.num, left(&e)), (Some(ListRef { list: ListId(1), level: 0 }), was + 36.0), "the first item moves the list");
     }
 }
 
@@ -918,6 +922,25 @@ fn formatting_a_number_of_a_shared_definition_stays_with_its_list() {
     assert!(!part[..at].contains("<w:b/>"), "the shared definition does not: {part}");
     let at6 = part.find("<w:num w:numId=\"6\"").expect("list 6");
     assert!(!part[at6..].contains("lvlOverride"), "{part}");
+}
+
+#[test]
+fn formatting_a_number_keeps_its_levels_formatting_in_other_namespaces() {
+    const W14: &str = "http://schemas.microsoft.com/office/word/2010/wordml";
+    let own = r#"<w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol" w:hint="default"/><w14:ligatures w14:val="standard"/></w:rPr></w:lvl>"#;
+    let lvls = levels("decimal", |i| format!("%{}.", i + 1)).replacen("</w:lvl>", own, 1);
+    let nums = numbering(&(abstract_of(2, &lvls) + &num(5, 2))).replace("<w:numbering ", &format!("<w:numbering xmlns:w14=\"{W14}\" "));
+    let mut e = editor(&pkg(&np("A", 5, 0), Some(&nums), ""));
+    let para = super::para_id(&e, 0);
+    let o = e.format_list_label(para, vec![Command::SetBold(true)], fonts());
+    assert!(matches!(o, crate::editing::commands::Outcome::Changed(_)), "{o:?}");
+    let part = part(&saved(&e), "word/numbering.xml");
+    let at = part.find("<w:rPr>").expect("the level's run properties");
+    let rpr = &part[at..at + part[at..].find("</w:rPr>").expect("closed") + 8];
+    assert_eq!(
+        rpr,
+        r#"<w:rPr><w:rFonts w:ascii="Symbol" w:hAnsi="Symbol" w:hint="default"/><w:b/><w:bCs/><w14:ligatures w14:val="standard"/></w:rPr>"#
+    );
 }
 
 #[test]

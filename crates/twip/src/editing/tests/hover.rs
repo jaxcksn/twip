@@ -297,7 +297,7 @@ fn a_note_separator_set_in_a_document_without_notes_is_saved() {
     for mut e in docs {
         assert!(e.document().footnotes.is_empty(), "no footnotes");
         assert!(matches!(e.set_note_separator(NoteKind::Foot, S::Notice, Some("Continued"), fonts()), crate::editing::Outcome::Changed(_)));
-        let saved = crate::docx::write::save(e.document()).expect("saves");
+        let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
         let again = Editor::open(&saved, fonts()).expect("reopens");
         assert_eq!(again.note_separator(NoteKind::Foot, S::Notice).map(|s| s.text), Some("Continued".into()), "saved");
         assert_eq!(again.note_separator(NoteKind::End, S::Notice), None, "no endnote part's notice");
@@ -333,7 +333,7 @@ fn note_separators_are_set_read_back_saved_and_reset() {
     assert_eq!(e.history().undo_depth(), depth + 2);
     assert_eq!(sep(&e, S::Separator), Some(("Notes".into(), false)));
     e.complete(fonts());
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut again = Editor::open(&saved, fonts()).expect("reopens");
     assert_eq!(sep(&again, S::Separator), Some(("Notes".into(), false)), "saved");
     assert_eq!(sep(&again, S::Notice), Some(("Continued on the next page".into(), false)), "the new notice listed in the settings");
@@ -344,7 +344,7 @@ fn note_separators_are_set_read_back_saved_and_reset() {
         matches!(again.set_note_separator(NoteKind::Foot, S::Separator, None, fonts()), crate::editing::Outcome::Unchanged(_)),
         "Word's line again"
     );
-    let twice = Editor::open(&crate::docx::write::save(again.document()).expect("saves"), fonts()).expect("reopens");
+    let twice = Editor::open(&crate::docx::write::save(again.document(), again.docx()).expect("saves"), fonts()).expect("reopens");
     assert_eq!((sep(&twice, S::Separator), sep(&twice, S::Notice)), (Some((String::new(), true)), None), "reset");
     e.undo_many(true, 2, fonts());
     assert_eq!((sep(&e, S::Separator), sep(&e, S::Notice)), (Some((String::new(), true)), None), "undone");
@@ -382,7 +382,7 @@ fn a_separator_edit_updates_the_story_the_reader_uses() {
     let text = |e: &Editor| e.note_separator(NoteKind::Foot, S::Separator).map(|s| s.text);
     assert_eq!(text(&e), Some("Listed".into()));
     assert!(matches!(e.set_note_separator(NoteKind::Foot, S::Separator, Some("New"), fonts()), crate::editing::Outcome::Changed(_)));
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     assert_eq!(text(&Editor::open(&saved, fonts()).expect("reopens")), Some("New".into()), "the edit survives");
 }
 
@@ -393,7 +393,7 @@ fn a_separator_reset_removes_every_listed_story_of_the_type() {
     let mut e = separator_doc(&foot, r#"<w:footnotePr><w:footnote w:id="-1"/><w:footnote w:id="-3"/></w:footnotePr>"#);
     assert!(matches!(e.set_note_separator(NoteKind::Foot, S::Notice, None, fonts()), crate::editing::Outcome::Unchanged(_)));
     assert!(matches!(e.set_note_separator(NoteKind::Foot, S::Separator, None, fonts()), crate::editing::Outcome::Changed(_)));
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let again = Editor::open(&saved, fonts()).expect("reopens");
     assert_eq!(again.note_separator(NoteKind::Foot, S::Separator).map(|s| (s.text, s.builtin)), Some((String::new(), true)));
     // Neither old story is in the notes part, and the settings list only what's there
@@ -431,7 +431,7 @@ fn a_separator_edit_keeps_the_note_properties_namespace_declarations() {
     let pr = r#"<w:footnotePr xmlns:p="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><p:numFmt p:val="upperRoman"/></w:footnotePr>"#;
     let mut e = separator_doc(&foot, pr);
     assert!(matches!(e.set_note_separator(NoteKind::Foot, S::Separator, Some("New"), fonts()), crate::editing::Outcome::Changed(_)));
-    let saved = crate::docx::write::save(e.document()).expect("saves a settings part with a bound prefix");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves a settings part with a bound prefix");
     let again = Editor::open(&saved, fonts()).expect("reopens");
     assert_eq!(again.note_separator(NoteKind::Foot, S::Separator).map(|s| s.text), Some("New".into()));
     let settings = part(&saved, "word/settings.xml");
@@ -491,7 +491,7 @@ fn a_new_separator_takes_a_free_id_beside_the_least_one() {
     let foot = format!("{}<w:footnote w:id=\"{}\"><w:p/></w:footnote>", separator_note(-1, "Line"), i64::MIN);
     let mut e = separator_doc(&foot, r#"<w:footnotePr><w:footnote w:id="-1"/></w:footnotePr>"#);
     assert!(matches!(e.set_note_separator(NoteKind::Foot, S::Notice, Some("Continued"), fonts()), crate::editing::Outcome::Changed(_)));
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let foot = crate::docx::package::read(&saved, &[], "word/footnotes.xml").expect("reads").expect("the notes");
     assert!(foot.contains(r#"w:type="continuationNotice" w:id="-2""#), "{foot}");
     let again = Editor::open(&saved, fonts()).expect("reopens");
@@ -507,7 +507,7 @@ fn a_separator_listed_in_default_namespace_settings_is_read_back() {
     let parts = [("footnotes.xml", "footnotes", "footnotes", foot.as_str()), ("settings.xml", "settings", "settings", settings)];
     let mut e = Editor::open(&super::empty_stories::build("<w:p><w:r><w:t>Text</w:t></w:r></w:p>", "", &parts), fonts()).expect("opens");
     assert!(matches!(e.set_note_separator(NoteKind::Foot, S::Notice, Some("Continued"), fonts()), crate::editing::Outcome::Changed(_)));
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let xml = crate::docx::package::read(&saved, &[], "word/settings.xml").expect("reads").expect("the settings");
     let d = roxmltree::Document::parse(&xml).expect("well-formed");
     let w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";

@@ -163,8 +163,11 @@ impl Editor {
 
     /// The theme's heading and body font families.
     pub fn theme_fonts(&self) -> ThemeFonts {
-        match &self.doc.resolver {
-            Some(r) => ThemeFonts { heading: r.theme.major.clone(), body: r.theme.minor.clone() },
+        match &self.doc.definitions {
+            Some(r) => {
+                let c = r.cascade();
+                ThemeFonts { heading: c.theme.major.clone(), body: c.theme.minor.clone() }
+            }
             None => ThemeFonts::default(),
         }
     }

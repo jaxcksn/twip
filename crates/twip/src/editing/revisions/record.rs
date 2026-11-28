@@ -1,5 +1,6 @@
 //! Revision recording
 
+use crate::docx::table_props::PreviousDirect;
 use std::collections::{HashMap, HashSet};
 use std::mem::Discriminant;
 use std::ops::Range;
@@ -224,11 +225,11 @@ impl Recording {
         } else if !record || !self.track_formatting || same_look(old, new) {
             old.rev.fmt.clone()
         } else {
-            let (previous, previous_raw) = match &old.rev.fmt {
-                Some(f) => (f.previous.clone(), f.previous_raw.clone()),
-                None => (Rc::new(RunStyle { rev: RunRevisions::default(), ..(**old).clone() }), old.direct.clone()),
+            let previous = match &old.rev.fmt {
+                Some(f) => f.previous.clone(),
+                None => Rc::new(RunStyle { rev: RunRevisions::default(), ..(**old).clone() }),
             };
-            (!same_look(&previous, new)).then(|| Rc::new(FormatChange { mark: self.fmt_mark(ids), previous, previous_raw }))
+            (!same_look(&previous, new)).then(|| Rc::new(FormatChange { mark: self.fmt_mark(ids), previous }))
         };
         let rev = RunRevisions { ins: old.rev.ins.clone(), del: old.rev.del.clone(), fmt };
         let n = if new.rev == rev { new.clone() } else { with_rev(new, rev) };
@@ -243,33 +244,33 @@ impl Recording {
         let change = if !self.track_formatting || same_para(old, &new) {
             old.change.clone()
         } else {
-            let (previous, previous_raw) = match &old.change {
-                Some(c) => (c.previous.clone(), c.previous_raw.clone()),
-                None => (Rc::new(ParaStyle { change: None, ..(**old).clone() }), old.direct.clone()),
+            let (previous, properties) = match &old.change {
+                Some(c) => (c.previous.clone(), c.properties),
+                None => (Rc::new(ParaStyle { change: None, ..(**old).clone() }), true),
             };
             (!same_para(&previous, &new))
-                .then(|| Rc::new(ParaChange { mark: self.fmt_mark(ids), previous, previous_raw, numbering_change: Raw::default() }))
+                .then(|| Rc::new(ParaChange { mark: self.fmt_mark(ids), previous, properties, numbering_change: Raw::default() }))
         };
         if new.change == change { new } else { Rc::new(ParaStyle { change, ..(*new).clone() }) }
     }
 
     fn section_change(&mut self, s: &Section, page: &SectionPage, ids: &mut IdCounter) -> Option<Rc<SectionChange>> {
-        if *page == s.page() || !self.track_formatting {
+        if crate::docx::page_borders::same_page(page, &s.page()) || !self.track_formatting {
             return s.change.clone();
         }
         let (previous, previous_raw) = match &s.change {
             Some(c) => (c.previous.clone(), c.previous_raw.clone()),
             None => (s.page(), Raw::default()),
         };
-        (previous != *page).then(|| Rc::new(SectionChange { mark: self.fmt_mark(ids), previous, previous_raw }))
+        (!crate::docx::page_borders::same_page(&previous, page)).then(|| Rc::new(SectionChange { mark: self.fmt_mark(ids), previous, previous_raw }))
     }
 
     // Inlines and blocks
 
     /// Field edge `o` deleted with the whole field a tracked deletion takes: `None` when it is the author's own
     /// insertion, which goes.
-    pub(in crate::editing) fn delete_edge(&mut self, o: &Rc<crate::docx::Opaque>, ids: &mut IdCounter) -> Option<Inline> {
-        self.del_inline(&Inline::Opaque(o.clone()), true, ids, &mut Vec::new())
+    pub(in crate::editing) fn delete_edge(&mut self, edge: &Rc<crate::docx::Edge>, run: &Run, ids: &mut IdCounter) -> Option<Inline> {
+        self.del_inline(&Inline::FieldEdge { edge: edge.clone(), run: run.clone() }, true, ids, &mut Vec::new())
     }
 
     fn ins_inline(&mut self, i: Inline, ids: &mut IdCounter) -> Inline {
@@ -300,7 +301,7 @@ impl Recording {
                 if self.track_formatting && t.change.is_none() {
                     t.change = Some(Rc::new(TableChange {
                         mark: self.fmt_mark(ids),
-                        previous_raw: t.direct.clone(),
+                        previous_direct: PreviousDirect::Table(t.direct.clone()),
                         previous: Some(PreviousProps::of_table(&t)),
                     }));
                 }
@@ -359,7 +360,7 @@ impl Recording {
                 if self.track_formatting && n.change.is_none() {
                     n.change = Some(Rc::new(TableChange {
                         mark: self.fmt_mark(ids),
-                        previous_raw: t.direct.clone(),
+                        previous_direct: PreviousDirect::Table(t.direct.clone()),
                         previous: Some(PreviousProps::of_table(t)),
                     }));
                 }
@@ -428,7 +429,7 @@ impl Recording {
             at = e;
             let inside = if n == 0 { s > a && s < b } else { s < b && e > a };
             // A field's edges go only with the whole field ([`Recording::delete_edge`]).
-            let Some(r) = run(i).filter(|_| inside && !matches!(i, Inline::Opaque(_))) else {
+            let Some(r) = run(i).filter(|_| inside && !matches!(i, Inline::FieldEdge { .. })) else {
                 push(&mut inlines, i.clone());
                 continue;
             };
@@ -659,7 +660,7 @@ impl Recording {
         let old = idx.blocks(doc, container).and_then(|b| b.get(range.clone()));
         let Some(old) = old.filter(|o| !o.is_empty()) else {
             // Copies of blocks still indexed where they stay deleted (a removed frame's paragraphs)
-            let with = with.into_iter().map(|b| if indexed(idx, &b) { super::super::clipboard::fresh(&b) } else { b }).collect();
+            let with = with.into_iter().map(|b| if indexed(idx, &b) { b.fresh_identity() } else { b }).collect();
             let with = self.ins_blocks(with, ids);
             return vec![Step::Blocks { container, range, with }];
         };
@@ -695,7 +696,7 @@ impl Recording {
         let added = |n: &Row| {
             let mut r = n.clone();
             if in_place {
-                r.cells.iter_mut().for_each(|c| c.blocks = c.blocks.iter().map(super::super::clipboard::fresh).collect());
+                r.cells.iter_mut().for_each(|c| c.blocks = c.blocks.iter().map(Block::fresh_identity).collect());
             }
             r
         };
@@ -797,10 +798,14 @@ impl Recording {
         if retain {
             (r.grid_before, r.grid_after, r.w_before, r.w_after) = (o.grid_before, o.grid_after, o.w_before, o.w_after);
         }
-        let props = (o.height.clone(), o.cant_split, o.header) != (r.height.clone(), r.cant_split, r.header);
+        let props = (o.height, o.cant_split, o.header) != (r.height, r.cant_split, r.header);
         if props && self.track_formatting && r.rev.change.is_none() && !self.new_here_row(o) {
-            let previous = PreviousProps::Row { height: o.height.clone(), cant_split: o.cant_split, header: o.header };
-            r.rev.change = Some(Rc::new(TableChange { mark: self.fmt_mark(ids), previous_raw: o.direct.clone(), previous: Some(previous) }));
+            let previous = PreviousProps::Row { height: o.height, cant_split: o.cant_split, header: o.header };
+            r.rev.change = Some(Rc::new(TableChange {
+                mark: self.fmt_mark(ids),
+                previous_direct: PreviousDirect::Row(o.direct.clone()),
+                previous: Some(previous),
+            }));
         }
         let skips = (o.grid_before, o.grid_after, o.w_before, o.w_after) != (r.grid_before, r.grid_after, r.w_before, r.w_after);
         if o.cells.len() != n.cells.len() {
@@ -846,11 +851,15 @@ impl Recording {
                     borders: b,
                     shading: oc.shading,
                     margins: oc.margins,
-                    v_align: oc.v_align.clone(),
+                    v_align: oc.v_align,
                     text_direction: oc.text_direction.clone(),
                     no_wrap: oc.no_wrap,
                 };
-                c.rev.change = Some(Rc::new(TableChange { mark: self.fmt_mark(ids), previous_raw: oc.direct.clone(), previous: Some(previous) }));
+                c.rev.change = Some(Rc::new(TableChange {
+                    mark: self.fmt_mark(ids),
+                    previous_direct: PreviousDirect::Cell(oc.direct.clone()),
+                    previous: Some(previous),
+                }));
             }
             if c.v_merge != oc.v_merge && self.track_formatting && c.rev.structural.is_none() && !fresh {
                 let kind = CellMarkKind::Merge { v_merge: Some(c.v_merge), v_merge_orig: Some(oc.v_merge) };
@@ -899,7 +908,7 @@ impl Recording {
                 kept
             }
             _ => {
-                let fresh: Vec<Block> = new.iter().map(super::super::clipboard::fresh).collect();
+                let fresh: Vec<Block> = new.iter().map(Block::fresh_identity).collect();
                 let mut out = self.ins_blocks(fresh, ids);
                 out.extend(kept);
                 out
@@ -916,8 +925,11 @@ impl Recording {
         }
         let mut n = t.clone();
         if change {
-            n.change =
-                Some(Rc::new(TableChange { mark: self.fmt_mark(ids), previous_raw: t.direct.clone(), previous: Some(PreviousProps::of_table(t)) }));
+            n.change = Some(Rc::new(TableChange {
+                mark: self.fmt_mark(ids),
+                previous_direct: PreviousDirect::Table(t.direct.clone()),
+                previous: Some(PreviousProps::of_table(t)),
+            }));
         }
         if grid {
             n.grid_change = Some(Rc::new(GridChange { mark: self.fmt_mark(ids), previous: t.grid.clone() }));
@@ -960,7 +972,7 @@ pub fn all_deleted(p: &Paragraph, a: Unit, b: Unit) -> bool {
 fn run(i: &Inline) -> Option<&Run> {
     match i {
         Inline::CommentRef { .. } | Inline::Separator { .. } => None,
-        Inline::Opaque(o) => o.field.as_ref().and(o.run.as_ref()),
+        Inline::FieldEdge { run, .. } => Some(run),
         _ => i.run(),
     }
 }
@@ -974,11 +986,11 @@ fn with_rev(r: &Run, rev: RunRevisions) -> Run {
 }
 
 fn same_look(a: &RunStyle, b: &RunStyle) -> bool {
-    RunStyle { rev: RunRevisions::default(), ..a.clone() } == RunStyle { rev: RunRevisions::default(), ..b.clone() }
+    RunStyle { rev: RunRevisions::default(), ..a.clone() }.layout_eq(&RunStyle { rev: RunRevisions::default(), ..b.clone() })
 }
 
 fn same_para(a: &ParaStyle, b: &ParaStyle) -> bool {
-    ParaStyle { change: None, ..a.clone() } == ParaStyle { change: None, ..b.clone() }
+    ParaStyle { change: None, ..a.clone() }.layout_eq(&ParaStyle { change: None, ..b.clone() })
 }
 
 fn push(out: &mut Vec<Inline>, i: Inline) {
@@ -1112,6 +1124,7 @@ fn note(doc: &Document, kind: NoteKind, id: i64) -> Option<&Vec<Block>> {
 #[cfg(test)]
 mod tests {
     use crate::api::value::{Alignment, ObjectWrap};
+    use crate::docx::definitions::DefinitionsXml;
     use crate::docx::{Block, Inline, Paragraph, Table, VMerge};
     use crate::editing::Editor;
     use crate::editing::commands::{Command, Dir, Outcome};
@@ -1167,7 +1180,7 @@ mod tests {
         let mut e = tracked(&blank_with("Alpha beta."));
         select(&mut e, 6, 6);
         e.execute(Command::InsertText("new ".into()), fonts());
-        let saved = crate::docx::write::save(e.document()).expect("saves");
+        let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
         let mut e = tracked(&saved);
         assert_eq!(revised(&e), 1, "the insertion is read back");
         select(&mut e, 6, 10);
@@ -1180,18 +1193,18 @@ mod tests {
         let mut e = tracked(&blank_with("Alpha beta."));
         let before = e.document().sections[0].page();
         e.execute(Command::SetOrientation(crate::api::command::SectionValue::here(crate::api::value::Orientation::Landscape)), fonts());
-        let saved = crate::docx::write::save(e.document()).expect("saves");
+        let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
         let read = crate::docx::read(&saved).expect("reads back");
         let c = read.sections[0].change.as_ref().expect("the change is saved");
-        assert_eq!((&c.previous, read.sections[0].page_w > read.sections[0].page_h), (&before, true));
+        assert!(crate::docx::page_borders::same_page(&c.previous, &before) && read.sections[0].page_w > read.sections[0].page_h, "{c:?}");
         let earlier = c.previous_raw.0.as_deref().expect("the earlier section");
         assert!(earlier.contains("cols") && !earlier.contains("headerReference"), "the section as read, its page earlier: {earlier}");
         let mut e = tracked(&saved);
         e.execute(Command::RejectAllRevisions(Default::default()), fonts());
-        assert!(e.document().sections[0].change.is_none() && e.document().sections[0].page() == before);
-        let saved = crate::docx::write::save(e.document()).expect("saves");
+        assert!(e.document().sections[0].change.is_none() && crate::docx::page_borders::same_page(&e.document().sections[0].page(), &before));
+        let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
         let read = crate::docx::read(&saved).expect("reads back");
-        assert!(read.sections[0].change.is_none() && read.sections[0].page() == before);
+        assert!(read.sections[0].change.is_none() && crate::docx::page_borders::same_page(&read.sections[0].page(), &before));
     }
 
     #[test]
@@ -1280,7 +1293,7 @@ mod tests {
     fn editing_a_style_while_tracking_records_no_revision() {
         let mut e = open("FX-STYLES.docx");
         e.complete(fonts());
-        let h1 = e.document().resolver.as_ref().expect("styles").styles.get("Heading1").expect("Heading 1").raw.clone();
+        let h1 = e.document().definitions.as_ref().expect("styles").style_xml("Heading1").expect("Heading 1");
         let bigger = h1.replace("<w:sz w:val=\"32\"/>", "<w:sz w:val=\"40\"/>").replace("<w:b/>", "<w:b/><w:color w:val=\"C00000\"/>");
         assert_ne!(bigger, h1, "the style changes");
         e.set_author("Author A", None);
@@ -1412,7 +1425,8 @@ mod tests {
         assert_eq!(kinds(&e), ["TableProperty"]);
         e.execute(Command::RejectAllRevisions(Default::default()), fonts());
         let now = &first_table(&e).rows[0].cells[0];
-        assert_eq!((now.shading, &now.direct), (was.shading, &was.direct));
+        assert_eq!(now.shading, was.shading);
+        assert!(now.direct.authored_eq(&was.direct), "{:?} against {:?}", now.direct, was.direct);
     }
 
     #[test]

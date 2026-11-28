@@ -1,8 +1,12 @@
 //! Formatting properties
 
-use std::rc::Rc;
-
 use roxmltree::Node;
+
+pub use crate::document::format::{
+    Border, Emphasis, FramePr, Hatch, Jc, Leader, LineRule, Look, ShadingPattern, Shd, Stripe, Tab, TabKind, TableAnchor, TablePos, ThemeColours,
+    VertAlign, Width,
+};
+pub use crate::document::line::{ArtBorder, BorderStyle};
 
 use super::xml::*;
 
@@ -42,13 +46,6 @@ pub mod toggle {
     ];
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum VertAlign {
-    Baseline,
-    Superscript,
-    Subscript,
-}
-
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RunProps {
     pub ascii: Option<FontRef>,
@@ -71,7 +68,7 @@ pub struct RunProps {
     pub dstrike: Option<bool>,
     /// `w:noProof`.
     pub no_proof: Option<bool>,
-    pub underline: Option<String>,
+    pub underline: Option<super::model::Underline>,
     /// `w:u`'s colour; `Some(None)` = the text's.
     pub underline_color: Option<Option<u32>>,
     /// The theme colour `underline_color` is, set with it.
@@ -101,8 +98,8 @@ pub struct RunProps {
     pub num_spacing: Option<u32>,
     /// `w14:stylisticSets`: bit n − 1 for set n.
     pub style_sets: Option<u32>,
-    /// `w:em`: the emphasis mark ("dot", "comma", "circle", "underDot"; "none").
-    pub em: Option<String>,
+    /// `w:em`: the emphasis mark.
+    pub em: Option<Emphasis>,
     pub lang: Option<String>,
     /// `w:lang w:eastAsia`.
     pub lang_east_asia: Option<String>,
@@ -202,12 +199,12 @@ impl RunProps {
                 "dstrike" => p.dstrike = Some(on_off(e)),
                 "noProof" => p.no_proof = Some(on_off(e)),
                 "u" => {
-                    p.underline = Some(val(e).unwrap_or("single").to_string());
-                    p.underline_color = Some(tc.colour(e, "color", "themeColor", "themeTint", "themeShade"));
+                    p.underline = Some(val(e).map_or(super::model::Underline::Single, super::line_style::underline));
+                    p.underline_color = Some(colour(tc, e, "color", "themeColor", "themeTint", "themeShade"));
                     p.underline_color_theme = theme_ref(e, "themeColor", "themeTint", "themeShade");
                 }
                 "color" => {
-                    p.color = Some(tc.colour(e, "val", "themeColor", "themeTint", "themeShade"));
+                    p.color = Some(colour(tc, e, "val", "themeColor", "themeTint", "themeShade"));
                     p.color_theme = theme_ref(e, "themeColor", "themeTint", "themeShade");
                 }
                 "highlight" => {
@@ -218,10 +215,10 @@ impl RunProps {
                 }
                 "shd" => {
                     p.shading = Some(shading_fill(e, tc));
-                    p.shd = Some(Shd::parse(e, tc));
+                    p.shd = Some(shd(e, tc));
                 }
-                "bdr" => p.border = Some(Border::parse(e, tc)),
-                "em" => p.em = Some(val(e).unwrap_or("none").to_string()),
+                "bdr" => p.border = Some(border(e, tc)),
+                "em" => p.em = Some(val(e).map_or(Emphasis::None, super::line_style::emphasis)),
                 "vertAlign" => {
                     p.vert_align = Some(match val(e) {
                         Some("superscript") => VertAlign::Superscript,
@@ -346,14 +343,14 @@ impl RunProps {
 /// Reads a Word 2010 text effect element (`w14:textFill`, `w14:textOutline`, `w14:shadow`, `w14:glow`,
 /// `w14:reflection`) into `t`, with DrawingML's readers in the `w14` namespace.
 fn read_text_effect(e: Node, t: &mut super::model::TextEffects) {
-    use crate::drawing::colour::Ns;
-    use crate::drawing::paint::{Fill, Glow, Line, OuterShadow, Reflection};
+    use crate::docx::drawing::colour::Ns;
+    use crate::docx::drawing::paint::{child_fill_in, glow, line_in, outer_shadow, reflection};
     match e.tag_name().name() {
-        "textFill" => t.fill = Fill::child_of_in(e, Ns::W14, &mut |_| None).or(t.fill.take()),
-        "textOutline" => t.outline = Some(Line::parse_in(e, Ns::W14, &mut |_| None)),
-        "shadow" => t.shadow = Some(OuterShadow::parse(e, Ns::W14)),
-        "glow" => t.glow = Some(Glow::parse(e, Ns::W14)),
-        "reflection" => t.reflection = Some(Reflection::parse(e, Ns::W14)),
+        "textFill" => t.fill = child_fill_in(e, Ns::W14, &mut |_| None).or(t.fill.take()),
+        "textOutline" => t.outline = Some(line_in(e, Ns::W14, &mut |_| None)),
+        "shadow" => t.shadow = Some(outer_shadow(e, Ns::W14)),
+        "glow" => t.glow = Some(glow(e, Ns::W14)),
+        "reflection" => t.reflection = Some(reflection(e, Ns::W14)),
         _ => {}
     }
 }
@@ -362,9 +359,6 @@ fn read_text_effect(e: Node, t: &mut super::model::TextEffects) {
 fn val_any<'a>(n: Node<'a, '_>) -> Option<&'a str> {
     n.attribute((W14, "val")).or_else(|| val(n))
 }
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ThemeColours([u32; 16]);
 
 /// 22 inches in points: Word's largest page side, and the bound on a table width, margin or border.
 const MAX_MEASURE: f64 = 1584.0;
@@ -390,45 +384,16 @@ const THEME_COLOUR_NAMES: [&str; 16] = [
     "text2",
 ];
 
-impl Default for ThemeColours {
-    fn default() -> ThemeColours {
-        ThemeColours::new(&crate::drawing::theme::Theme::default(), &crate::drawing::theme::ColourMap::default())
-    }
-}
-
-impl ThemeColours {
-    pub fn new(theme: &crate::drawing::theme::Theme, map: &crate::drawing::theme::ColourMap) -> ThemeColours {
-        ThemeColours(THEME_SLOTS.map(|s| {
-            let c = theme.colour(map.map(s));
-            (u32::from(c.r) << 16) | (u32::from(c.g) << 8) | u32::from(c.b)
-        }))
-    }
-
-    pub fn colour(&self, e: Node, hex: &str, theme: &str, tint: &str, shade: &str) -> Option<u32> {
-        match theme_ref(e, theme, tint, shade) {
-            Some(r) => Some(self.resolve(r)),
-            None => color(attr(e, hex)),
-        }
-    }
-
-    /// A theme colour with its tint or shade applied.
-    pub fn resolve(&self, r: super::model::ThemeColourRef) -> u32 {
-        let k = THEME_SLOTS.iter().position(|s| *s == r.slot).unwrap_or(0);
-        let c = self.0[k];
-        let byte = |b: Option<u8>| b.map(|v| f64::from(v) / 255.0);
-        match (byte(r.tint), byte(r.shade)) {
-            (Some(t), _) => with_luminance(c, |l| l * t + (1.0 - t)),
-            (None, Some(s)) => with_luminance(c, |l| l * s),
-            (None, None) => c,
-        }
+/// The colour `e` gives in attribute `hex`, or names in its attribute `theme` with its `tint` or `shade` byte.
+pub fn colour(tc: &ThemeColours, e: Node, hex: &str, theme: &str, tint: &str, shade: &str) -> Option<u32> {
+    match theme_ref(e, theme, tint, shade) {
+        Some(r) => Some(tc.resolve(r)),
+        None => color(attr(e, hex)),
     }
 }
 
 /// The slots of [`THEME_COLOUR_NAMES`], in its order.
-const THEME_SLOTS: [crate::drawing::colour::SchemeSlot; 16] = {
-    use crate::drawing::colour::SchemeSlot::*;
-    [Dk1, Lt1, Dk2, Lt2, Accent(1), Accent(2), Accent(3), Accent(4), Accent(5), Accent(6), Hlink, FolHlink, Bg1, Tx1, Bg2, Tx2]
-};
+const THEME_SLOTS: [crate::drawing::colour::SchemeSlot; 16] = ThemeColours::SLOTS;
 
 /// The theme colour `e` names in its attribute `theme`, with its `tint` or `shade` byte.
 pub fn theme_ref(e: Node, theme: &str, tint: &str, shade: &str) -> Option<super::model::ThemeColourRef> {
@@ -440,38 +405,6 @@ pub fn theme_ref(e: Node, theme: &str, tint: &str, shade: &str) -> Option<super:
 /// A theme slot's `w:themeColor` name.
 pub fn theme_name(slot: crate::drawing::colour::SchemeSlot) -> Option<&'static str> {
     THEME_SLOTS.iter().position(|s| *s == slot).map(|k| THEME_COLOUR_NAMES[k])
-}
-
-/// `c` with its HSL luminance changed by `f`.
-fn with_luminance(c: u32, f: impl Fn(f64) -> f64) -> u32 {
-    let [r, g, b] = [16, 8, 0].map(|s| f64::from((c >> s) & 0xFF) / 255.0);
-    let (max, min) = (r.max(g).max(b), r.min(g).min(b));
-    let l = (max + min) / 2.0;
-    let d = max - min;
-    let sat = if d == 0.0 { 0.0 } else { d / (1.0 - (2.0 * l - 1.0).abs()) };
-    let hue = if d == 0.0 {
-        0.0
-    } else if max == r {
-        ((g - b) / d).rem_euclid(6.0)
-    } else if max == g {
-        (b - r) / d + 2.0
-    } else {
-        (r - g) / d + 4.0
-    };
-    let l = f(l).clamp(0.0, 1.0);
-    let ch = (1.0 - (2.0 * l - 1.0).abs()) * sat;
-    let x = ch * (1.0 - (hue.rem_euclid(2.0) - 1.0).abs());
-    let (r1, g1, b1) = match hue as u32 {
-        0 => (ch, x, 0.0),
-        1 => (x, ch, 0.0),
-        2 => (0.0, ch, x),
-        3 => (0.0, x, ch),
-        4 => (x, 0.0, ch),
-        _ => (ch, 0.0, x),
-    };
-    let m = l - ch / 2.0;
-    let to = |v: f64| ((v + m).clamp(0.0, 1.0) * 255.0).round() as u32;
-    (to(r1) << 16) | (to(g1) << 8) | to(b1)
 }
 
 pub fn highlight(v: &str) -> Option<u32> {
@@ -497,205 +430,37 @@ pub fn highlight(v: &str) -> Option<u32> {
 }
 
 /// A `w:shd` as written: its pattern (`w:val`), the pattern's color and the fill (none: automatic).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Shd {
-    pub pattern: String,
-    pub color: Option<u32>,
-    pub fill: Option<u32>,
-    /// The theme colours the pattern colour and the fill are (`w:themeColor`, `w:themeFill`).
-    pub color_theme: Option<super::model::ThemeColourRef>,
-    pub fill_theme: Option<super::model::ThemeColourRef>,
-}
-
-impl Shd {
-    pub fn parse(e: Node, tc: &ThemeColours) -> Shd {
-        Shd {
-            pattern: val(e).unwrap_or("clear").to_string(),
-            color: tc.colour(e, "color", "themeColor", "themeTint", "themeShade"),
-            fill: tc.colour(e, "fill", "themeFill", "themeFillTint", "themeFillShade"),
-            color_theme: theme_ref(e, "themeColor", "themeTint", "themeShade"),
-            fill_theme: theme_ref(e, "themeFill", "themeFillTint", "themeFillShade"),
-        }
-    }
-
-    /// The flat colour it shows: the fill, the pattern colour when solid, a `pctNN` blend of the pattern colour over
-    /// the fill; nothing for `nil`. A stripe or cross shows its fill here and its [`Shd::hatch`] over it.
-    pub fn flat(&self) -> Option<u32> {
-        let p = self.pattern.as_str();
-        match p {
-            "nil" => None,
-            "solid" => Some(self.color.unwrap_or(0)),
-            _ if p.starts_with("pct") => {
-                let pct: u32 = p[3..].parse().ok().filter(|v| *v <= 100)?;
-                let (fg, bg) = (self.color.unwrap_or(0), self.fill.unwrap_or(0xFFFFFF));
-                let mix = |s: u32| {
-                    let (a, b) = ((fg >> s) & 255, (bg >> s) & 255);
-                    ((b as i64 + (a as i64 - b as i64) * pct as i64 / 100) as u32) << s
-                };
-                Some(mix(16) | mix(8) | mix(0))
-            }
-            _ => self.fill,
-        }
-    }
-
-    /// Its stripe or cross in the pattern colour (automatic: black), if it has one.
-    pub fn hatch(&self) -> Option<Hatch> {
-        Stripe::parse(&self.pattern).map(|stripe| Hatch { stripe, colour: self.color.unwrap_or(0) })
+pub fn shd(e: Node, tc: &ThemeColours) -> Shd {
+    Shd {
+        pattern: val(e).map_or(ShadingPattern::Clear, super::line_style::shading_pattern),
+        color: colour(tc, e, "color", "themeColor", "themeTint", "themeShade"),
+        fill: colour(tc, e, "fill", "themeFill", "themeFillTint", "themeFillShade"),
+        color_theme: theme_ref(e, "themeColor", "themeTint", "themeShade"),
+        fill_theme: theme_ref(e, "themeFill", "themeFillTint", "themeFillShade"),
     }
 }
 
 pub fn shading_fill(e: Node, tc: &ThemeColours) -> Option<u32> {
-    Shd::parse(e, tc).flat()
+    shd(e, tc).flat()
 }
 
-/// The stripes and crosses of `w:shd`, drawn as an 8×8 tile in the pattern colour over the fill.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Stripe {
-    Horz,
-    Vert,
-    ReverseDiag,
-    Diag,
-    HorzCross,
-    DiagCross,
-    ThinHorz,
-    ThinVert,
-    ThinReverseDiag,
-    ThinDiag,
-    ThinHorzCross,
-    ThinDiagCross,
-}
-
-impl Stripe {
-    pub const ALL: [(Stripe, &'static str); 12] = [
-        (Stripe::Horz, "horzStripe"),
-        (Stripe::Vert, "vertStripe"),
-        (Stripe::ReverseDiag, "reverseDiagStripe"),
-        (Stripe::Diag, "diagStripe"),
-        (Stripe::HorzCross, "horzCross"),
-        (Stripe::DiagCross, "diagCross"),
-        (Stripe::ThinHorz, "thinHorzStripe"),
-        (Stripe::ThinVert, "thinVertStripe"),
-        (Stripe::ThinReverseDiag, "thinReverseDiagStripe"),
-        (Stripe::ThinDiag, "thinDiagStripe"),
-        (Stripe::ThinHorzCross, "thinHorzCross"),
-        (Stripe::ThinDiagCross, "thinDiagCross"),
-    ];
-
-    pub fn parse(v: &str) -> Option<Stripe> {
-        Stripe::ALL.iter().find(|(_, n)| *n == v).map(|(s, _)| *s)
+/// A border element (`w:top`, `w:bdr`, ...) as written.
+pub fn border(e: Node, tc: &ThemeColours) -> Border {
+    let style = val(e).map_or(BorderStyle::None, super::line_style::border_style);
+    // Eighths of a point: a fraction of 1 is 1; 0 or none is a hairline that takes no space.
+    let sz = match num(attr(e, "sz")) {
+        Some(v) if v > 0.0 && v < 1.0 => 1.0,
+        Some(v) => v.clamp(0.0, MAX_MEASURE * 8.0),
+        None => 0.0,
+    };
+    Border {
+        width: sz / 8.0,
+        space: num(attr(e, "space")).unwrap_or(0.0),
+        shadow: matches!(attr(e, "shadow"), Some("1" | "true" | "on")),
+        color: colour(tc, e, "color", "themeColor", "themeTint", "themeShade"),
+        color_theme: theme_ref(e, "themeColor", "themeTint", "themeShade"),
+        style,
     }
-
-    pub fn val(self) -> &'static str {
-        Stripe::ALL.iter().find(|(s, _)| *s == self).map_or("clear", |(_, n)| n)
-    }
-}
-
-/// A stripe or cross and its colour.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct Hatch {
-    pub stripe: Stripe,
-    pub colour: u32,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Jc {
-    Left,
-    Center,
-    Right,
-    Both,
-    Distribute,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum LineRule {
-    Auto,
-    Exact,
-    AtLeast,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Border {
-    /// ST_Border value ("single", "double", "none", ...).
-    pub style: Rc<str>,
-    /// Line width in points (`w:sz` eighths).
-    pub width: f64,
-    pub space: f64,
-    pub shadow: bool,
-    pub color: Option<u32>,
-    /// The theme colour `color` is.
-    pub color_theme: Option<super::model::ThemeColourRef>,
-}
-
-impl Border {
-    pub fn parse(e: Node, tc: &ThemeColours) -> Border {
-        let style = Rc::from(val(e).unwrap_or("none"));
-        // Eighths of a point: a fraction of 1 is 1; 0 or none is a hairline that takes no space.
-        let sz = match num(attr(e, "sz")) {
-            Some(v) if v > 0.0 && v < 1.0 => 1.0,
-            Some(v) => v.clamp(0.0, MAX_MEASURE * 8.0),
-            None => 0.0,
-        };
-        Border {
-            width: sz / 8.0,
-            space: num(attr(e, "space")).unwrap_or(0.0),
-            shadow: matches!(attr(e, "shadow"), Some("1" | "true" | "on")),
-            color: tc.colour(e, "color", "themeColor", "themeTint", "themeShade"),
-            color_theme: theme_ref(e, "themeColor", "themeTint", "themeShade"),
-            style,
-        }
-    }
-
-    pub fn visible(&self) -> bool {
-        !matches!(&*self.style, "none" | "nil")
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum TabKind {
-    Left,
-    Center,
-    Right,
-    Decimal,
-    Bar,
-    Num,
-    Clear,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Leader {
-    None,
-    Dot,
-    Hyphen,
-    Underscore,
-    /// A heavy line (tab stops only; an alignment tab has none).
-    Heavy,
-    MiddleDot,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Tab {
-    pub pos: f64,
-    pub kind: TabKind,
-    pub leader: Leader,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct FramePr {
-    pub w: Option<f64>,
-    pub h: Option<f64>,
-    pub h_rule: Option<String>,
-    pub x: Option<f64>,
-    pub y: Option<f64>,
-    pub x_align: Option<String>,
-    pub y_align: Option<String>,
-    pub h_anchor: Option<String>,
-    pub v_anchor: Option<String>,
-    pub wrap: Option<String>,
-    pub h_space: f64,
-    pub v_space: f64,
-    pub drop_cap: Option<String>,
-    pub lines: Option<i64>,
-    pub key: String,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -747,7 +512,7 @@ pub struct ParaProps {
     pub shd: Option<Shd>,
     pub frame: Option<FramePr>,
     pub text_flow: Option<u8>,
-    pub text_alignment: Option<String>,
+    pub text_alignment: Option<super::paragraph::TextAlignment>,
     pub outline_lvl: Option<i64>,
     /// `w15:collapsed`: the heading opens collapsed.
     pub collapsed: Option<bool>,
@@ -847,7 +612,7 @@ impl ParaProps {
                     p.ilvl = child(e, "ilvl").and_then(|n| int(val(n)));
                 }
                 "pBdr" => {
-                    let b = |name| child(e, name).map(|n| Border::parse(n, tc));
+                    let b = |name| child(e, name).map(|n| border(n, tc));
                     p.border_top = b("top");
                     p.border_bottom = b("bottom");
                     p.border_left = b("left").or_else(|| b("start"));
@@ -856,7 +621,7 @@ impl ParaProps {
                 }
                 "shd" => {
                     p.shading = Some(shading_fill(e, tc));
-                    p.shd = Some(Shd::parse(e, tc));
+                    p.shd = Some(shd(e, tc));
                 }
                 "framePr" => {
                     let a = |n| attr(e, n).map(str::to_string);
@@ -880,7 +645,7 @@ impl ParaProps {
                         key: key.join(" "),
                     });
                 }
-                "textAlignment" => p.text_alignment = val(e).map(str::to_string),
+                "textAlignment" => p.text_alignment = val(e).map(super::paragraph::text_alignment),
                 "textDirection" => p.text_flow = val(e).map(super::model::text_flow),
                 "outlineLvl" => p.outline_lvl = int(val(e)),
                 "rPr" => p.mark_size = child(e, "sz").and_then(|s| half_points(val(s))),
@@ -970,67 +735,33 @@ impl ParaProps {
     }
 }
 
-/// A table width (`w:tblW`, `w:tcW`, `w:tblInd`, ...).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Width {
-    Auto,
-    Nil,
-    /// Points.
-    Dxa(f64),
-    /// Fraction (1.0 = 100%).
-    Pct(f64),
+/// A table width (`w:tblW`, `w:tcW`, `w:tblInd`, ...), its measures clamped.
+pub fn width(e: Node) -> Width {
+    match width_raw(e) {
+        Width::Dxa(v) => Width::Dxa(v.clamp(-MAX_MEASURE, MAX_MEASURE)),
+        Width::Pct(f) => Width::Pct(f.clamp(-MAX_PCT, MAX_PCT)),
+        w => w,
+    }
 }
 
-impl Width {
-    pub fn parse(e: Node) -> Width {
-        Width::parse_raw(e).clamped()
-    }
-
-    fn clamped(self) -> Width {
-        match self {
-            Width::Dxa(v) => Width::Dxa(v.clamp(-MAX_MEASURE, MAX_MEASURE)),
-            Width::Pct(f) => Width::Pct(f.clamp(-MAX_PCT, MAX_PCT)),
-            w => w,
-        }
-    }
-
-    fn parse_raw(e: Node) -> Width {
-        let w = attr(e, "w");
-        match attr(e, "type") {
-            Some("nil") => Width::Nil,
-            Some("pct") => {
-                // 50ths of a percent, or "50%".
-                let s = w.unwrap_or("0");
-                if let Some(p) = s.strip_suffix('%') {
-                    Width::Pct(num(Some(p)).unwrap_or(0.0) / 100.0)
-                } else {
-                    Width::Pct(num(Some(s)).unwrap_or(0.0) / 5000.0)
-                }
+fn width_raw(e: Node) -> Width {
+    let w = attr(e, "w");
+    match attr(e, "type") {
+        Some("nil") => Width::Nil,
+        Some("pct") => {
+            // 50ths of a percent, or "50%".
+            let s = w.unwrap_or("0");
+            if let Some(p) = s.strip_suffix('%') {
+                Width::Pct(num(Some(p)).unwrap_or(0.0) / 100.0)
+            } else {
+                Width::Pct(num(Some(s)).unwrap_or(0.0) / 5000.0)
             }
-            Some("auto") => Width::Auto,
-            _ => match twips(w) {
-                Some(v) => Width::Dxa(v),
-                None => Width::Auto,
-            },
         }
-    }
-
-    /// A dxa or pct width as it is, any other as 0 points.
-    pub fn sized(self) -> Width {
-        match self {
-            Width::Dxa(_) | Width::Pct(_) => self,
-            _ => Width::Dxa(0.0),
-        }
-    }
-
-    /// The points of a dxa width, 0 for any other.
-    pub fn dxa(self) -> f64 {
-        if let Width::Dxa(v) = self { v } else { 0.0 }
-    }
-
-    /// The fraction of a pct width.
-    pub fn pct(self) -> Option<f64> {
-        if let Width::Pct(p) = self { Some(p) } else { None }
+        Some("auto") => Width::Auto,
+        _ => match twips(w) {
+            Some(v) => Width::Dxa(v),
+            None => Width::Auto,
+        },
     }
 }
 
@@ -1044,7 +775,7 @@ pub struct Margins {
 
 impl Margins {
     fn parse(e: Node) -> Margins {
-        let m = |n| child(e, n).map(Width::parse).map(|w| if let Width::Dxa(v) = w { v } else { 0.0 });
+        let m = |n| child(e, n).map(width).map(|w| if let Width::Dxa(v) = w { v } else { 0.0 });
         Margins { top: m("top"), left: m("left").or_else(|| m("start")), bottom: m("bottom"), right: m("right").or_else(|| m("end")) }
     }
 
@@ -1079,7 +810,7 @@ pub struct Borders {
 
 impl Borders {
     fn parse(e: Node, tc: &ThemeColours) -> Borders {
-        let b = |n| child(e, n).map(|n| Border::parse(n, tc));
+        let b = |n| child(e, n).map(|n| border(n, tc));
         Borders {
             top: b("top"),
             left: b("left").or_else(|| b("start")),
@@ -1098,17 +829,6 @@ impl Borders {
         }
         take!(top, left, bottom, right, inside_h, inside_v, tl2br, tr2bl);
     }
-}
-
-/// `w:tblLook`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Look {
-    pub first_row: bool,
-    pub last_row: bool,
-    pub first_col: bool,
-    pub last_col: bool,
-    pub no_h_band: bool,
-    pub no_v_band: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -1132,47 +852,6 @@ pub struct TblProps {
     pub bidi_visual: Option<bool>,
 }
 
-/// What `w:tblpVertAnchor` measures a floating table's `tblpY` from.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TableAnchor {
-    Text,
-    Margin,
-    Page,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct TablePos {
-    pub v_anchor: TableAnchor,
-    pub y: f64,
-    /// `tblpX`, or the `tblpXSpec` alignment (left/center/right) when given.
-    pub x: f64,
-    pub x_spec: Option<Jc>,
-    /// `horzAnchor="page"`: `tblpX` and `tblpXSpec` measure from the page, not the column (`margin`, `text`).
-    pub h_page: bool,
-    /// `horzAnchor` `text` or absent (not `margin` or `page`).
-    pub h_text: bool,
-    /// `tblpYSpec` for page and margin anchors: top/inside → Left, center → Center, bottom/outside → Right.
-    pub y_spec: Option<Jc>,
-    /// `topFromText`, `bottomFromText`, `leftFromText`, `rightFromText` (negatives → 0), points.
-    pub dist: [f64; 4],
-    /// `w:tblOverlap="never"`.
-    pub never_overlap: bool,
-}
-
-impl TablePos {
-    /// The alignment `tblpXSpec` gives, else the one `tblpX` codes: 0 left, -4 centre, -8 right, -12 inside (left on
-    /// a first page), -16 outside.
-    // ponytail: inside and outside as on an odd page without mirrored margins.
-    pub fn x_align(&self) -> Option<Jc> {
-        self.x_spec.or(match (self.x * 20.0).round() as i64 {
-            0 | -12 => Some(Jc::Left),
-            -4 => Some(Jc::Center),
-            -8 | -16 => Some(Jc::Right),
-            _ => None,
-        })
-    }
-}
-
 impl TblProps {
     pub fn parse(e: Option<Node>, tc: &ThemeColours) -> TblProps {
         let mut p = TblProps::default();
@@ -1180,7 +859,7 @@ impl TblProps {
         for c in e.children().filter(|c| c.is_element() && c.tag_name().namespace() == Some(W)) {
             match c.tag_name().name() {
                 "tblStyle" => p.style = val(c).map(str::to_string),
-                "tblW" => p.width = Some(Width::parse(c)),
+                "tblW" => p.width = Some(width(c)),
                 "bidiVisual" => p.bidi_visual = Some(on_off(c)),
                 "jc" => {
                     p.jc = Some(match val(c) {
@@ -1189,11 +868,11 @@ impl TblProps {
                         _ => Jc::Left,
                     })
                 }
-                "tblInd" => p.ind = Some(Width::parse(c)),
+                "tblInd" => p.ind = Some(width(c)),
                 "tblBorders" => p.borders = Borders::parse(c, tc),
                 "tblCellMar" => p.margins = Margins::parse(c),
                 "tblLayout" => p.fixed = Some(attr(c, "type") == Some("fixed")),
-                "tblCellSpacing" => p.cell_spacing = Some(if let Width::Dxa(v) = Width::parse(c) { v } else { 0.0 }),
+                "tblCellSpacing" => p.cell_spacing = Some(if let Width::Dxa(v) = width(c) { v } else { 0.0 }),
                 "tblStyleRowBandSize" => p.row_band = int(val(c)),
                 "tblStyleColBandSize" => p.col_band = int(val(c)),
                 "tblpPr" => {
@@ -1242,7 +921,7 @@ impl TblProps {
                 }
                 "shd" => {
                     p.shading = Some(shading_fill(c, tc));
-                    p.shd = Some(Shd::parse(c, tc));
+                    p.shd = Some(shd(c, tc));
                 }
                 "tblLook" => {
                     let bit = |name: &str, mask: i64| match attr(c, name) {
@@ -1286,7 +965,7 @@ pub struct TcProps {
     /// The `w:shd` as written.
     pub shd: Option<Shd>,
     pub margins: Margins,
-    pub v_align: Option<String>,
+    pub v_align: Option<super::VerticalAlignment>,
     pub text_direction: Option<String>,
     pub no_wrap: Option<bool>,
     pub fit_text: Option<bool>,
@@ -1298,17 +977,17 @@ impl TcProps {
         let Some(e) = e else { return p };
         for c in e.children().filter(|c| c.is_element() && c.tag_name().namespace() == Some(W)) {
             match c.tag_name().name() {
-                "tcW" => p.width = Some(Width::parse(c)),
+                "tcW" => p.width = Some(width(c)),
                 "gridSpan" => p.grid_span = int(val(c)),
                 "vMerge" => p.v_merge = Some(val(c) == Some("restart")),
                 "hMerge" => p.h_merge = Some(val(c) == Some("restart")),
                 "tcBorders" => p.borders = Borders::parse(c, tc),
                 "shd" => {
                     p.shading = Some(shading_fill(c, tc));
-                    p.shd = Some(Shd::parse(c, tc));
+                    p.shd = Some(shd(c, tc));
                 }
                 "tcMar" => p.margins = Margins::parse(c),
-                "vAlign" => p.v_align = val(c).map(str::to_string),
+                "vAlign" => p.v_align = val(c).map(super::section::cell_v_align),
                 "textDirection" => p.text_direction = val(c).map(str::to_string),
                 "noWrap" => p.no_wrap = Some(on_off(c)),
                 "tcFitText" => p.fit_text = Some(on_off(c)),
@@ -1330,8 +1009,8 @@ impl TcProps {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct TrProps {
-    /// Height and rule ("atLeast" default, "exact", "auto").
-    pub height: Option<(f64, String)>,
+    /// Height and rule (at least by default).
+    pub height: Option<(f64, super::HeightRule)>,
     pub cant_split: Option<bool>,
     pub header: Option<bool>,
     pub jc: Option<Jc>,
@@ -1349,7 +1028,9 @@ impl TrProps {
         let Some(e) = e else { return p };
         for c in e.children().filter(|c| c.is_element() && c.tag_name().namespace() == Some(W)) {
             match c.tag_name().name() {
-                "trHeight" => p.height = Some((twips(val(c)).unwrap_or(0.0), attr(c, "hRule").unwrap_or("atLeast").to_string())),
+                "trHeight" => {
+                    p.height = Some((twips(val(c)).unwrap_or(0.0), attr(c, "hRule").map_or(super::HeightRule::AtLeast, super::section::height_rule)))
+                }
                 "cantSplit" => p.cant_split = Some(on_off(c)),
                 "tblHeader" => p.header = Some(on_off(c)),
                 "jc" => {
@@ -1361,9 +1042,9 @@ impl TrProps {
                 }
                 "gridBefore" => p.grid_before = int(val(c)),
                 "gridAfter" => p.grid_after = int(val(c)),
-                "wBefore" => p.w_before = Some(Width::parse(c).sized()),
-                "wAfter" => p.w_after = Some(Width::parse(c).sized()),
-                "tblCellSpacing" => p.cell_spacing = Some(if let Width::Dxa(v) = Width::parse(c) { v } else { 0.0 }),
+                "wBefore" => p.w_before = Some(width(c).sized()),
+                "wAfter" => p.w_after = Some(width(c).sized()),
+                "tblCellSpacing" => p.cell_spacing = Some(if let Width::Dxa(v) = width(c) { v } else { 0.0 }),
                 _ => {}
             }
         }
@@ -1400,7 +1081,13 @@ mod tests {
 
     #[test]
     fn shading_shows_its_fill_a_blend_or_nothing_and_stripes_their_hatch() {
-        let shd = |v: &str| super::Shd { pattern: v.into(), color: Some(0xFF0000), fill: Some(0x0000FF), color_theme: None, fill_theme: None };
+        let shd = |v: &str| super::Shd {
+            pattern: super::super::line_style::shading_pattern(v),
+            color: Some(0xFF0000),
+            fill: Some(0x0000FF),
+            color_theme: None,
+            fill_theme: None,
+        };
         assert_eq!(shd("nil").flat(), None, "nil draws nothing, whatever its fill");
         assert_eq!(shd("clear").flat(), Some(0x0000FF));
         assert_eq!(shd("solid").flat(), Some(0xFF0000));
@@ -1413,9 +1100,6 @@ mod tests {
             assert_eq!(shd(v).flat(), None, "{v}");
         }
         assert_eq!(shd("bogus").flat(), Some(0x0000FF), "an unknown pattern shows its fill");
-        for (s, v) in super::Stripe::ALL {
-            assert_eq!((super::Stripe::parse(v), s.val()), (Some(s), v));
-        }
     }
 
     #[test]
@@ -1477,8 +1161,8 @@ mod tests {
         ));
         let e = r.effects.expect("effects");
         let Some(crate::drawing::paint::Fill::Gradient(g)) = &e.fill else { panic!("a gradient") };
-        assert_eq!(g.stops.len(), crate::drawing::paint::MAX_W14_STOPS);
-        assert_eq!(e.glow.as_ref().expect("a glow").colour.mods.len(), crate::drawing::colour::MAX_W14_MODS);
+        assert_eq!(g.stops.len(), crate::docx::drawing::paint::MAX_W14_STOPS);
+        assert_eq!(e.glow.as_ref().expect("a glow").colour.mods.len(), crate::docx::drawing::colour::MAX_W14_MODS);
         assert_eq!(e.outline.as_ref().expect("an outline").dash, None, "no custom dash in the w14 schema");
         // The drawn glow is bounded as a shape's is.
         let (t, m) = (crate::drawing::theme::Theme::default(), crate::drawing::theme::ColourMap::default());

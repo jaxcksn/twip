@@ -282,7 +282,7 @@ impl Editor {
         let ends = |r: usize, k: usize| r + rows_spanned(&g, r, k) - 1;
         // Where two selected cells meet: both cells' sides, as the edge is drawn.
         let settings = &self.doc.settings;
-        let single = settings.compat() == crate::docx::Compat::Legacy && settings.has("useSingleBorderforContiguousCells");
+        let single = settings.compat() == crate::docx::Compat::Legacy && settings.policy.use_single_border_for_contiguous_cells;
         let (row_borders, shared_edge) = (crate::layout::table::row_borders, crate::layout::table::shared_edge);
         let gr = &g;
         let cell_borders = CellEdgeLines {
@@ -310,23 +310,26 @@ impl Editor {
             diagonal_up: fold(cells.iter().map(|&(r, k, ..)| line(&cell(r, k).diagonals.as_deref().and_then(|d| d[1].clone())))),
         };
         let margin = |side: usize| fold(cells.iter().map(|&(r, k, ..)| Points(cell(r, k).margins[side])));
-        let res = self.doc.resolver.as_ref();
-        let cx = self.cx();
-        let parse_tbl = |raw: Option<&str>| -> TblProps {
-            match (raw, res) {
-                (Some(x), Some(res)) => cx.parse(x, |_, n| TblProps::parse(Some(n), &res.styles.colours)).unwrap_or_default(),
-                _ => TblProps::default(),
-            }
+        let res = self.doc.definitions.as_ref();
+        let parse_tbl = |p: &crate::format::TableProps| -> TblProps {
+            res.map_or_else(TblProps::default, |res| crate::docx::table_props::tbl_props(p, &res.cascade().colours))
         };
-        let mut tbl = res.map(|res| res.styles.table_region(t.style_id.as_deref(), &[]).tbl.clone()).unwrap_or_default();
-        tbl.merge(&parse_tbl(t.direct.0.as_deref()));
+        let tbl = res
+            .map(|res| {
+                crate::docx::table_props::table_on(
+                    &res.cascade().table_region(t.style_id.as_deref(), &[]).format.table,
+                    t.direct.get(),
+                    &res.cascade().colours,
+                )
+            })
+            .unwrap_or_default();
         // A side neither the table nor its style sets: as cells resolve it.
         let unset = if t.style_id.is_none() { 0.5 } else { 0.0 };
         let m = &tbl.margins;
         let default_cell_margins =
             SideMargins::of([m.top.unwrap_or(0.0), m.left.unwrap_or(unset), m.bottom.unwrap_or(0.0), m.right.unwrap_or(unset)]);
         let rows = &t.rows[r0..=r1];
-        let exceptions: Vec<TblProps> = rows.iter().map(|r| parse_tbl(r.exceptions.0.as_deref())).collect();
+        let exceptions: Vec<TblProps> = rows.iter().map(|r| parse_tbl(r.exceptions.get())).collect();
         let row_exceptions = RowExceptionsReadback {
             any: fold(exceptions.iter().map(|x| {
                 x.jc.is_some()

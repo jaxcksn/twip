@@ -14,7 +14,7 @@ use super::step::Step;
 pub(super) struct PicEdit<'a> {
     pub w: &'a mut f64,
     pub h: &'a mut f64,
-    pub image: &'a mut Option<usize>,
+    pub image: &'a mut Option<crate::docx::ResourceId>,
     /// Its effect extents (`wp:effectExtent`).
     pub effect: &'a mut [f64; 4],
     pub shape: Option<&'a mut crate::drawing::Shape>,
@@ -139,7 +139,7 @@ impl Editor {
                 if let Some(now) = n.shape.as_deref().map(|s| s.xfrm.rot)
                     && Some(now) != rot
                 {
-                    super::shapes::rotate_to(&mut n, &[], now.degrees(), self.doc.settings.compat_mode);
+                    super::shapes::rotate_to(&mut n, &[], now.degrees(), self.doc.settings.policy.mode);
                 }
                 self.set_float(n, label, fonts)
             }
@@ -198,7 +198,7 @@ impl Editor {
         );
         // Refused before a transaction began: the image isn't left for the next one.
         if !matches!(out, Outcome::Changed(_)) {
-            self.pending_images.clear();
+            self.pending_images = Default::default();
         }
         out
     }
@@ -464,7 +464,7 @@ mod tests {
                 .expect("a floating picture")
         };
         let mut e = open("FX-OBJ.docx");
-        let data = e.document().images.last().cloned().expect("an image");
+        let data = e.document().images.last().map(|(_, d)| d.to_vec()).expect("an image");
         let float = picture(&e);
         e.set_caret_for_benchmark(Selection::Object(ObjectRef::Floating(crate::layout::FloatId(float))));
         let w0 = e.object_selection().expect("selected").width.0;
@@ -477,7 +477,7 @@ mod tests {
         run(&mut e, serde_json::json!({ "type": "setObjectSize", "relativeWidth": { "percent": 40, "relativeTo": "margin" } }));
         run(&mut e, serde_json::json!({ "type": "setObjectPosition", "horizontal": { "relativeTo": "page", "percent": 10 } }));
         run(&mut e, serde_json::json!({ "type": "alignObjects", "align": "bottom", "relativeTo": "page" }));
-        let saved = crate::docx::write::save(e.document()).expect("saves");
+        let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
         let xml = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part");
         for el in ["<a:srcRect l=\"25000\"", "<a:clrChange>", "<wp14:sizeRelH", "<wp14:pctWidth>40000</wp14:pctWidth>", "<wp14:pctPosHOffset"] {
             assert!(xml.contains(el), "{el}");
@@ -519,7 +519,7 @@ mod inline_tests {
         e.set_caret_for_benchmark(Selection::Object(ObjectRef::Inline { para, offset: Unit(u) }));
         let c: Command = serde_json::from_value(serde_json::json!({ "type": "setPictureCrop", "right": 0.5 })).expect("a command");
         assert!(matches!(e.execute(c, fonts()), Outcome::Changed(_)));
-        let saved = crate::docx::write::save(e.document()).expect("saves");
+        let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
         let xml = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part");
         assert!(xml.contains("r=\"50000\""), "the crop is saved");
     }

@@ -8,6 +8,7 @@ mod editing;
 mod frames;
 mod hostile;
 mod layout;
+mod load;
 mod pdf;
 mod review;
 

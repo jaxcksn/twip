@@ -7,7 +7,7 @@ use crate::layout::fragment::Item;
 
 fn items(body: &str) -> Vec<Item> {
     let doc = crate::docx::read(&bytes(body).expect("a package")).expect("reads");
-    let snap = crate::layout::layout(&doc, &super::fonts());
+    let snap = crate::layout::tests::layout(&doc, &super::fonts());
     crate::layout::traverse::paint_items(&snap.pages()[0])
 }
 

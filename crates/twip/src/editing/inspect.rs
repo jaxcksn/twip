@@ -23,7 +23,7 @@ struct Order {
 fn stories(e: &Editor) -> Vec<(StoryId, &[Block])> {
     let d = e.document();
     let idx = e.index();
-    let mut out: Vec<(StoryId, &[Block])> = d.stories.iter().filter_map(|(name, b)| Some((idx.header_footer(name)?, b.as_slice()))).collect();
+    let mut out: Vec<(StoryId, &[Block])> = d.stories.iter().filter_map(|(id, b)| Some((idx.header_footer(*id)?, b.as_slice()))).collect();
     let mut notes: Vec<_> = d.footnotes.iter().collect();
     notes.sort_by_key(|(id, _)| **id);
     out.extend(notes.into_iter().map(|(id, b)| (StoryId::Footnote(*id), b.as_slice())));
@@ -278,9 +278,9 @@ pub fn inspect(e: &mut Editor, what: &str, settled: bool) -> Value {
                         tables.push(json!({
                             "rows": t.rows.len(), "cells": t.rows.iter().map(|r| r.cells.len()).collect::<Vec<_>>(), "depth": depth + 1,
                             "grid": t.grid.iter().map(|w| r2(*w)).collect::<Vec<_>>(),
-                            "heights": t.rows.iter().map(|r| r.height.as_ref().map(|(h, rule)| json!([r2(*h), rule]))).collect::<Vec<_>>(),
+                            "heights": t.rows.iter().map(|r| r.height.as_ref().map(|(h, rule)| json!([r2(*h), crate::docx::section::height_rule_literal(*rule)]))).collect::<Vec<_>>(),
                             "header_rows": t.rows.iter().take_while(|r| r.header).count(),
-                            "cell_fmt": t.rows.iter().map(|r| r.cells.iter().map(|c| format!("{}:{}", c.v_align, c.shading.map_or("-".to_string(), |f| format!("{f:06X}")))).collect::<Vec<_>>()).collect::<Vec<_>>(),
+                            "cell_fmt": t.rows.iter().map(|r| r.cells.iter().map(|c| format!("{}:{}", crate::docx::section::v_align_literal(c.v_align), c.shading.map_or("-".to_string(), |f| format!("{f:06X}")))).collect::<Vec<_>>()).collect::<Vec<_>>(),
                         }));
                         t.rows.iter().flat_map(|r| r.cells.iter()).for_each(|c| walk(_e, &c.blocks, depth + 1, paras, tables));
                     }
@@ -308,7 +308,7 @@ pub fn inspect(e: &mut Editor, what: &str, settled: bool) -> Value {
                 let p = e.index().para(e.document(), anchor)?;
                 p.inlines.iter().find_map(|i| match i {
                     crate::docx::Inline::Float(fl, _) if crate::layout::FloatId(fl.id) == f => Some(json!({
-                        "anchor": o.paras.get(&anchor), "text_box": fl.text_box.is_some(), "wrap": fl.wrap,
+                        "anchor": o.paras.get(&anchor), "text_box": fl.text_box.is_some(), "wrap": crate::docx::anchor::wrap_name(fl.wrap),
                         "x": r2(fl.h_offset), "y": r2(fl.v_offset), "w": r2(fl.w), "h": r2(fl.h),
                     })),
                     _ => None,

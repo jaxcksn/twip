@@ -59,7 +59,12 @@ fn step(e: &mut Editor, dir: Dir) {
 
 /// The text drawn on the first page of `d`, a string per line.
 fn lines_of(d: &crate::docx::Document) -> Vec<String> {
-    let snap = crate::layout::layout(d, fonts());
+    lines_in(d, &crate::layout::tests::view(d))
+}
+
+/// [`lines_of`] in `view`.
+fn lines_in(d: &crate::docx::Document, view: &crate::docx::review::ReviewView) -> Vec<String> {
+    let snap = crate::layout::layout(d, view, fonts());
     let mut runs: Vec<(f64, f64, String)> = crate::layout::traverse::paint_items(&snap.pages()[0])
         .iter()
         .filter_map(|it| match it {
@@ -285,7 +290,7 @@ fn a_made_end_saves_after_its_paragraph_is_edited() {
     let ps = texts_ids(&e);
     e.select_between((ps[1], Unit(1)), (ps[1], Unit(1)), fonts());
     e.execute(Command::InsertText("x".into()), fonts());
-    let saved = crate::docx::write::save(e.document()).unwrap();
+    let saved = crate::docx::write::save(e.document(), e.docx()).unwrap();
     let xml = {
         use std::io::Read;
         let mut z = zip::ZipArchive::new(std::io::Cursor::new(&saved)).unwrap();
@@ -350,9 +355,8 @@ fn an_empty_codes_braces_draw_before_a_table_its_deleted_paragraphs_hide() {
     let mut e = empty_before_table();
     assert_eq!(edges_of(body(&e)).len(), 2);
     let in_view = |e: &Editor| {
-        let mut d = e.document().clone();
-        d.review.view = crate::docx::review::MarkupView::NoMarkup;
-        lines_of(&d)
+        let view = crate::docx::review::ReviewView { view: crate::docx::review::MarkupView::NoMarkup, ..e.review().clone() };
+        lines_in(e.document(), &view)
     };
     assert_eq!(in_view(&e), ["Cell"], "the empty field shows nothing: its paragraphs aren't laid out");
     show_codes(&mut e, true);
@@ -370,9 +374,9 @@ fn a_shown_codes_inserted_braces_take_the_insertions_look() {
     e.select_between((first, Unit(0)), (first, Unit(0)), fonts());
     e.insert_table_of_contents(&TocOptions::word_default(), TocLook::default(), &TocFrame::default(), fonts());
     show_codes(&mut e, true);
-    let mut d = e.document().clone();
-    std::rc::Rc::make_mut(&mut d.review.markup).style.insertions.mark = TextMark::Bold;
-    let snap = crate::layout::layout(&d, fonts());
+    let mut view = e.review().clone();
+    std::rc::Rc::make_mut(&mut view.markup).style.insertions.mark = TextMark::Bold;
+    let snap = crate::layout::layout(e.document(), &view, fonts());
     let items = crate::layout::traverse::paint_items(&snap.pages()[0]);
     let face_of = |ch: char| {
         items.iter().find_map(|it| match it {
@@ -390,7 +394,7 @@ fn a_shown_code_saves_the_runs_beside_its_start_in_its_insertion() {
     let doc = format!("<w:p>{ins}{}</w:p><w:p>{}</w:p><w:p>{END}</w:p>", run("One"), run("Two"));
     let mut e = Editor::open(&doc_with(&doc, HEADINGS), fonts()).unwrap();
     assert!(matches!(show_codes(&mut e, true), Outcome::Changed(_)));
-    let saved = crate::docx::write::save(e.document()).unwrap();
+    let saved = crate::docx::write::save(e.document(), e.docx()).unwrap();
     let xml = {
         use std::io::Read;
         let mut z = zip::ZipArchive::new(std::io::Cursor::new(&saved)).unwrap();

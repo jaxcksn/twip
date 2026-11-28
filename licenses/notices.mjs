@@ -11,7 +11,7 @@ const out = process.argv[2] ?? 'THIRD-PARTY-NOTICES.md';
 const native = [
   // The engine's last-resort symbol font, a subset of DejaVu Sans (font.rs).
   ['DejaVu Sans (subset)', 'Bitstream-Vera', 'both', 'dejavu-fonts.txt'],
-  // The preset shape geometries (drawing/geom/presets.rs), generated from the standard's definitions.
+  // The preset shape geometries (twip-document's graphic/geom/presets.rs), generated from the standard's definitions.
   ['ECMA-376 preset shape definitions', 'LicenseRef-Ecma', 'both', 'ecma-376.txt'],
   // The East Asian punctuation font, a subset of Noto Serif JP with MS Mincho's widths (font.rs).
   ['Noto Serif JP (subset)', 'OFL-1.1', 'both', 'noto-serif-jp.txt'],

@@ -1,5 +1,8 @@
 //! Paragraph shaping
 
+use crate::docx::origin::FloatOrigin;
+use crate::docx::origin::ParagraphOrigin;
+use crate::docx::origin::PictureOrigin;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -52,7 +55,7 @@ impl PartialEq for PieceStyle {
             (None, None) => true,
             _ => false,
         };
-        face && (Rc::ptr_eq(run, &o.run) || **run == *o.run) && *size == o.size && *raise == o.raise
+        face && (Rc::ptr_eq(run, &o.run) || run.layout_eq(&o.run)) && *size == o.size && *raise == o.raise
     }
 }
 
@@ -325,20 +328,21 @@ fn border_units(b: &crate::docx::props::Border, dpi: i64) -> i64 {
     let dev = |tw: i64| (tw * dpi / 1440).max(1);
     let sz = (b.width * 8.0).round() as i64;
     let w = dev(sz * 5 / 2);
-    let total = match &*b.style {
-        "none" | "nil" => 0,
-        "double" => 3 * w,
-        "triple" => 5 * w,
-        "thinThickSmallGap" | "thickThinSmallGap" => w + 2 * dev(15),
-        "thinThickThinSmallGap" => w + 4 * dev(15),
-        "thinThickMediumGap" | "thickThinMediumGap" => w + 2 * (w / 2).max(1),
-        "thinThickThinMediumGap" => w + 4 * (w / 2).max(1),
-        "thinThickLargeGap" | "thickThinLargeGap" => dev(30) + dev(15) + w,
-        "thinThickThinLargeGap" => dev(30) + 2 * (w + dev(15)),
-        "wave" => dev(if sz == 12 { 75 } else { 60 }),
-        "doubleWave" => dev(105),
-        "dashDotStroked" => dev(60),
-        "threeDEmboss" | "threeDEngrave" => w + 2 * dev(if sz < 24 { 15 } else { 30 }),
+    use crate::docx::props::BorderStyle::*;
+    let total = match b.style {
+        None | Nil => 0,
+        Double => 3 * w,
+        Triple => 5 * w,
+        ThinThickSmallGap | ThickThinSmallGap => w + 2 * dev(15),
+        ThinThickThinSmallGap => w + 4 * dev(15),
+        ThinThickMediumGap | ThickThinMediumGap => w + 2 * (w / 2).max(1),
+        ThinThickThinMediumGap => w + 4 * (w / 2).max(1),
+        ThinThickLargeGap | ThickThinLargeGap => dev(30) + dev(15) + w,
+        ThinThickThinLargeGap => dev(30) + 2 * (w + dev(15)),
+        Wave => dev(if sz == 12 { 75 } else { 60 }),
+        DoubleWave => dev(105),
+        DashDotStroked => dev(60),
+        ThreeDEmboss | ThreeDEngrave => w + 2 * dev(if sz < 24 { 15 } else { 30 }),
         _ => w,
     };
     let space = (b.space * 20.0).round() as i64;
@@ -930,7 +934,7 @@ impl<'a> Builder<'a> {
                         if pend_runs.first().is_some_and(|(_, p)| !shapes_alike(p, run)) {
                             self.flush_text(&mut pend, &mut pend_runs, &mut pend_units)?;
                         }
-                        if !pend_runs.last().is_some_and(|(_, p)| Rc::ptr_eq(p, run) || **p == **run) {
+                        if !pend_runs.last().is_some_and(|(_, p)| Rc::ptr_eq(p, run) || p.layout_eq(run)) {
                             pend_runs.push((pend_units.len(), run.clone()));
                         }
                         pend.push(c);
@@ -956,7 +960,7 @@ impl<'a> Builder<'a> {
                 if pend_runs.first().is_some_and(|(_, p)| !shapes_alike(p, run)) {
                     self.flush_text(&mut pend, &mut pend_runs, &mut pend_units)?;
                 }
-                if !pend_runs.last().is_some_and(|(_, p)| Rc::ptr_eq(p, run) || **p == **run) {
+                if !pend_runs.last().is_some_and(|(_, p)| Rc::ptr_eq(p, run) || p.layout_eq(run)) {
                     pend_runs.push((pend_units.len(), run.clone()));
                 }
                 pend.push_str(t);
@@ -968,13 +972,13 @@ impl<'a> Builder<'a> {
                 continue;
             }
             // A code's brace of a field across paragraphs showing its code: in its edge's run.
-            if let (Inline::Opaque(o), Shown::Value(v)) = (inl, &shown[k])
-                && !o.run.as_ref().is_some_and(|r| (r.hidden && !space.show_hidden) || space.markup.hides(view, &r.rev))
+            if let (Inline::FieldEdge { run: r, .. }, Shown::Value(v)) = (inl, &shown[k])
+                && !((r.hidden && !space.show_hidden) || space.markup.hides(view, &r.rev))
             {
                 self.flush_text(&mut pend, &mut pend_runs, &mut pend_units)?;
                 let first = self.pieces.len();
-                let run = o.run.as_ref().map(|r| marked_run(run_in(r, view), view, &space.markup));
-                self.text(v, run.as_ref().unwrap_or_else(|| para.mark_in(view)))?;
+                let run = marked_run(run_in(r, view), view, &space.markup);
+                self.text(v, &run)?;
                 for i in first..self.pieces.len() {
                     self.pieces[i].src = Some(Unit(at));
                 }
@@ -983,8 +987,8 @@ impl<'a> Builder<'a> {
             }
             if matches!(
                 inl,
-                Inline::Bookmark(_)
-                    | Inline::Opaque(_)
+                Inline::Foreign(_)
+                    | Inline::FieldEdge { .. }
                     | Inline::Range(_)
                     | Inline::CommentRef { .. }
                     | Inline::ControlStart(_)
@@ -1098,7 +1102,7 @@ impl<'a> Builder<'a> {
                         effect: f.effect,
                         shape: f.shape.clone(),
                         text: f.text_box.clone().map(|text_box| Box::new(crate::docx::model::InlineText { id: f.id, text_box })),
-                        src: Default::default(),
+                        origin: crate::docx::Origin::NONE,
                     },
                     run,
                 ),
@@ -1176,7 +1180,7 @@ impl<'a> Builder<'a> {
                         effect: [0.0; 4],
                         shape: None,
                         text: None,
-                        src: Default::default(),
+                        origin: crate::docx::Origin::NONE,
                     }));
                     self.atom(p, "\u{FFFC}");
                 }
@@ -1194,9 +1198,9 @@ impl<'a> Builder<'a> {
                 let width = lu((-para.para_style_in(space.view).ind_first).max(indent));
                 let (w, gap) = ((width - num_w).max(0), lu(legacy_space));
                 let r = (w - gap).max(0);
-                let (shift, gap) = match l.jc.as_str() {
-                    "center" if w >> 1 >= gap => (w >> 1, w >> 1),
-                    "center" | "right" => (r, gap),
+                let (shift, gap) = match l.jc {
+                    ListJc::Center if w >> 1 >= gap => (w >> 1, w >> 1),
+                    ListJc::Center | ListJc::Right => (r, gap),
                     _ => (0, gap.max(w)),
                 };
                 let at = |b: &Self, w: i64| {
@@ -1211,9 +1215,9 @@ impl<'a> Builder<'a> {
                 let gap = at(self, gap);
                 self.atom(gap, "");
             }
-            match l.suff.as_str() {
+            match l.suff {
                 _ if l.legacy.is_some() => {}
-                "space" => {
+                ListSuffix::Space => {
                     let s = self.pieces.len();
                     self.text(" ", &l.run)?;
                     for i in s..self.pieces.len() {
@@ -1223,8 +1227,8 @@ impl<'a> Builder<'a> {
                         p.width = LIST_SUFFIX_SPACE_EM * size * l.run.scale / 100.0 + l.run.spacing;
                     }
                 }
-                "nothing" => {}
-                _ => {
+                ListSuffix::Nothing => {}
+                ListSuffix::Tab => {
                     let f = self.face(&l.run.ascii, &l.run);
                     let mut t = self.new_piece(Kind::Tab, &l.run, f, l.run.size, 0.0);
                     t.ascent = 0.0;
@@ -1825,8 +1829,8 @@ impl CacheKey for ShapeKey {
 /// [`same_para`] but for the stories of floats and inline shapes.
 fn same_shaping(a: &Paragraph, b: &Paragraph) -> bool {
     let inline = |x: &Inline, y: &Inline| match (x, y) {
-        (Inline::Float(f, r), Inline::Float(g, s)) => r == s && f.same_but_story(g),
-        (Inline::Picture(f, r), Inline::Picture(g, s)) => r == s && f.same_but_story(g),
+        (Inline::Float(f, r), Inline::Float(g, s)) => r.layout_eq(s) && f.same_but_story(g),
+        (Inline::Picture(f, r), Inline::Picture(g, s)) => r.layout_eq(s) && f.same_but_story(g),
         _ => x == y,
     };
     a.inlines.len() == b.inlines.len() && same_props(a, b) && a.inlines.iter().zip(&b.inlines).all(|(x, y)| inline(x, y))
@@ -1838,9 +1842,9 @@ pub fn same_para(a: &Paragraph, b: &Paragraph) -> bool {
 
 /// The identity, style, mark and list label shaping reads.
 fn same_props(a: &Paragraph, b: &Paragraph) -> bool {
-    let run = |x: &Run, y: &Run| Rc::ptr_eq(x, y) || **x == **y;
+    let run = |x: &Run, y: &Run| Rc::ptr_eq(x, y) || x.layout_eq(y);
     a.id == b.id
-        && (Rc::ptr_eq(&a.style, &b.style) || *a.style == *b.style)
+        && (Rc::ptr_eq(&a.style, &b.style) || a.style.layout_eq(&b.style))
         && run(&a.mark, &b.mark)
         && match (&a.list, &b.list) {
             (None, None) => true,
@@ -1944,16 +1948,18 @@ fn continues_after_break(para: &Paragraph, space: &ShapeSpace) -> bool {
         && para
             .inlines
             .iter()
-            .find(|i| !matches!(i, Inline::Bookmark(_) | Inline::Opaque(_) | Inline::Range(_)) && !matches!(i, Inline::Text(t, _) if t.is_empty()))
+            .find(|i| {
+                !matches!(i, Inline::Foreign(_) | Inline::FieldEdge { .. } | Inline::Range(_)) && !matches!(i, Inline::Text(t, _) if t.is_empty())
+            })
             .is_some_and(|i| matches!(i, Inline::Break(BreakKind::Page | BreakKind::Column, _)))
 }
 
 /// While hidden text shows, the paragraphs vanished marks joined into `para` ([`crate::docx::ParaStyle::parts`]), with
-/// where each starts (as editing keeps them, [`crate::docx::ParaSrc::joined`]) and the space between each and the next.
+/// where each starts (as editing keeps them, [`Paragraph::joined_parts`]) and the space between each and the next.
 fn shown_parts(para: &Paragraph, text: &TextEnv) -> Option<Parts> {
     use super::paragraph::{gap, space_after, space_before};
     let styles = &para.para_style_in(text.review.view).parts;
-    let ends = &para.src.as_ref()?.joined;
+    let ends = para.joined_parts();
     if !text.review.show_hidden || styles.len() < 2 || ends.len() + 1 != styles.len() {
         return None;
     }
@@ -2098,7 +2104,9 @@ impl PageRef {
     /// (`order`: paragraphs' pages and places on them, for the pages holding such fields).
     pub fn above(&self, name: &str, para: &Paragraph, k: usize, here: Option<usize>, order: Option<&HashMap<ParaId, (usize, usize)>>) -> bool {
         if self.para == ParaId(para.id) {
-            return para.inlines[..k.min(para.inlines.len())].iter().any(|i| matches!(i, Inline::Bookmark(b) if b.eq_ignore_ascii_case(name)));
+            return para.inlines[..k.min(para.inlines.len())]
+                .iter()
+                .any(|i| i.bookmark().is_some_and(|(b, start)| start && b.eq_ignore_ascii_case(name)));
         }
         match here {
             Some(h) if h != self.page => self.page < h,

@@ -74,7 +74,7 @@ fn replace_changes_a_match_in_a_links_text_and_goes_to_the_next() {
 #[test]
 fn a_picture_pasted_in_another_session_comes_with_its_image() {
     let (mut engine, a) = engine_with(&format!("<w:p>{}</w:p>", t("pic")));
-    let svg = crate::editing::tests::open("FX-OBJ.docx").document().images.last().cloned().expect("an image");
+    let svg = crate::editing::tests::open("FX-OBJ.docx").document().images.last().map(|(_, d)| d.to_vec()).expect("an image");
     let data = {
         let s = engine.session(a).expect("a session");
         s.run(Command::InsertPicture(Picture { data: Bytes(svg.clone()), alt_text: None })).expect("inserts");
@@ -85,7 +85,7 @@ fn a_picture_pasted_in_another_session_comes_with_its_image() {
     let s = engine.session(b).expect("a session");
     s.open(&crate::editing::tests::blank_body("<w:p/>")).expect("opens");
     s.paste(&data, false);
-    let images = |s: &super::Session| -> Vec<Option<usize>> {
+    let images = |s: &super::Session| -> Vec<Option<crate::docx::ResourceId>> {
         paras(s)
             .iter()
             .flat_map(|p| p.inlines.iter().filter_map(|i| if let Inline::Picture(p, _) = i { Some(p.image) } else { None }).collect::<Vec<_>>())
@@ -94,7 +94,7 @@ fn a_picture_pasted_in_another_session_comes_with_its_image() {
     let pasted = images(s);
     assert_eq!(pasted.len(), 1, "a picture was pasted");
     let k = pasted[0].expect("it shows an image");
-    assert_eq!(s.editor.document().images.get(k), Some(&svg), "its own image");
+    assert_eq!(s.editor.document().images.get(k), Some(&svg[..]), "its own image");
     let saved = s.export(&ExportOptions::Docx).expect("the document saves with the pasted picture");
     let again = crate::editing::Editor::open(&saved.bytes.0, crate::editing::tests::fonts()).expect("reopens");
     let k = again
@@ -106,7 +106,7 @@ fn a_picture_pasted_in_another_session_comes_with_its_image() {
             if let Block::Para(p) = b { p.inlines.iter().find_map(|i| if let Inline::Picture(p, _) = i { p.image } else { None }) } else { None }
         })
         .expect("a picture with its image");
-    assert!(!again.document().images[k].is_empty(), "the saved picture has its image");
+    assert!(!again.document().images.get(k).unwrap().is_empty(), "the saved picture has its image");
 }
 
 #[test]

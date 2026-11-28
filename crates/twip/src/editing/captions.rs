@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 use crate::api::review::Body;
 use crate::docx::fields;
+use crate::docx::para_props::ParaXml;
 use crate::docx::{Block, FieldKind, Inline, Paragraph};
 use crate::font::Fonts;
 use crate::layout::{FloatId, ParaId, TableId, Unit};
@@ -249,7 +250,7 @@ impl Editor {
         let Some(item) = item.or_else(|| self.caption_item()) else { return Outcome::unavailable("nothing to caption") };
         let position = c.position.unwrap_or(if matches!(item, Item::Table(_)) { CaptionPosition::Above } else { CaptionPosition::Below });
         self.begin_batch(Some("Insert Caption".into()));
-        if !self.doc.resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key("Caption"))
+        if !self.doc.definitions.as_ref().is_some_and(|r| r.has_style("Caption"))
             && let Some(b) = crate::services::styles::builtin::built_in("Caption")
         {
             self.add_built_in(b, fonts);
@@ -321,11 +322,12 @@ impl Editor {
         }) else {
             return Outcome::unavailable("no paragraph");
         };
-        let w = self.cx().w;
+        let mut ppr = crate::format::ParaProps { style: Some("Caption".into()), ..Default::default() };
         // Above, it keeps with what it captions.
-        let keep = if position == CaptionPosition::Above { format!("<{w}keepNext/>") } else { String::new() };
-        let ppr = format!("<{w}pPr><{w}pStyle {w}val=\"Caption\"/>{keep}</{w}pPr>");
-        let mut p = self.new_para(&ppr, &[], container, &like);
+        if position == CaptionPosition::Above {
+            ppr.flags.put(crate::format::ParaFlag::KEEP_NEXT, true);
+        }
+        let mut p = self.new_para(ppr, &[], container, &like);
         let run = p.mark.clone();
         p.inlines = self.caption_inlines(c, &run);
         let at = if position == CaptionPosition::Above { block } else { block + 1 };
@@ -351,13 +353,14 @@ impl Editor {
         // Below a picture, the picture keeps with its caption.
         if position == CaptionPosition::Below
             && let Some(pic) = keep_with
-            && let (Some(res), Some(q)) = (self.doc.resolver.clone(), self.index.para(&self.doc, pic))
+            && let (Some(res), Some(q)) = (self.doc.definitions.clone(), self.index.para(&self.doc, pic))
             && !q.style.keep_next
         {
             let cx = self.cx();
-            let mut pr = crate::docx::write::props::Props::parse(q.style.direct.0.as_deref(), "pPr", &cx);
-            pr.set("keepNext", format!("<{w}keepNext/>"));
-            if let Some(r) = self.para_again(pic, Some(pr.xml().as_deref()), &res, &cx)
+            let mut e = crate::format::ParaEdit::new((**q.style.direct.get()).clone());
+            e.flag(crate::format::ParaFlag::KEEP_NEXT, true);
+            let direct = q.style.direct.edit(e);
+            if let Some(r) = self.para_again(pic, Some(direct), &res, &cx)
                 && let Some(q) = self.index.para(&self.doc, pic)
             {
                 let (mark, list) = (q.mark.clone(), q.list.clone());
@@ -380,9 +383,8 @@ impl Editor {
         }) else {
             return Outcome::unavailable("no object");
         };
-        let w = self.cx().w;
-        let ppr = format!("<{w}pPr><{w}pStyle {w}val=\"Caption\"/></{w}pPr>");
-        let mut inner = self.new_para(&ppr, &[], Container::Section(0), &p);
+        let ppr = crate::format::ParaProps { style: Some("Caption".into()), ..Default::default() };
+        let mut inner = self.new_para(ppr, &[], Container::Section(0), &p);
         let r = inner.mark.clone();
         inner.inlines = self.caption_inlines(c, &r);
         let inner_id = inner.id;
@@ -420,14 +422,14 @@ impl Editor {
                 v_anchor: 0,
                 flow: 0,
             }),
-            h_relative: obj.h_relative.clone(),
-            h_align: obj.h_align.clone(),
+            h_relative: obj.h_relative,
+            h_align: obj.h_align,
             h_offset: obj.h_offset,
-            v_relative: obj.v_relative.clone(),
+            v_relative: obj.v_relative,
             v_align: None,
             v_offset,
-            wrap: obj.wrap.clone(),
-            wrap_text: obj.wrap_text.clone(),
+            wrap: obj.wrap,
+            wrap_text: obj.wrap_text,
             dist: obj.dist,
             effect: [0.0; 4],
             poly: None,
@@ -437,9 +439,8 @@ impl Editor {
             layout_in_cell: obj.layout_in_cell,
             order: usize::MAX / 2,
             z: self.front_z(),
-            src: None,
+            origin: crate::docx::Origin::NONE,
             locked: false,
-            frame_src: None,
             in_note: obj.in_note,
             parts: Vec::new(),
             shape: Some(Box::new(crate::drawing::Shape::new(
@@ -498,7 +499,7 @@ impl Editor {
     /// be written (a result across paragraphs) still shows its new value.
     pub fn refresh_values(&mut self, want: &dyn Fn(crate::docx::FieldId, &FieldKind) -> bool, fonts: &Fonts) -> usize {
         type Note = Option<(crate::docx::NoteKind, i64)>;
-        let (now, _) = fields::field_changes(&self.doc, crate::docx::now_local());
+        let (now, _) = fields::field_changes(&self.doc, self.file_name.as_deref(), crate::docx::now_local());
         let mut changed: Vec<(ParaId, crate::docx::FieldId, Option<String>, Option<Note>)> = Vec::new();
         for c in now {
             let para = ParaId(c.para);

@@ -118,6 +118,8 @@ pub(super) struct Tags<'c> {
     in_header_row: bool,
     /// Walking a sub-template's body where it is shown: no bookmarks, headings or title of its own.
     in_instance: bool,
+    /// The view the document is drawn in: what text shows.
+    review: ReviewView,
     /// What stops the walk, looked at before each block, and whether it has.
     cancel: Option<&'c AtomicBool>,
     stopped: bool,
@@ -125,9 +127,10 @@ pub(super) struct Tags<'c> {
 
 impl<'c> Tags<'c> {
     /// The structure of `doc`'s body, its notes and text boxes; headers, footers and note separators are artifacts.
-    /// `lang`: the document's language when its defaults name none. `None` once `cancel` is set.
-    pub fn of(doc: &Document, lang: &str, cancel: Option<&'c AtomicBool>) -> Option<Tags<'c>> {
-        let mut t = Tags { lang: document_language(doc, lang), cancel, ..Tags::default() };
+    /// `lang`: the document's language when its defaults name none; `review`: the view it is drawn in. `None` once
+    /// `cancel` is set.
+    pub fn of(doc: &Document, review: &ReviewView, lang: &str, cancel: Option<&'c AtomicBool>) -> Option<Tags<'c>> {
+        let mut t = Tags { lang: document_language(doc, lang), cancel, review: review.clone(), ..Tags::default() };
         for s in &doc.sections {
             for (refs, kind) in [(&s.headers, ArtifactKind::Header), (&s.footers, ArtifactKind::Footer)] {
                 for name in refs.iter().flatten() {
@@ -237,7 +240,7 @@ impl<'c> Tags<'c> {
             }
             match b {
                 Block::Para(p) if heading_level(doc, p).is_none() && p.list.is_some() => {
-                    let (num, level) = p.style.num.map_or((0, 0), |n| (n.0, n.1.max(0)));
+                    let (num, level) = p.style.num.map_or((0, 0), |n| (n.list.0, n.level.max(0)));
                     while lists.last().is_some_and(|l| l.level > level || (l.level == level && l.num != num)) {
                         close(&mut lists, out);
                     }
@@ -287,7 +290,7 @@ impl<'c> Tags<'c> {
             self.repeated.insert(p.id);
         }
         if self.title.is_none() && !self.in_note && !self.in_instance && style_name(doc, p).is_some_and(|n| n.eq_ignore_ascii_case("title")) {
-            self.title = Some(fields::visible_in(&p.inlines, &doc.review).trim().to_string()).filter(|t| !t.is_empty());
+            self.title = Some(fields::visible_in(&p.inlines, &self.review).trim().to_string()).filter(|t| !t.is_empty());
         }
         let mut e = Element::new(kind, Vec::new());
         let mut stretches = Vec::new();
@@ -305,7 +308,7 @@ impl<'c> Tags<'c> {
         }
         if let Some(level) = level.filter(|_| !self.in_instance) {
             let content = stretches.iter().map(|s| s.1).collect();
-            self.headings.push(Heading { level: level as u8, title: fields::visible_in(&p.inlines, &doc.review).trim().to_string(), content });
+            self.headings.push(Heading { level: level as u8, title: fields::visible_in(&p.inlines, &self.review).trim().to_string(), content });
         }
         self.places.paras.insert(p.id, stretches);
         if !item {
@@ -334,7 +337,8 @@ impl<'c> Tags<'c> {
 
     fn inlines(&mut self, doc: &Document, p: &Paragraph, kids: &mut Vec<Node>, stretches: &mut Vec<(u32, u32)>, floats: &mut Vec<Node>) {
         let starts: Vec<u32> = p.inlines.iter().scan(0u32, |at, i| Some(std::mem::replace(at, at.saturating_add(i.units() as u32)))).collect();
-        let links = self.links(p, &doc.review);
+        let review = self.review.clone();
+        let links = self.links(p, &review);
         let mut next_link = 0;
         // The open text stretch's language, and the open link: (its end inline, its element's place in `kids`, its
         // id). Outer `None`: no stretch is open.
@@ -362,9 +366,13 @@ impl<'c> Tags<'c> {
                 None => kids.push(node),
             };
             match inline {
-                Inline::Bookmark(name) if !self.in_instance && !name.starts_with('/') && self.bookmark_count < MAX_BOOKMARKS => {
+                Inline::Range(r)
+                    if let Some((name, true)) = r.bookmark()
+                        && !self.in_instance
+                        && self.bookmark_count < MAX_BOOKMARKS =>
+                {
                     self.bookmark_count += 1;
-                    self.bookmarks.entry(p.id).or_default().push((u, name.clone()));
+                    self.bookmarks.entry(p.id).or_default().push((u, name.to_string()));
                 }
                 Inline::Picture(pic, _) => match (&pic.text, alt(&pic.alt, pic.shape.as_deref())) {
                     (Some(t), _) => {
@@ -649,16 +657,16 @@ fn numbering(fmt: Option<&str>) -> Numbering {
 }
 
 /// The name of a paragraph's style.
-fn style_name<'d>(doc: &'d Document, p: &Paragraph) -> Option<&'d str> {
-    Some(doc.resolver.as_ref()?.styles.by_id.get(p.style.style_id.as_deref()?)?.name.as_str())
+fn style_name(doc: &Document, p: &Paragraph) -> Option<std::rc::Rc<str>> {
+    doc.definitions.as_ref()?.cascade().styles.get(p.style.style_id.as_deref()?)?.name.clone()
 }
 
 /// The document's title: its `title` property, else its first paragraph in the Title style, else its first heading,
-/// else its file name.
-pub(super) fn title(doc: &Document, tags: &Tags) -> String {
+/// else its file name (`file_name`).
+pub(super) fn title(doc: &Document, file_name: Option<&str>, tags: &Tags) -> String {
     let property = doc.properties.core("title").map(str::trim).filter(|t| !t.is_empty());
     let heading = tags.headings.iter().map(|h| h.title.as_str()).find(|t| !t.is_empty());
-    let file = doc.file_name.as_deref().map(|f| {
+    let file = file_name.map(|f| {
         let name = f.rsplit(['/', '\\']).next().unwrap_or(f);
         name.rsplit_once('.').map_or(name, |n| n.0)
     });

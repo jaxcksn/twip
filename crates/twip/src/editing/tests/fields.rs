@@ -1,5 +1,6 @@
 //! Fields: number pictures, results set from rich text, and bookmark texts
 
+use crate::docx::origin::EdgeOrigin;
 use serde_json::{Value, json};
 
 use super::{blank_body, fonts};
@@ -31,7 +32,7 @@ fn a_number_picture_pads_with_any_number_of_zeros() {
 #[test]
 fn a_document_with_a_huge_number_picture_opens() {
     let code = format!(" SEQ x \\# \"{}\" ", "0".repeat(65_536));
-    let doc = crate::docx::read_editable(&field_doc(&code, "1")).expect("reads");
+    let (doc, _) = crate::docx::read_editable(&field_doc(&code, "1")).expect("reads");
     let Some(Block::Para(p)) = doc.sections[0].blocks.first() else { panic!("a paragraph") };
     let value = p.inlines.iter().find_map(|i| if let Inline::FieldBegin { value, .. } = i { value.clone() } else { None });
     assert!(value.is_some_and(|v| v.len() == 65_536 && v.ends_with('1')), "the field shows its number");
@@ -87,7 +88,7 @@ fn bookmarks_in_one_paragraph_are_found_in_linear_time() {
         );
         let bytes = blank_body(&format!("<w:p>{starts}<w:r><w:t>x</w:t></w:r>{ends}</w:p>{refs}"));
         let t = std::time::Instant::now();
-        let doc = crate::docx::read_editable(&bytes).expect("reads");
+        let (doc, _) = crate::docx::read_editable(&bytes).expect("reads");
         let took = t.elapsed();
         let Some(Block::Para(p)) = doc.sections[0].blocks.get(1) else { panic!("the reference") };
         let value = p.inlines.iter().find_map(|i| if let Inline::FieldBegin { value, .. } = i { value.clone() } else { None });
@@ -115,7 +116,7 @@ fn references_to_many_long_bookmarks_are_found_in_linear_time() {
             .collect();
         let bytes = blank_body(&format!("<w:p>{marked}{ends}</w:p>{refs}"));
         let t = std::time::Instant::now();
-        let doc = crate::docx::read_editable(&bytes).expect("reads");
+        let (doc, _) = crate::docx::read_editable(&bytes).expect("reads");
         let took = t.elapsed();
         let Some(Block::Para(p)) = doc.sections[0].blocks.get(n - 1) else { panic!("the references") };
         let value = p.inlines.iter().find_map(|i| if let Inline::FieldBegin { value, .. } = i { value.clone() } else { None });
@@ -134,7 +135,7 @@ fn a_reference_shows_at_most_the_start_of_a_huge_bookmark() {
     let body = format!(
         r#"<w:p><w:bookmarkStart w:id="1" w:name="Big"/><w:r><w:t>{text}</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> REF Big </w:instrText></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>"#
     );
-    let doc = crate::docx::read_editable(&blank_body(&body)).expect("reads");
+    let (doc, _) = crate::docx::read_editable(&blank_body(&body)).expect("reads");
     let Some(Block::Para(p)) = doc.sections[0].blocks.get(1) else { panic!("the reference") };
     let value = p.inlines.iter().find_map(|i| if let Inline::FieldBegin { value, .. } = i { value.clone() } else { None });
     assert_eq!(value.map(|v| v.len()), Some(1 << 16));
@@ -143,7 +144,7 @@ fn a_reference_shows_at_most_the_start_of_a_huge_bookmark() {
 #[test]
 fn a_bookmark_is_found_without_case() {
     let body = r#"<w:p><w:bookmarkStart w:id="1" w:name="Total"/><w:r><w:t>42</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> REF total </w:instrText></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>"#;
-    let doc = crate::docx::read_editable(&blank_body(body)).expect("reads");
+    let (doc, _) = crate::docx::read_editable(&blank_body(body)).expect("reads");
     let Some(Block::Para(p)) = doc.sections[0].blocks.get(1) else { panic!("the reference") };
     let value = p.inlines.iter().find_map(|i| if let Inline::FieldBegin { value, .. } = i { value.clone() } else { None });
     assert_eq!(value.as_deref(), Some("42"));
@@ -228,19 +229,18 @@ fn spanning_fields_ending_in_one_run_keep_each_its_own_end() {
         begin("a"),
         begin("b")
     );
-    let doc = crate::docx::read_editable(&blank_body(&body)).expect("reads");
-    let ends: Vec<String> = doc.sections[0]
+    let (doc, _) = crate::docx::read_editable(&blank_body(&body)).expect("reads");
+    let ends: Vec<usize> = doc.sections[0]
         .blocks
         .iter()
         .filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None })
         .flat_map(|p| p.inlines.iter())
         .filter_map(|i| match i {
-            Inline::Opaque(o) if o.field == Some(crate::docx::FieldEdge::End) => o.xml.0.as_deref().map(str::to_string),
+            Inline::FieldEdge { edge, .. } if edge.kind == crate::docx::FieldEdge::End => {
+                Some(edge.origin_xml().map_or(1, |x| x.matches("fldCharType=\"end\"").count()))
+            }
             _ => None,
         })
         .collect();
-    assert_eq!(ends.len(), 2);
-    for xml in &ends {
-        assert_eq!(xml.matches("fldCharType=\"end\"").count(), 1, "{xml}");
-    }
+    assert_eq!(ends, [1, 1], "each written with its own marker");
 }

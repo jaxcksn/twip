@@ -725,9 +725,9 @@ fn degenerate_transforms_and_huge_coordinates() {
 #[test]
 fn the_fixture_reads_without_undecodable_pictures() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/render/metafile-emf.docx");
-    let d = crate::docx::read(&std::fs::read(path).expect("fixture")).expect("reads");
-    assert!(d.images.iter().all(|i| Header::read(i).is_some()), "every picture an EMF");
-    assert!(!d.diagnostics.warnings.iter().any(|w| w.code == crate::api::warning::WarningCode::ImageUndecodable));
+    let (d, dx) = crate::docx::read_reported(&std::fs::read(path).expect("fixture")).expect("reads");
+    assert!(d.images.iter().all(|(_, i)| Header::read(i).is_some()), "every picture an EMF");
+    assert!(!dx.diagnostics.warnings.iter().any(|w| w.code == crate::api::warning::WarningCode::ImageUndecodable));
 }
 
 /// What a sink is sent, counted: path elements filled, stroked and clipped by; each mask's once (a sink records a

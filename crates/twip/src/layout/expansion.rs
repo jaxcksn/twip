@@ -44,8 +44,16 @@ impl PartialEq for Expansions {
     }
 }
 
-pub fn lay(doc: &Document, blocks: &[Block], width: f64, fonts: &Fonts, nested: Option<&Expansions>) -> (f64, Rc<[Child]>) {
-    let env = LayoutEnv::new(doc);
+pub fn lay(
+    doc: &Document,
+    view: &crate::docx::review::ReviewView,
+    blocks: &[Block],
+    width: f64,
+    fonts: &Fonts,
+    nested: Option<&Expansions>,
+    hyphenation: Option<&super::hyphenate::Hyphenation>,
+) -> (f64, Rc<[Child]>) {
+    let env = LayoutEnv::new(doc, view, hyphenation);
     let ctx = LayoutCtx { fonts, env: &env, preview: None, expansions: nested };
     let mut cache = LayoutCache::default();
     let mut meter = Meter::unlimited();

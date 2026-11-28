@@ -309,7 +309,13 @@ impl Props {
             })
         });
         if let Some((open, kids)) = parsed {
-            p.open = open.unwrap_or(p.open);
+            if let Some(open) = open {
+                // The element as written may name the namespace its own way (bound on it, or the default one): it
+                // ends as it starts.
+                let name: String = open.trim_start_matches('<').chars().take_while(|c| !c.is_whitespace() && *c != '>' && *c != '/').collect();
+                p.close = format!("</{name}>");
+                p.open = open;
+            }
             p.kids = kids;
         }
         p

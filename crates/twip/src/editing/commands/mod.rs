@@ -16,7 +16,7 @@ mod text;
 
 pub use crate::api::command::BreakClear;
 pub use character::{LigatureFlags, OpenTypeChange};
-pub(crate) use character::{THEME_COLOR, THEME_FILL, colour_attrs, highlight_color, highlight_value, rgb_value, underline_value, with_attr};
+pub(crate) use character::{THEME_COLOR, THEME_FILL, colour_attrs, highlight, highlight_color, highlight_value, rgb_value, underline, with_attr};
 pub use insert::{LinkHere, LinkParts};
 pub use page::{MarginSide, PageNumberAlign, PageNumberSpot, page_number_sample};
 pub use tables::RowExceptionsEdit;
@@ -140,7 +140,7 @@ impl Editor {
         };
         let revision = self.revision();
         let out = self.execute_editable(cmd, fonts);
-        self.pending_images.clear();
+        self.pending_images = Default::default();
         self.settle_provisional(fonts);
         // The correction mark stays through typing after it and caret moves onto it; anything else drops it.
         self.follow_correction(typed, self.revision() != revision);
@@ -192,7 +192,11 @@ impl Editor {
                 _ if self.built_in_named(&cmd).is_some() => Outcome::Unchanged("the style couldn't be added"),
                 _ => self.execute_editable(cmd, fonts),
             };
-            let applied = matches!(out, Outcome::Changed(_) | Outcome::Moved) || self.pending != pending;
+            let applied = matches!(out, Outcome::Changed(_) | Outcome::Moved)
+                || match (&self.pending, &pending) {
+                    (Some(a), Some(b)) => !a.layout_eq(b),
+                    (a, b) => a.is_some() != b.is_some(),
+                };
             let end = self.end_batch(applied, fonts);
             return if matches!(end, Outcome::Changed(_)) { end } else { out };
         }
@@ -346,12 +350,12 @@ impl Editor {
             Command::SetItalic(on) => self.set_toggle(super::format::Toggle::Italic, on, fonts),
             Command::SetUnderline(style) => self.set_underline(style, fonts),
             Command::SetStrikethrough(on) => self.set_toggle(super::format::Toggle::Strike, on, fonts),
-            Command::SetDoubleStrikethrough(on) => self.set_flag("Double Strikethrough", "dstrike", on, fonts),
+            Command::SetDoubleStrikethrough(on) => self.set_flag("Double Strikethrough", character::Flag::DoubleStrike, on, fonts),
             Command::SetSubscript(on) => self.set_toggle(super::format::Toggle::Subscript, on, fonts),
             Command::SetSuperscript(on) => self.set_toggle(super::format::Toggle::Superscript, on, fonts),
-            Command::SetSmallCaps(on) => self.set_flag("Small Caps", "smallCaps", on, fonts),
-            Command::SetAllCaps(on) => self.set_flag("All Caps", "caps", on, fonts),
-            Command::SetHidden(on) => self.set_flag("Hidden", "vanish", on, fonts),
+            Command::SetSmallCaps(on) => self.set_flag("Small Caps", character::Flag::Toggle(crate::format::Toggle::SMALL_CAPS), on, fonts),
+            Command::SetAllCaps(on) => self.set_flag("All Caps", character::Flag::Toggle(crate::format::Toggle::CAPS), on, fonts),
+            Command::SetHidden(on) => self.set_flag("Hidden", character::Flag::Toggle(crate::format::Toggle::HIDDEN), on, fonts),
             Command::SetFont(crate::api::command::FontChoice::Name(family)) => self.format(&super::format::Format::FontFamily(family), fonts),
             Command::SetFont(crate::api::command::FontChoice::Theme { theme }) => self.set_theme_font(
                 match theme {
@@ -541,7 +545,7 @@ impl Editor {
             Command::InsertHyperlink(h) => self.insert_hyperlink(h, fonts),
             Command::InsertBookmark(name) => self.insert_bookmark(&name, fonts),
             Command::SetDocumentProtection(p) => self.document_protection(p, fonts),
-            Command::SetEditableRangeEditor(r) => self.set_range_editor(super::protection::RangeEditor::of_api(r.editor), r.allowed, fonts),
+            Command::SetEditableRangeEditor(r) => self.set_range_editor(super::protection::RangeEditor::from(r.editor), r.allowed, fonts),
             Command::SelectNextEditableRange(o) => self.select_next_editable_range(o == crate::api::value::Order::Next),
             Command::SelectEditableRanges => self.select_all_editable_ranges(),
             Command::SetEditingGroups(groups) => {
@@ -747,7 +751,7 @@ impl Editor {
             Command::SetTrackChanges(on) => self.set_track_changes(on),
             Command::SetMarkupView(v) => self.set_markup_view(v),
             Command::SetShowMarkup(c) => {
-                let s = &self.doc.review.markup.show;
+                let s = &self.review.markup.show;
                 let (i, f, k) = (
                     c.insertions_deletions.unwrap_or(s.insertions_deletions),
                     c.formatting.unwrap_or(s.formatting),
@@ -757,7 +761,7 @@ impl Editor {
             }
             Command::SetHiddenReviewers(r) => self.set_hidden_reviewers(&r.hidden.iter().map(String::as_str).collect::<Vec<_>>()),
             Command::SetBalloonMode(m) => self.set_balloon_mode(m.model()),
-            Command::SetMarkupStyle(c) => self.set_markup_style(crate::api::review::MarkupStyle::changed(&self.doc.review.markup.style, &c)),
+            Command::SetMarkupStyle(c) => self.set_markup_style(crate::api::review::MarkupStyle::changed(&self.review.markup.style, &c)),
             Command::SetTrackOptions(t) => {
                 let (moves, formatting) = self.track_options();
                 self.set_track_options(t.moves.unwrap_or(moves), t.formatting.unwrap_or(formatting))

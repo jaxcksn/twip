@@ -30,7 +30,7 @@ fn first_cell(e: &mut Editor) {
 fn control_characters_keep_the_part_well_formed() {
     let mut e = Editor::open(&blank_body("<w:p/>"), fonts()).unwrap();
     e.execute(Command::InsertText("a\u{1}b\u{1b}c\u{0}d".into()), fonts());
-    let saved = crate::docx::write::save(e.document()).unwrap();
+    let saved = crate::docx::write::save(e.document(), e.docx()).unwrap();
     let xml = part(&saved, "word/document.xml");
     assert!(roxmltree::Document::parse(&xml).is_ok(), "not well-formed: {xml}");
 }
@@ -39,7 +39,7 @@ fn control_characters_keep_the_part_well_formed() {
 fn control_characters_keep_the_saved_file_readable() {
     let mut e = Editor::open(&blank_body("<w:p/>"), fonts()).unwrap();
     e.execute(Command::InsertText("x\u{1b}y".into()), fonts());
-    let saved = crate::docx::write::save(e.document()).unwrap();
+    let saved = crate::docx::write::save(e.document(), e.docx()).unwrap();
     assert!(crate::docx::read_editable(&saved).is_ok());
 }
 
@@ -55,7 +55,7 @@ fn checkbox_face_is_escaped_when_toggled() {
     let p = texts_ids(&e)[0];
     e.select_range(p, Unit(0), Unit(1), fonts());
     e.execute(Command::InsertText(" ".into()), fonts());
-    let saved = crate::docx::write::save(e.document()).unwrap();
+    let saved = crate::docx::write::save(e.document(), e.docx()).unwrap();
     let xml = part(&saved, "word/document.xml");
     assert!(roxmltree::Document::parse(&xml).is_ok(), "not well-formed: {xml}");
 }
@@ -65,8 +65,8 @@ fn table_edit_saved(c: serde_json::Value) -> (String, crate::docx::Document) {
     first_cell(&mut e);
     let out = e.execute(cmd(c.clone()), fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{c}: {out:?}");
-    let saved = crate::docx::write::save(e.document()).unwrap();
-    (part(&saved, "word/document.xml"), crate::docx::read_editable(&saved).unwrap())
+    let saved = crate::docx::write::save(e.document(), e.docx()).unwrap();
+    (part(&saved, "word/document.xml"), crate::docx::read_editable(&saved).unwrap().0)
 }
 
 fn first_table(d: &crate::docx::Document) -> &crate::docx::Table {
@@ -111,8 +111,8 @@ fn header_row_survives_insert_column() {
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
     let out = e.execute(cmd(serde_json::json!({"type":"insertColumns","where":"right"})), fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
-    let saved = crate::docx::write::save(e.document()).unwrap();
-    let d = crate::docx::read_editable(&saved).unwrap();
+    let saved = crate::docx::write::save(e.document(), e.docx()).unwrap();
+    let (d, _) = crate::docx::read_editable(&saved).unwrap();
     assert!(first_table(&d).rows[0].header, "header flag lost: {}", part(&saved, "word/document.xml"));
 }
 
@@ -158,7 +158,7 @@ fn blip_images(saved: &[u8]) -> Vec<Vec<u8>> {
 }
 
 fn a_picture() -> Vec<u8> {
-    open("FX-OBJ.docx").document().images.last().cloned().expect("an image")
+    open("FX-OBJ.docx").document().images.last().map(|(_, d)| d.to_vec()).expect("an image")
 }
 
 fn insert_picture(e: &mut Editor, data: &[u8]) {
@@ -178,12 +178,12 @@ fn a_new_picture_does_not_reuse_an_existing_relationship_id() {
     let bytes = pkg("<w:p><w:r><w:t>Hi</w:t></w:r></w:p>", &rels, types, media);
     let mut e = Editor::open(&bytes, fonts()).unwrap();
     insert_picture(&mut e, &new);
-    assert_eq!(blip_images(&crate::docx::write::save(e.document()).unwrap()), [new], "the blip shows the earlier image");
+    assert_eq!(blip_images(&crate::docx::write::save(e.document(), e.docx()).unwrap()), [new], "the blip shows the earlier image");
 }
 
 #[test]
 fn a_new_picture_beside_one_an_earlier_save_named_keeps_its_own_image() {
-    let (old, new) = (open("FX-OBJ.docx").document().images[0].clone(), a_picture());
+    let (old, new) = (open("FX-OBJ.docx").document().images.iter().next().unwrap().1.to_vec(), a_picture());
     assert_ne!(old, new);
     // An earlier save named its picture's relationship as a new one now would be (the next image's index).
     let rels = format!(r#"<Relationship Id="rIdCeImg1" Type="{REL}/image" Target="media/ceimage1.png"/>"#);
@@ -201,7 +201,7 @@ fn a_new_picture_beside_one_an_earlier_save_named_keeps_its_own_image() {
     assert_eq!(e.document().images.len(), 1);
     e.select_range(super::para_id(&e, 0), Unit(3), Unit(3), fonts());
     insert_picture(&mut e, &new);
-    assert!(blip_images(&crate::docx::write::save(e.document()).unwrap()) == [old, new], "each picture shows its own image");
+    assert!(blip_images(&crate::docx::write::save(e.document(), e.docx()).unwrap()) == [old, new], "each picture shows its own image");
 }
 
 fn sect_refs(xml: &str) -> Vec<usize> {
@@ -238,7 +238,7 @@ fn removing_a_shared_header_leaves_one_reference_per_type() {
     caret_in(&mut e, "Two");
     let out = e.execute(cmd(serde_json::json!({"type":"removeHeaderFooter","kind":"header","pages":"default"})), fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
-    let saved = crate::docx::write::save(e.document()).unwrap();
+    let saved = crate::docx::write::save(e.document(), e.docx()).unwrap();
     let xml = part(&saved, "word/document.xml");
     assert!(sect_refs(&xml).iter().all(|n| *n <= 1), "two default references in one sectPr: {xml}");
 }
@@ -267,7 +267,7 @@ fn a_header_made_after_another_was_removed_is_referenced() {
     let out = e.execute(first, fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
     assert!(e.document().sections[1].headers[1].is_some());
-    let again = Editor::open(&crate::docx::write::save(e.document()).unwrap(), fonts()).unwrap();
+    let again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).unwrap(), fonts()).unwrap();
     assert!(again.document().sections[1].headers[1].is_some(), "section 2 lost its first-page header");
 }
 
@@ -282,7 +282,7 @@ fn a_stray_sectpr_in_a_cell_does_not_take_a_section_edit() {
     caret_in(&mut e, "One");
     let out = e.execute(cmd(serde_json::json!({"type":"setOrientation","value":"landscape"})), fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
-    let xml = part(&crate::docx::write::save(e.document()).unwrap(), "word/document.xml");
+    let xml = part(&crate::docx::write::save(e.document(), e.docx()).unwrap(), "word/document.xml");
     let d = roxmltree::Document::parse(&xml).unwrap();
     let attr = |n: roxmltree::Node, k: &str| n.attributes().find(|a| a.name() == k).unwrap().value().to_string();
     let sizes: Vec<(String, String)> = d.descendants().filter(|n| n.tag_name().name() == "pgSz").map(|n| (attr(n, "w"), attr(n, "h"))).collect();
@@ -307,7 +307,7 @@ fn an_edited_style_with_a_duplicate_id_reads_back_edited() {
     let mut e = Editor::open(&bytes, fonts()).unwrap();
     let out = e.execute(cmd(serde_json::json!({"type":"setStyleMeta","id":"Heading1","priority":5})), fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
-    let saved = crate::docx::write::save(e.document()).unwrap();
+    let saved = crate::docx::write::save(e.document(), e.docx()).unwrap();
     let xml = part(&saved, "word/styles.xml");
     let d = roxmltree::Document::parse(&xml).unwrap();
     let last = d
@@ -355,7 +355,7 @@ fn a_new_header_beside_a_main_part_outside_word_is_referenced() {
     let out = e.execute(cmd(serde_json::json!({"type":"removeHeaderFooter","kind":"header","pages":"default"})), fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
     assert!(e.document().sections[0].headers[0].is_some());
-    let saved = crate::docx::write::save(e.document()).unwrap();
+    let saved = crate::docx::write::save(e.document(), e.docx()).unwrap();
     let rels = part(&saved, "docs/_rels/document.xml.rels");
     let target = rels.split("Target=\"").skip(1).filter_map(|t| t.split('"').next()).find(|t| t.contains("header")).expect("a header relationship");
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(&saved)).unwrap();
@@ -377,13 +377,13 @@ fn recoloured(sp_pr: &str) -> String {
     use crate::docx::Inline;
     use crate::drawing::colour::Colour;
     use crate::drawing::paint::{Fill, Line};
-    let mut d = crate::docx::read_editable(&shape_package(sp_pr)).expect("reads");
+    let (mut d, dx) = crate::docx::read_editable(&shape_package(sp_pr)).expect("reads");
     let Block::Para(p) = &mut d.sections[0].blocks[0] else { panic!() };
     let Some(Inline::Float(f, _)) = p.inlines.iter_mut().find(|i| matches!(i, Inline::Float(..))) else { panic!("a float") };
     let sp = f.shape.as_deref_mut().and_then(|s| s.sp_mut()).expect("a shape");
     sp.fill = Some(Fill::Solid(Colour::srgb(0x00FF00)));
     sp.line = Some(Line { width: Some(crate::drawing::units::Emu(12700)), fill: Some(Fill::Solid(Colour::srgb(0x0000FF))), ..Line::default() });
-    part(&crate::docx::write::save(&d).unwrap(), "word/document.xml")
+    part(&crate::docx::write::save(&d, &dx).unwrap(), "word/document.xml")
 }
 
 fn sp_pr_children(xml: &str) -> Vec<String> {
@@ -419,7 +419,7 @@ fn typed_and_pasted_control_characters_never_reach_the_saved_part() {
     ] {
         let mut e = Editor::open(&super::blank_with("x"), fonts()).unwrap();
         e.execute(c.clone(), fonts());
-        let saved = crate::docx::write::save(e.document()).unwrap();
+        let saved = crate::docx::write::save(e.document(), e.docx()).unwrap();
         let xml = part(&saved, "word/document.xml");
         assert!(illegal(&xml).is_empty(), "{c:?}: {:?}", illegal(&xml));
         assert!(!xml.contains("<w:br"), "{c:?}: text came back as a break: {xml}");
@@ -429,11 +429,11 @@ fn typed_and_pasted_control_characters_never_reach_the_saved_part() {
 #[test]
 fn control_characters_in_model_text_are_not_written() {
     use crate::docx::Inline;
-    let mut d = crate::docx::read_editable(&super::blank_with("x")).unwrap();
+    let (mut d, dx) = crate::docx::read_editable(&super::blank_with("x")).unwrap();
     let Block::Para(p) = &mut d.sections[0].blocks[0] else { panic!() };
     let run = p.inlines.iter().find_map(|i| i.run().cloned()).unwrap();
     p.inlines.push(Inline::Text("a\u{c}b\u{1b}c\u{b}d".into(), run));
-    let xml = part(&crate::docx::write::save(&d).unwrap(), "word/document.xml");
+    let xml = part(&crate::docx::write::save(&d, &dx).unwrap(), "word/document.xml");
     assert!(roxmltree::Document::parse(&xml).is_ok(), "{xml}");
     assert!(!xml.contains("<w:br"), "text came back as a break: {xml}");
     assert!(xml.contains("abcd"), "{xml}");
@@ -455,7 +455,7 @@ fn control_strings_with_control_characters_keep_the_saved_document_readable() {
     let mut e = Editor::open(&blank_body("<w:p><w:r><w:t>Hi</w:t></w:r></w:p>"), fonts()).unwrap();
     let r = json(&mut e, serde_json::json!({ "type": "insertControl", "kind": "plainText", "tag": "a\u{1}b", "title": "x\u{8}" }));
     assert!(!refused(&r), "{r}");
-    let saved = crate::docx::write::save(e.document()).unwrap();
+    let saved = crate::docx::write::save(e.document(), e.docx()).unwrap();
     let xml = part(&saved, "word/document.xml");
     assert!(illegal(&xml).is_empty(), "{xml}");
     crate::docx::read_editable(&saved).expect("the saved document reads back");
@@ -479,7 +479,7 @@ fn a_multi_line_fill_keeps_the_data_part_well_formed() {
     let xml = e.document().data_parts.iter().find(|d| d.xml.contains("urn:case")).unwrap().xml.clone();
     assert!(roxmltree::Document::parse(&xml).is_ok(), "ill-formed: {xml:?}");
     assert!(xml.contains("<m>a\nb</m>"), "{xml:?}");
-    let saved = crate::docx::write::save(e.document()).unwrap();
+    let saved = crate::docx::write::save(e.document(), e.docx()).unwrap();
     assert!(part(&saved, "word/document.xml").contains("<w:br/>"), "the line break is written as one");
     let again = Editor::open(&saved, fonts()).unwrap();
     assert!(super::texts(&again).iter().any(|t| t.contains("a\u{2028}b")), "{:?}", super::texts(&again));
@@ -497,7 +497,7 @@ fn a_first_footnote_is_saved_without_main_part_relationships() {
     let mut e = Editor::open(&without_main_rels(), fonts()).unwrap();
     assert!(matches!(e.execute(Command::InsertFootnote, fonts()), Outcome::Changed(_)));
     assert!(matches!(e.execute(Command::InsertText("Note".into()), fonts()), Outcome::Changed(_)));
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     assert!(part(&saved, "word/_rels/document.xml.rels").contains("relationships/footnotes"));
     let again = Editor::open(&saved, fonts()).unwrap();
     let id = again
@@ -534,7 +534,7 @@ fn a_deleted_note_goes_from_a_default_namespace_notes_part() {
     let p = texts_ids(&e)[0];
     e.select_range(p, Unit(0), Unit(2), fonts());
     assert!(matches!(e.execute(super::del(super::super::commands::Dir::Forward, false), fonts()), Outcome::Changed(_)));
-    let xml = part(&crate::docx::write::save(e.document()).expect("saves"), "word/footnotes.xml");
+    let xml = part(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), "word/footnotes.xml");
     assert!(!xml.contains("Gone") && xml.contains("separator"), "{xml}");
 }
 
@@ -554,7 +554,7 @@ fn defaults_set_without_a_styles_part_are_saved() {
     let mut e = Editor::open(&no_styles, fonts()).unwrap();
     let d = crate::api::command::DocumentDefaults { size: Some(crate::api::value::Points(13.0)), ..Default::default() };
     assert!(matches!(e.execute(Command::SetDocumentDefaults(d), fonts()), Outcome::Changed(_)));
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let rels = part(&saved, "word/_rels/document.xml.rels");
     assert!(rels.contains("relationships/styles"), "{rels}");
     let target = rels.split("relationships/styles\" Target=\"").nth(1).and_then(|s| s.split('"').next()).expect("a target");
@@ -577,7 +577,7 @@ fn defaults_added_to_a_styles_part_go_after_its_whole_start_tag() {
     let d = crate::api::command::DocumentDefaults { size: Some(crate::api::value::Points(13.0)), ..Default::default() };
     let out = e.execute(Command::SetDocumentDefaults(d), fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
-    let xml = part(&crate::docx::write::save(e.document()).expect("saves"), "word/styles.xml");
+    let xml = part(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), "word/styles.xml");
     assert!(xml.contains(r#"x:note="a>b"><w:docDefaults>"#), "{xml}");
 }
 
@@ -591,7 +591,96 @@ fn a_drop_cap_made_on_a_split_paragraph_goes_before_that_paragraph() {
     let d = DropCap { position: DropCapPosition::Dropped, font: None, lines: Some(3), distance: None };
     let out = e.execute(Command::SetDropCap(d), fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
-    let xml = part(&crate::docx::write::save(e.document()).unwrap(), "word/document.xml");
+    let xml = part(&crate::docx::write::save(e.document(), e.docx()).unwrap(), "word/document.xml");
     let (alpha, frame) = (xml.find("Alpha").expect("the first paragraph"), xml.find("w:dropCap").expect("the drop cap"));
     assert!(alpha < frame && frame < xml.find("ravo").expect("the second paragraph"), "{xml}");
+}
+
+const REUSE_STYLES: &str = concat!(
+    r#"<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>"#,
+    r#"<w:style w:type="paragraph" w:customStyle="1" w:styleId="Body"><w:name w:val="Body"/><w:basedOn w:val="Normal"/></w:style>"#,
+    r#"<w:style w:type="table" w:customStyle="1" w:styleId="Grid"><w:name w:val="Grid"/></w:style>"#,
+);
+
+const REUSE_BODY: &str = concat!(
+    r#"<w:p><w:r><w:t>one</w:t></w:r></w:p>"#,
+    r#"<w:p><w:pPr><w:pStyle w:val="Body"/></w:pPr><w:r><w:t>two</w:t></w:r></w:p>"#,
+    r#"<w:tbl><w:tblPr><w:tblStyle w:val="Grid"/><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid>"#,
+    r#"<w:tr><w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#,
+    r#"<w:p/>"#,
+);
+
+fn saved_body(e: &Editor) -> String {
+    part(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), "word/document.xml")
+}
+
+fn reuse_editor() -> (Editor, String) {
+    let bytes = super::style_model::pkg(REUSE_STYLES, REUSE_BODY);
+    (super::style_model::open_pkg(&bytes), part(&bytes, "word/document.xml"))
+}
+
+fn style_change(id: &str, formatting: Vec<Command>) -> (crate::api::value::StyleId, crate::editing::style_defs::StyleChange) {
+    (crate::api::value::StyleId(id.into()), crate::editing::style_defs::StyleChange { formatting, ..Default::default() })
+}
+
+#[test]
+fn paragraphs_a_style_edit_reformats_save_their_source_and_an_authored_edit_rewrites_one() {
+    use crate::api::value::Points;
+    let (mut e, source) = reuse_editor();
+    let (id, change) = style_change("Normal", vec![Command::SetFontSize(Points(15.0)), Command::SetBold(true)]);
+    assert!(matches!(e.modify_style(&id, change, fonts()), Outcome::Changed(_)));
+    let ids = texts_ids(&e);
+    assert!(ids.iter().filter_map(|p| e.index().para(e.document(), *p)).all(|p| p.mark.size == 15.0 && p.mark.bold), "every paragraph re-resolved");
+    assert_eq!(saved_body(&e), source, "re-resolved paragraphs and the table keep their source bytes");
+    e.select_range(ids[1], Unit(0), Unit(3), fonts());
+    assert!(matches!(e.execute(Command::SetItalic(true), fonts()), Outcome::Changed(_)));
+    let xml = saved_body(&e);
+    assert!(xml.contains("<w:i/>") && xml.contains(r#"<w:p><w:r><w:t>one</w:t></w:r></w:p>"#), "{xml}");
+    assert!(!xml.contains(r#"<w:pStyle w:val="Body"/></w:pPr><w:r><w:t>two</w:t></w:r></w:p>"#), "{xml}");
+}
+
+#[test]
+fn a_table_its_style_edit_reformats_saves_its_source_and_an_authored_edit_rewrites_it() {
+    use crate::api::value::{HorizontalAlignment, Points};
+    let (mut e, source) = reuse_editor();
+    let formatting = vec![Command::SetTableAlignment(HorizontalAlignment::Center), Command::SetRowCanBreak(false), Command::SetFontSize(Points(9.0))];
+    let (id, change) = style_change("Grid", formatting);
+    assert!(matches!(e.modify_style(&id, change, fonts()), Outcome::Changed(_)));
+    let t = e.document().sections[0].blocks.iter().find_map(|b| if let Block::Table(t) = b { Some(t) } else { None }).expect("a table");
+    assert!(t.jc == crate::docx::props::Jc::Center && t.rows[0].cant_split, "the table re-resolved");
+    assert_eq!(saved_body(&e), source, "the re-resolved table keeps its source bytes");
+    first_cell(&mut e);
+    assert!(matches!(e.execute(Command::SetTableAlignment(HorizontalAlignment::Right), fonts()), Outcome::Changed(_)));
+    let xml = saved_body(&e);
+    assert!(xml.contains(r#"<w:jc w:val="right"/>"#) && xml.contains(r#"<w:p><w:r><w:t>one</w:t></w:r></w:p>"#), "{xml}");
+}
+
+#[test]
+fn paragraphs_a_theme_edit_reformats_save_their_source_and_an_authored_edit_rewrites_one() {
+    use crate::api::command::ReplaceFont;
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/model/theme-references.docx");
+    let body = concat!(
+        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>"#,
+        r#"<w:p><w:pPr><w:pStyle w:val="ThemeHeading"/></w:pPr><w:r><w:t>Heading</w:t></w:r></w:p>"#,
+        r#"<w:p><w:r><w:rPr><w:rFonts w:asciiTheme="majorHAnsi" w:hAnsiTheme="majorHAnsi"/></w:rPr><w:t>Major</w:t></w:r></w:p>"#,
+        r#"<w:p><w:r><w:t>Minor</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:body></w:document>"#,
+    );
+    let parts = [("word/document.xml".to_string(), body.as_bytes().to_vec())];
+    let bytes =
+        crate::docx::write::repackage(&std::fs::read(path).expect("the fixture"), &parts, zip::CompressionMethod::Deflated).expect("repackages");
+    let source = part(&bytes, "word/document.xml");
+    let mut e = super::style_model::open_pkg(&bytes);
+    let heading = texts_ids(&e)[0];
+    let run = |e: &Editor, k: usize| e.index().para(e.document(), texts_ids(e)[k]).and_then(|p| p.inlines[0].run().map(|r| r.ascii.clone()));
+    assert_eq!(run(&e, 1).as_deref(), Some("Cambria"), "a run of the theme's heading font");
+    let major = |e: &Editor| e.index().para(e.document(), heading).and_then(|p| p.inlines[0].run().map(|r| r.ascii.clone())).expect("a run");
+    assert_eq!(major(&e), "Cambria");
+    let r = ReplaceFont { from: "Cambria".into(), to: "Georgia".into(), scope: Default::default(), bold: None, italic: None };
+    assert!(matches!(e.execute(Command::ReplaceFont(r), fonts()), Outcome::Changed(_)));
+    assert_eq!(major(&e), "Georgia", "the heading re-resolved over the theme's new font");
+    assert_eq!(saved_body(&e), source, "paragraphs re-resolved over the theme keep their source bytes");
+    e.select_range(heading, Unit(0), Unit(5), fonts());
+    assert!(matches!(e.execute(Command::SetBold(true), fonts()), Outcome::Changed(_)));
+    let xml = saved_body(&e);
+    assert!(xml != source && xml.contains("<w:b/>"), "{xml}");
 }

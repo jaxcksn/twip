@@ -126,7 +126,12 @@ fn pdf_shows_the_view_without_comment_tints() {
         let mut e = editor("FX-REVIEW-RUNS", view);
         e.complete(fonts());
         let snapshot = e.snapshot();
-        assert!(crate::pdf::export::export(e.document(), &snapshot, "Review", &Default::default(), None).expect("exports").0.starts_with(b"%PDF-"));
+        assert!(
+            crate::pdf::export::export(e.document(), e.review(), e.file_name(), &snapshot, "Review", &Default::default(), None)
+                .expect("exports")
+                .0
+                .starts_with(b"%PDF-")
+        );
         // The export draws these items, and only these.
         let runs: Vec<String> = snapshot
             .pages()
@@ -221,7 +226,7 @@ fn caret_entering_review_marks_announces_them() {
 fn a_paragraphs_text_shows_the_view() {
     let text = |view| {
         let e = editor("FX-REVIEW-RUNS", view);
-        UnitText::of_view(paragraphs(e.document())[0], e.document().review.view).text
+        UnitText::of_view(paragraphs(e.document())[0], e.review().view).text
     };
     let (all, simple) = (text(MarkupView::All), text(MarkupView::Simple));
     assert!(all.contains("distribution filed logistics."), "All markup shows the deletion");

@@ -1,0 +1,53 @@
+page 0 12240 15840
+  1440 1616 Document defaults and styles
+  1440 1933 Normal text over bold document defaults
+  1440 2251 Bold paragraph style alone
+  1440 2568 Bold character style alone
+  1440 2886 Bold paragraph style and bold character style together
+  1440 3203 Direct bold off over bold document defaults
+  1440 3521 Direct bold over bold document defaults
+  1440 3838 Direct bold over a bold paragraph style
+  1440 4155 Direct bold off over a bold paragraph style
+  1440 4473 Direct bold over a bold character style
+  1440 4790 Direct bold off over a bold character style
+  1440 5108 Direct bold over bold paragraph and character styles together
+  1440 5425 Direct bold off over bold paragraph and character styles together
+  1440 5742 Character style chain
+  1440 6060 Chain level one: bold
+  1440 6377 Chain level two: italic, based on level one
+  1440 6695 Chain level three: bold again, based on level two
+  1440 7012 Chain level three in a bold paragraph style
+  1440 7330 Direct bold and direct italic off over chain level three
+  1440 7647 Table style first row
+  1553 7974 First row, Normal paragraph
+  1553 8292 First row, bold character style
+  6233 7974 First row, bold paragraph style
+  6233 8292 First row, bold paragraph style, direct
+  6233 8529 bold
+  1553 8857 Body row, Normal paragraph
+  6233 8857 Body row, bold paragraph style
+  1440 9184 Linked styles
+  1440 9501 Linked character style alone
+  1440 9819 Linked paragraph style alone
+  1440 10136 Linked character style in its linked paragraph style
+  1440 10454 Direct bold off over the linked character style
+  1440 10771 Numbering
+  1800 11089 1.List item: bold label level, Normal paragraph
+  1800 11406 2.List item: bold label level, bold paragraph style
+  1800 11723 3.List item: bold label level, paragraph mark direct bold off
+  1440 12041 Complex script
+  1440 12358 Complex-script run, no bCs anywhere
+  1440 12676 Complex-script run in a bCs and iCs character style
+  1440 12993 Complex-script run in a bCs paragraph style
+  1440 13310 Complex-script run, bCs paragraph style and bCs iCs character style together
+  1440 13628 Complex-script run, direct bCs over bCs paragraph and character styles
+  1440 13945 Complex-script run, direct bCs and iCs off over the character style
+  1440 14263 Complex-script run, direct b without bCs
+  cell 1445 7788 6125 8671
+  cell 6125 7788 10805 8671
+  cell 1445 8671 6125 8998
+  cell 6125 8671 10805 8998
+page 1 12240 15840
+  1440 1616 Right-to-left run in the bCs and iCs character style
+  1440 1933 Right-to-left run in a bCs paragraph style and the bCs iCs character style
+  1440 2251 Right-to-left run, direct bCs and iCs

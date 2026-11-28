@@ -48,7 +48,7 @@ fn caret(e: &mut Editor, para: usize, unit: u32) {
 
 fn doc_xml(e: &Editor) -> String {
     use std::io::Read;
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
     let mut s = String::new();
     z.by_name("word/document.xml").unwrap().read_to_string(&mut s).unwrap();
@@ -172,10 +172,10 @@ fn removing_a_repeating_section_keeps_a_nested_sections_items() {
         _ => panic!("a paragraph"),
     };
     let outer = ctl(&e, |c| c.props.tag.as_deref() == Some("Outer"));
-    assert_eq!(kinds(&e).iter().filter(|k| **k == ControlKind::RepeatingSection).count(), 2, "two sections: {:?}", kinds(&e));
+    assert_eq!(kinds(&e).iter().filter(|k| matches!(k, ControlKind::RepeatingSection { .. })).count(), 2, "two sections: {:?}", kinds(&e));
     ok(&cmd(&mut e, json!({ "type": "removeControl", "id": api(outer), "keepContent": true })));
     let left = kinds(&e);
-    assert_eq!(left, vec![ControlKind::RepeatingSection, ControlKind::RepeatingItem], "the inner section keeps its item");
+    assert!(matches!(&left[..], [ControlKind::RepeatingSection { .. }, ControlKind::RepeatingItem]), "the inner section keeps its item");
 }
 
 fn para_controls(e: &Editor) -> Vec<Vec<ControlId>> {
@@ -331,12 +331,14 @@ fn setting_a_drop_downs_entries_replaces_them() {
     let c = by_alias(&e, "C");
     let items = json!({ "items": [{ "text": "One", "value": "1" }, { "text": "Two & more", "value": "2" }] });
     ok(&cmd(&mut e, json!({ "type": "setControl", "id": api(c), "options": items })));
-    let x = e.document().controls[&c].props.kind_xml.clone().unwrap_or_default();
-    assert!(x.starts_with(r#"<w:comboBox w:lastValue="b">"#) && x.ends_with("</w:comboBox>"), "a combo box still: {x}");
+    let x = crate::docx::write::main_xml(e.document(), e.docx()).expect("writes").expect("changed");
+    let x = &x[x.find("<w:comboBox").expect("a combo box still")..];
+    let x = &x[..x.find("</w:comboBox>").expect("its end")];
+    assert!(x.starts_with(r#"<w:comboBox w:lastValue="b">"#), "its last value kept: {x}");
     assert!(x.contains(r#"w:displayText="One" w:value="1""#) && x.contains(r#"w:displayText="Two &amp; more" w:value="2""#), "{x}");
     assert!(!x.contains(r#"w:value="a""#), "the old entries are gone: {x}");
-    let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
-    let x = again.document().controls[&by_alias(&again, "C")].props.kind_xml.clone().unwrap_or_default();
+    let again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens");
+    let x = again.document().controls[&by_alias(&again, "C")].props.kind_xml.clone().map(|k| k.xml).unwrap_or_default();
     assert!(x.contains(r#"w:displayText="One""#), "saved: {x}");
 }
 
@@ -418,7 +420,7 @@ fn a_repeating_section_adds_a_copy_of_its_item() {
     send(&mut e, json!({ "type": "key", "code": "Home", "mods": { "ctrl": true } }));
     send(&mut e, json!({ "type": "key", "code": "End", "mods": { "shift": true } }));
     ok(&cmd(&mut e, json!({ "type": "wrapInRepeatingSection", "tag": "People" })));
-    let s = crate::api::value::ElementId(api(ctl(&e, |c| c.props.kind == ControlKind::RepeatingSection)));
+    let s = crate::api::value::ElementId(api(ctl(&e, |c| matches!(c.props.kind, ControlKind::RepeatingSection { .. }))));
     let depth = e.history().undo_depth();
     assert!(matches!(e.add_repeating_item(&s, None, false, fonts()), Outcome::Changed(_)));
     assert_eq!(texts(&e)[..3], ["Name: Ada", "Name: Ada", "After"], "a copy of the item, content and all");
@@ -437,19 +439,32 @@ fn a_repeating_section_adds_a_copy_of_its_item() {
     assert_eq!(texts(&e)[..2], ["Name: Ada", "After"]);
     ok(&cmd(&mut e, json!({ "type": "setControl", "id": s.0, "options": { "allowInsertDelete": false } })));
     assert!(matches!(e.add_repeating_item(&s, None, false, fonts()), Outcome::Refused(_)), "the section doesn't allow it");
-    // The flag as written with a value
-    let id = ctl(&e, |c| c.props.kind == ControlKind::RepeatingSection);
-    let flag = |e: &mut Editor, v: &str| {
-        let props = &mut e.doc.controls.get_mut(&id).expect("the section").props;
-        let xml = props.kind_xml.as_deref().expect("its kind").to_string();
-        let at = xml.find("<w15:doNotAllowInsertDeleteSection").expect("the flag");
-        let end = at + xml[at..].find("/>").expect("closed") + 2;
-        props.kind_xml = Some(format!("{}<w15:doNotAllowInsertDeleteSection w15:val=\"{v}\"/>{}", &xml[..at], &xml[end..]));
-    };
-    flag(&mut e, "true");
-    assert!(matches!(e.add_repeating_item(&s, None, false, fonts()), Outcome::Refused(_)), "on");
-    flag(&mut e, "false");
-    assert!(matches!(e.add_repeating_item(&s, None, false, fonts()), Outcome::Changed(_)), "off");
+}
+
+#[test]
+fn a_repeating_sections_items_are_fixed_by_the_element_not_its_name_in_text() {
+    let w15 = crate::docx::xml::W15;
+    let sections = [
+        ("<w15:doNotAllowInsertDeleteSection/>", true),
+        (r#"<w15:doNotAllowInsertDeleteSection w15:val="1"/>"#, true),
+        (r#"<w15:doNotAllowInsertDeleteSection w15:val="true"/>"#, true),
+        (r#"<w15:doNotAllowInsertDeleteSection w15:val="0"/>"#, false),
+        (r#"<w15:doNotAllowInsertDeleteSection w15:val="false"/>"#, false),
+        (r#"<w15:sectionTitle w15:val="doNotAllowInsertDeleteSection"/>"#, false),
+    ];
+    let body: String = sections
+        .iter()
+        .enumerate()
+        .map(|(k, (x, _))| {
+            format!(r#"<w:sdt><w:sdtPr><w:alias w:val="S{k}"/><w15:repeatingSection xmlns:w15="{w15}">{x}</w15:repeatingSection></w:sdtPr><w:sdtContent><w:p/></w:sdtContent></w:sdt>"#)
+        })
+        .collect();
+    let e = Editor::open(&blank_body(&body), fonts()).expect("opens");
+    for (k, (x, fixed)) in sections.iter().enumerate() {
+        let c = by_alias(&e, &format!("S{k}"));
+        let kind = &e.document().controls[&c].props.kind;
+        assert!(matches!(kind, ControlKind::RepeatingSection { fixed: f, .. } if f == fixed), "{x}: {kind:?}");
+    }
 }
 
 #[test]
@@ -459,7 +474,7 @@ fn a_repeating_section_in_a_locked_control_adds_no_item() {
     send(&mut e, json!({ "type": "key", "code": "Home", "mods": { "ctrl": true } }));
     send(&mut e, json!({ "type": "key", "code": "End", "mods": { "shift": true } }));
     ok(&cmd(&mut e, json!({ "type": "wrapInRepeatingSection", "tag": "People" })));
-    let s = crate::api::value::ElementId(api(ctl(&e, |c| c.props.kind == ControlKind::RepeatingSection)));
+    let s = crate::api::value::ElementId(api(ctl(&e, |c| matches!(c.props.kind, ControlKind::RepeatingSection { .. }))));
     let outer = ControlId::next();
     let props = crate::docx::ControlProps { lock: crate::docx::Lock::ContentLocked, ..Default::default() };
     e.doc.controls.insert(outer, crate::docx::Control::new(props));
@@ -489,7 +504,7 @@ fn a_repeating_section_of_rows_adds_a_row() {
         shape: crate::editing::selection::CellShape::Rows,
     };
     ok(&cmd(&mut e, json!({ "type": "wrapInRepeatingSection" })));
-    let s = crate::api::value::ElementId(api(ctl(&e, |c| c.props.kind == ControlKind::RepeatingSection)));
+    let s = crate::api::value::ElementId(api(ctl(&e, |c| matches!(c.props.kind, ControlKind::RepeatingSection { .. }))));
     assert!(matches!(e.add_repeating_item(&s, None, false, fonts()), Outcome::Changed(_)));
     let Some(Block::Table(t)) = e.document().sections[0].blocks.first() else { panic!("a table") };
     assert_eq!(t.rows.len(), 3);
@@ -588,7 +603,7 @@ fn a_date_control_without_its_xml_keeps_its_locale_when_its_calendar_is_set() {
     ok(&cmd(&mut e, json!({ "type": "setControl", "id": id.0, "options": { "locale": "de-DE" } })));
     assert!(e.document().controls[&c].props.kind_xml.is_none(), "no XML of its own yet");
     assert!(matches!(e.set_date_control_storage(&id, Some("hijri"), None, fonts()), Outcome::Changed(_)));
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let again = Editor::open(&saved, fonts()).expect("reopens");
     let k = ctl(&again, |_| true);
     let s = date_settings(&again.document().controls[&k].props).expect("a date control");

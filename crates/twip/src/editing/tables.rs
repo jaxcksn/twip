@@ -1,5 +1,6 @@
 //! Table structure commands
 
+use crate::docx::origin::ControlOrigin;
 use std::rc::Rc;
 
 use crate::api::command::TablePosition;
@@ -44,7 +45,7 @@ pub(super) fn blank_para(p: &Paragraph) -> Paragraph {
         inlines: vec![Inline::Text(String::new(), mark.clone())],
         mark,
         list: None,
-        src: None,
+        origin: crate::docx::Origin::NONE,
         id: crate::docx::next_para_id(),
         div: None,
         controls: Vec::new(),
@@ -490,7 +491,7 @@ impl Editor {
     }
 
     pub(super) fn fresh_items(&mut self, rows: &mut [Row], inside: &[crate::docx::ControlId]) {
-        let given = |c: &crate::docx::Control| sdt_id_at(&c.open).and_then(|r| c.open[r].parse::<i64>().ok());
+        let given = |c: &crate::docx::Control| c.origin_id();
         let mut next = self.doc.controls.values().chain(self.pending_controls.iter().map(|(_, c)| c)).filter_map(given).max().unwrap_or(0);
         for row in rows {
             for id in row.controls.iter_mut() {
@@ -502,10 +503,10 @@ impl Editor {
                 };
                 let n = crate::docx::ControlId::next();
                 let mut c = c;
-                if let Some(r) = sdt_id_at(&c.open) {
+                c.renumber_origin(|| {
                     next = if next >= 0x7fff_ffff { 1 } else { next + 1 };
-                    c.open.replace_range(r, &next.to_string());
-                }
+                    next
+                });
                 self.pending_controls.push((n, c));
                 *id = n;
             }
@@ -519,7 +520,7 @@ impl Editor {
         let template = &t.rows[at];
         let g = Grid::of(t);
         let mut row = template.clone();
-        row.src = None;
+        row.detach();
         row.rev = Default::default();
         for (k, cell) in row.cells.iter_mut().enumerate() {
             let col = g.rows[at][k].0;
@@ -568,7 +569,7 @@ impl Editor {
         grid.splice(at..at, widths.iter().copied());
         let mut rows = t.rows.clone();
         for (r, row) in rows.iter_mut().enumerate() {
-            row.src = None;
+            row.detach();
             if row.cells.is_empty() {
                 continue;
             }
@@ -630,7 +631,7 @@ impl Editor {
             }
         }
         rows.drain(tg.rows.0..=tg.rows.1);
-        rows.iter_mut().for_each(|r| r.src = None);
+        rows.iter_mut().for_each(Row::detach);
         let grid = t.grid.clone();
         let at = tg.rows.0.min(rows.len().saturating_sub(1));
         let first = rows.get(at).map_or(0, |r| r.grid_before);
@@ -649,7 +650,7 @@ impl Editor {
         let mut rows: Vec<Row> = Vec::new();
         for (r, row) in t.rows.iter().enumerate() {
             let mut row = row.clone();
-            row.src = None;
+            row.detach();
             let cut = |a: usize, b: usize| b.min(c1 + 1).saturating_sub(a.max(c0));
             row.grid_before -= cut(0, row.grid_before);
             row.grid_after -= cut(g.cols.saturating_sub(row.grid_after), g.cols);
@@ -771,7 +772,7 @@ impl Editor {
         for (r, ks) in &picked {
             let (r, ks) = (*r, ks.clone());
             let row = &mut rows[r];
-            row.src = None;
+            row.detach();
             for k in ks.clone() {
                 let cell = &t.rows[r].cells[k];
                 let empty = cell.blocks.len() == 1 && matches!(&cell.blocks[0], Block::Para(p) if para_len(p) == Unit(0));
@@ -828,7 +829,7 @@ impl Editor {
             return Outcome::Unchanged("no cell");
         }
         let mut rows = t.rows.clone();
-        rows.iter_mut().for_each(|r| r.src = None);
+        rows.iter_mut().for_each(Row::detach);
         let mut grid = full_grid(t, g.cols);
         if nrows > 1 {
             let chains: Vec<Vec<(usize, usize)>> = targets.iter().map(|&(r, k)| merge_chain(&g, r, k)).collect();
@@ -840,7 +841,6 @@ impl Editor {
                 if grown > MAX_ROWS.max(rows.len()) {
                     return Outcome::Unchanged("too many rows");
                 }
-                let cx = self.cx();
                 let mut out: Vec<Row> = Vec::with_capacity(grown);
                 let mut at = vec![0; rows.len()];
                 for (r, mut first) in rows.into_iter().enumerate() {
@@ -850,7 +850,7 @@ impl Editor {
                         continue;
                     }
                     let split = |k: usize| targets.binary_search(&(r, k)).is_ok();
-                    super::table_format::set_height(&mut first, None, &cx);
+                    super::table_format::set_height(&mut first, None);
                     let mut template = first.clone();
                     template.rev = Default::default();
                     for (k, c) in first.cells.iter_mut().enumerate() {
@@ -955,10 +955,16 @@ impl Editor {
     /// A new table `width` wide of `content`, each row's cells' blocks (a row with fewer than `ncols` cells filled
     /// with empty ones formatted like `like`), in the document's default table style, else Table Grid.
     pub(super) fn new_table(&self, content: Vec<Vec<Vec<Block>>>, ncols: usize, width: f64, like: &Paragraph) -> Table {
-        let border =
-            Some(crate::docx::props::Border { style: "single".into(), width: 0.5, space: 0.0, shadow: false, color: None, color_theme: None });
+        let border = Some(crate::docx::props::Border {
+            style: crate::docx::props::BorderStyle::Single,
+            width: 0.5,
+            space: 0.0,
+            shadow: false,
+            color: None,
+            color_theme: None,
+        });
         // The document's default table style, else Table Grid.
-        let has = |id: &str| self.doc.resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key(id));
+        let has = |id: &str| self.doc.definitions.as_ref().is_some_and(|r| r.has_style(id));
         let style = self.doc.settings.default_table_style.clone().filter(|s| has(s)).or_else(|| has("TableGrid").then(|| "TableGrid".to_string()));
         let grid_style = style.is_some();
         let cell = |w: f64, blocks: Vec<Block>| Cell {
@@ -972,7 +978,7 @@ impl Editor {
             shading: None,
             hatch: None,
             margins: [0.0, 5.4, 0.0, 5.4],
-            v_align: "top".into(),
+            v_align: crate::docx::VerticalAlignment::Top,
             text_direction: "lrTb".into(),
             no_wrap: false,
             fit_text: false,
@@ -987,17 +993,24 @@ impl Editor {
         let w = ((width / ncols as f64 * 20.0).floor() / 20.0).max(1.0);
         // Its style, or without one its grid lines and cell margins, as re-resolving and reading find them.
         let direct = {
-            let w = self.cx().w;
-            let own = match &style {
-                Some(id) => format!("<{w}tblStyle {w}val=\"{}\"/>", crate::docx::write::props::esc(id)),
+            use crate::format::{CellMargins, Color, TableBorders, TableProps, TextBorder};
+            let props = match &style {
+                Some(id) => TableProps { style: Some(id.as_str().into()), ..TableProps::default() },
                 None => {
-                    let line = |side: &str| format!("<{w}{side} {w}val=\"single\" {w}sz=\"4\" {w}space=\"0\" {w}color=\"auto\"/>");
-                    let sides: String = ["top", "left", "bottom", "right", "insideH", "insideV"].into_iter().map(line).collect();
-                    let mar = |side: &str| format!("<{w}{side} {w}w=\"108\" {w}type=\"dxa\"/>");
-                    format!("<{w}tblBorders>{sides}</{w}tblBorders><{w}tblCellMar>{}{}</{w}tblCellMar>", mar("left"), mar("right"))
+                    let line = Some(TextBorder {
+                        style: crate::docx::props::BorderStyle::Single,
+                        width: 0.5,
+                        space: 0.0,
+                        shadow: false,
+                        color: Some(Color::Auto),
+                    });
+                    let borders =
+                        TableBorders { top: line, left: line, bottom: line, right: line, inside_h: line, inside_v: line, ..TableBorders::default() };
+                    let mar = Some(crate::docx::props::Width::Dxa(5.4));
+                    TableProps { borders, margins: CellMargins { left: mar, right: mar, ..CellMargins::default() }, ..TableProps::default() }
                 }
             };
-            crate::docx::Raw(Some(std::rc::Rc::from(format!("<{w}tblPr>{own}</{w}tblPr>").as_str())))
+            crate::docx::table_props::TableDirect::typed(Rc::new(props))
         };
         Table {
             style_id: style,
@@ -1048,14 +1061,14 @@ impl Editor {
                         let pad = (n..ncols).map(|_| vec![Block::Para(blank_para(like))]);
                         cells.into_iter().chain(pad).map(|b| cell(w, b)).collect()
                     },
-                    src: None,
+                    origin: crate::docx::Origin::NONE,
                     direct: Default::default(),
                     exceptions: Default::default(),
                     controls: Vec::new(),
                     rev: Default::default(),
                 })
                 .collect(),
-            src: None,
+            origin: crate::docx::Origin::NONE,
             id: crate::docx::next_para_id(),
             direct,
             controls: Vec::new(),
@@ -1096,13 +1109,15 @@ impl Editor {
             }
             slot.block + 1
         };
+        // A paragraph keeping the table apart is in the content controls the table is in.
+        let apart = || Block::Para(Paragraph { controls: p.controls.clone(), ..blank_para(&p) });
         let mut with = Vec::with_capacity(3);
         if before {
-            with.push(Block::Para(blank_para(&p)));
+            with.push(apart());
         }
         with.push(Block::Table(table));
         if after {
-            with.push(Block::Para(blank_para(&p)));
+            with.push(apart());
         }
         if self.step(&mut tx, Step::Blocks { container: slot.container, range: place..place, with }).is_err() {
             self.abort(tx);
@@ -1151,10 +1166,10 @@ impl Editor {
     fn story_section(&self, container: Container) -> usize {
         use super::position::StoryId;
         match container {
-            Container::Story(StoryId::HeaderFooter(k)) => {
-                let name = self.index.part_name(k);
-                self.doc.sections.iter().position(|s| s.headers.iter().chain(s.footers.iter()).flatten().any(|n| Some(n.as_str()) == name))
-            }
+            Container::Story(StoryId::HeaderFooter(k)) => self
+                .index
+                .part(k)
+                .and_then(|part| self.doc.sections.iter().position(|s| s.headers.contains(&Some(part)) || s.footers.contains(&Some(part)))),
             Container::Story(StoryId::Footnote(id)) => self.note_reference(crate::docx::NoteKind::Foot, id).and_then(|(p, _)| self.section_at(&p)),
             Container::Story(StoryId::Endnote(id)) => self.note_reference(crate::docx::NoteKind::End, id).and_then(|(p, _)| self.section_at(&p)),
             _ => None,
@@ -1204,8 +1219,7 @@ impl Editor {
         let n = t.rows.len();
         let mut lower = t.clone();
         lower.rows = t.rows[level.row..].to_vec();
-        lower.src = None;
-        lower.id = crate::docx::next_para_id();
+        lower.renew_identity();
         let g = Grid::of(&t);
         for (k, c) in lower.rows[0].cells.iter_mut().enumerate() {
             if g.continues(level.row, k) {
@@ -1574,10 +1588,4 @@ pub(super) fn table_on(geo: &super::geometry::PageGeometry, table: TableId) -> O
         .filter(|r| r.table == table && !r.repeat)
         .map(|r| r.rect)
         .reduce(|a, b| [a[0].min(b[0]), a[1].min(b[1]), a[2].max(b[2]), a[3].max(b[3])])
-}
-
-fn sdt_id_at(open: &str) -> Option<std::ops::Range<usize>> {
-    let k = open.find(":id ").or_else(|| open.find("<w:id "))?;
-    let v = k + open[k..].find("val=\"")? + 5;
-    Some(v..v + open[v..].find('"')?)
 }

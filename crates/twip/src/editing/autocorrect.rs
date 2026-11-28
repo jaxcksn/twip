@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::OnceLock;
 
+use crate::docx::char_props::RunXml;
 use crate::font::Fonts;
 use crate::layout::Unit;
 
@@ -12,6 +13,7 @@ use super::commands::Outcome;
 use super::position::{Place, Position};
 use super::selection::Selection;
 use super::step::Step;
+use crate::docx::run_xml;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct AutoCorrect {
@@ -129,18 +131,19 @@ fn list_start(before: &[char], ac: &AutoCorrect) -> Option<bool> {
 }
 
 /// The bottom border a border line's character makes: its line style and width in eighths of a point.
-pub fn border_line(text: &[char]) -> Option<(&'static str, u32)> {
+pub fn border_line(text: &[char]) -> Option<(crate::docx::props::BorderStyle, u32)> {
     let &c = text.first()?;
     if text.len() < 3 || text.iter().any(|&x| x != c) {
         return None;
     }
+    use crate::docx::props::BorderStyle;
     Some(match c {
-        '-' => ("single", 6),
-        '_' => ("single", 12),
-        '=' => ("double", 6),
-        '*' => ("dotted", 24),
-        '~' => ("wave", 6),
-        '#' => ("thinThickThinSmallGap", 24),
+        '-' => (BorderStyle::Single, 6),
+        '_' => (BorderStyle::Single, 12),
+        '=' => (BorderStyle::Double, 6),
+        '*' => (BorderStyle::Dotted, 24),
+        '~' => (BorderStyle::Wave, 6),
+        '#' => (BorderStyle::ThinThickThinSmallGap, 24),
         _ => return None,
     })
 }
@@ -572,7 +575,7 @@ impl Editor {
                 for j in lo..hi {
                     let r = olds.get(source(j)).unwrap_or(&run);
                     match inlines.last_mut() {
-                        Some(crate::docx::Inline::Text(t, last)) if last == r => t.push(chars[j]),
+                        Some(crate::docx::Inline::Text(t, last)) if last.same_run(r) => t.push(chars[j]),
                         _ => inlines.push(crate::docx::Inline::Text(chars[j].to_string(), r.clone())),
                     }
                 }
@@ -615,7 +618,7 @@ impl Editor {
         if first < 0.0 {
             return None;
         }
-        let ind = self.direct_ppr(para, "ind");
+        let ind = self.direct_part(para, &super::CorrectionKind::Indent { ind: Default::default() }).unwrap_or_default();
         let (pa, pb) = (Position::text(story, para, Unit(0)), Position::text(story, para, Unit(1)));
         if self.kept(crate::api::command::CommandId::InsertText, &pa, &pb)
             || self.auto_format_kept(crate::api::command::CommandId::SetIndents, &pa, &pb)
@@ -623,16 +626,19 @@ impl Editor {
             return None;
         }
         let tab = self.tab_grid();
-        let twips = |pt: f64| ((pt * 20.0).round() as i64).to_string();
-        let cx = self.cx();
-        let set: Vec<(&str, Option<String>)> = if first > 0.0 {
-            vec![("left", Some(twips(super::format::grid_step(left, tab, true)))), ("start", None)]
-        } else {
-            vec![("firstLine", Some(twips(tab))), ("hanging", None)]
-        };
+        let twips = super::lists::twips;
+        let (to_left, to_first) = if first > 0.0 { (Some(twips(super::format::grid_step(left, tab, true))), None) } else { (None, Some(twips(tab))) };
         let mut tx = self.begin("AutoFormat");
         let ok = self.step(&mut tx, Step::Text { para, range: Unit(0)..Unit(1), with: Vec::new(), edges: Default::default() }).is_ok()
-            && self.repara(&mut tx, para, &|p, _| p.attrs("ind", &set, &cx));
+            && self.repara(&mut tx, para, &|e| {
+                if to_left.is_some() {
+                    e.indent_left = to_left;
+                    e.part(crate::format::ParaProp::IndentLeft);
+                } else {
+                    e.indent_first = to_first;
+                    e.part(crate::format::ParaProp::IndentFirst);
+                }
+            });
         if !ok {
             self.abort(tx);
             return Some(Outcome::Unchanged("the indent didn't change"));
@@ -643,17 +649,26 @@ impl Editor {
         Some(out)
     }
 
-    /// The direct paragraph property `local` of `para` (in its `w:pPr`), as written.
-    fn direct_ppr(&self, para: crate::layout::ParaId, local: &str) -> Option<String> {
-        let p = self.index.para(&self.doc, para)?;
-        crate::docx::write::props::Props::parse(p.style.direct.0.as_deref(), "pPr", &self.cx()).get(local).map(str::to_string)
+    /// The authored properties of `para` an AutoFormat change of `kind` writes (its indents, or its borders), alone.
+    fn direct_part(&self, para: crate::layout::ParaId, kind: &super::CorrectionKind) -> Option<crate::format::ParaProps> {
+        let p = self.index.para(&self.doc, para)?.style.direct.get();
+        match kind {
+            super::CorrectionKind::Indent { .. } => Some(crate::format::ParaProps {
+                indent_left: p.indent_left,
+                indent_right: p.indent_right,
+                indent_first: p.indent_first,
+                ..Default::default()
+            }),
+            super::CorrectionKind::BorderLine { .. } => Some(crate::format::ParaProps { borders: p.borders, ..Default::default() }),
+            _ => None,
+        }
     }
 
     /// The AutoFormat change just made, which its AutoCorrect Options undo or stop.
     fn auto_formatted(&mut self, para: crate::layout::ParaId, range: Range<Unit>, from: String, kind: super::CorrectionKind) {
         let mut c = super::Correction { para, range, from, to: String::new(), typed: 0, kind, applied: None };
         c.to = self.text_in(&c).unwrap_or_default();
-        c.applied = Self::auto_ppr(&c.kind).map(|local| self.direct_ppr(para, local));
+        c.applied = self.direct_part(para, &c.kind);
         self.correction = Some(c);
     }
 
@@ -663,7 +678,7 @@ impl Editor {
         story: super::position::StoryId,
         para: crate::layout::ParaId,
         n: usize,
-        line: &str,
+        line: crate::docx::props::BorderStyle,
         size: u32,
         fonts: &Fonts,
     ) -> Outcome {
@@ -672,12 +687,21 @@ impl Editor {
         if self.kept(C::InsertText, &pa, &pb) || self.auto_format_kept(C::SetParagraphBorders, &pa, &pb) {
             return Outcome::Unchanged("the line is kept");
         }
-        let borders = self.direct_ppr(para, "pBdr");
+        let borders = self.direct_part(para, &super::CorrectionKind::BorderLine { borders: Default::default() }).unwrap_or_default();
         let typed = self.index.para(&self.doc, para).map(|p| super::text::UnitText::of(p).text.chars().take(n).collect()).unwrap_or_default();
         let mut tx = self.begin("AutoFormat");
-        let bottom = |w: &str| format!("<{w}pBdr><{w}bottom {w}val=\"{line}\" {w}sz=\"{size}\" {w}space=\"1\" {w}color=\"auto\"/></{w}pBdr>");
+        let border = crate::format::TextBorder {
+            style: line,
+            width: f64::from(size) / 8.0,
+            space: 1.0,
+            shadow: false,
+            color: Some(crate::format::Color::Auto),
+        };
         let ok = self.step(&mut tx, Step::Text { para, range: Unit(0)..Unit(n as u32), with: Vec::new(), edges: Default::default() }).is_ok()
-            && self.repara(&mut tx, para, &|p, w| p.set("pBdr", bottom(w)));
+            && self.repara(&mut tx, para, &|e| {
+                e.borders = crate::format::ParaBorders { bottom: Some(border), ..Default::default() };
+                e.whole(crate::format::ParaProp::Borders);
+            });
         if !ok {
             self.abort(tx);
             return Outcome::Unchanged("the line stayed");
@@ -779,18 +803,8 @@ impl Editor {
     /// The automatic change just made, while its range still holds what it made.
     fn live_correction(&self) -> Option<&super::Correction> {
         self.correction.as_ref().filter(|c| {
-            self.text_in(c).is_some_and(|t| t == c.to)
-                && c.applied.as_ref().is_none_or(|a| Self::auto_ppr(&c.kind).is_some_and(|local| self.direct_ppr(c.para, local) == *a))
+            self.text_in(c).is_some_and(|t| t == c.to) && c.applied.as_ref().is_none_or(|a| self.direct_part(c.para, &c.kind).as_ref() == Some(a))
         })
-    }
-
-    /// The paragraph property an AutoFormat change writes.
-    fn auto_ppr(kind: &super::CorrectionKind) -> Option<&'static str> {
-        match kind {
-            super::CorrectionKind::Indent { .. } => Some("ind"),
-            super::CorrectionKind::BorderLine { .. } => Some("pBdr"),
-            _ => None,
-        }
     }
 
     /// The AutoCorrect replacement just made, while its range still holds the corrected text.
@@ -881,8 +895,8 @@ impl Editor {
                 }
                 return out;
             }
-            super::CorrectionKind::BorderLine { borders } => (c.from.clone(), "pBdr", borders.clone()),
-            super::CorrectionKind::Indent { ind } => ("\t".to_string(), "ind", ind.clone()),
+            super::CorrectionKind::BorderLine { borders } => (c.from.clone(), crate::format::ParaProp::Borders, borders.clone()),
+            super::CorrectionKind::Indent { ind } => ("\t".to_string(), crate::format::ParaProp::IndentLeft, ind.clone()),
             super::CorrectionKind::Text => return Outcome::Unchanged("not an AutoFormat change"),
         };
         let (text, local, was) = out;
@@ -892,9 +906,14 @@ impl Editor {
         let with = if text == "\t" { vec![crate::docx::Inline::Tab(run)] } else { vec![crate::docx::Inline::Text(text, run)] };
         let mut tx = self.begin("AutoFormat");
         let ok = self.step(&mut tx, Step::Text { para: c.para, range: c.range.start..c.range.start, with, edges: Default::default() }).is_ok()
-            && self.repara(&mut tx, c.para, &|p, _| match &was {
-                Some(x) => p.set(local, x.clone()),
-                None => p.remove(local),
+            && self.repara(&mut tx, c.para, &|e| {
+                // What the change replaced, set back
+                if local == crate::format::ParaProp::Borders {
+                    e.borders = was.borders;
+                } else {
+                    (e.indent_left, e.indent_right, e.indent_first) = (was.indent_left, was.indent_right, was.indent_first);
+                }
+                e.whole(local);
             });
         if !ok {
             self.abort(tx);
@@ -904,13 +923,13 @@ impl Editor {
     }
 
     fn raised(&self, para: crate::layout::ParaId, at: Unit, run: &crate::docx::Run) -> Option<crate::docx::Run> {
-        let res = self.doc.resolver.clone()?;
+        let res = self.doc.definitions.clone()?;
         let cx = self.cx();
         let base = self.run_base(para, at, &res, &cx)?;
-        let mut p = crate::docx::write::props::Props::parse(run.direct.0.as_deref(), "rPr", &cx);
-        let w = cx.w.clone();
-        p.set("vertAlign", format!("<{w}vertAlign {w}val=\"superscript\"/>"));
-        Some(res.rerun_xml(&base, run, p.xml().as_deref(), &cx))
+        let mut e = crate::format::CharEdit::new(run.direct.props().map_or_else(crate::format::CharProps::default, |p| (**p).clone()));
+        e.vertical = Some(crate::docx::props::VertAlign::Superscript);
+        e.whole(crate::format::Prop::Vertical);
+        Some(run_xml::again(&res, &base, run, run.direct.edit(e)))
     }
 }
 

@@ -12,6 +12,14 @@ fn control(e: &Editor, alias: &str) -> (ControlId, crate::api::value::ElementId)
     (id, super::super::merge::api_id(crate::docx::ElementId::Control(id)))
 }
 
+/// A date control's full date (`w:fullDate`).
+fn full_date(e: &Editor, c: ControlId) -> Option<String> {
+    match &e.document().controls[&c].props.kind {
+        crate::docx::ControlKind::Date { full_date, .. } => full_date.clone(),
+        _ => None,
+    }
+}
+
 fn run(e: &mut Editor, c: Command) {
     let out = e.execute(c.clone(), fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{c:?}: {out:?}");
@@ -58,7 +66,7 @@ fn bound_controls_show_their_node_and_write_it_back() {
     let k = case(&doc);
     doc.data_parts[k].xml = format!("<case xmlns=\"{ns}\"><name>Lin</name></case>");
     doc.data_parts[k].changed = true;
-    let again = Editor::open(&crate::docx::write::save(&doc).expect("saves"), fonts()).expect("reopens");
+    let again = Editor::open(&crate::docx::write::save(&doc, e.docx()).expect("saves"), fonts()).expect("reopens");
     assert!(line(&again, "Address").contains("Lin"), "{:?}", texts(&again));
 }
 
@@ -89,7 +97,7 @@ fn a_gallery_control_takes_a_building_block_of_its_category() {
     .expect("repackages");
     let mut e = Editor::open(&bytes, fonts()).expect("opens");
     let (c, id) = control(&e, "Pick");
-    let Some(crate::docx::KeptKind::Gallery { gallery, category }) = e.document().controls[&c].props.kept_kind() else { panic!("a gallery") };
+    let Some(crate::docx::KeptKind::Gallery { gallery, category }) = e.document().controls[&c].props.kept.clone() else { panic!("a gallery") };
     assert_eq!((gallery.as_deref(), category.as_deref()), (Some("Custom 1"), Some("Sub-templates")));
     let names: Vec<String> = e.gallery_entries(gallery.as_deref(), category.as_deref()).map(|b| b.name.clone()).collect();
     assert!(names.iter().any(|n| n == "Violation"), "{names:?}");
@@ -107,7 +115,7 @@ fn a_gallery_control_takes_a_building_block_of_its_category() {
     assert!(texts(&e).iter().any(|t| t == "Violation notice") && !texts(&e).iter().any(|t| t == "Choose"), "{:?}", texts(&e));
     let none = FillControl { id, text: None, image: None, docx: None, building_block: Some("Nope".into()), date: None };
     assert!(matches!(e.execute(Command::FillControl(none), fonts()), Outcome::Refused(_)));
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let again = Editor::open(&saved, fonts()).expect("reopens");
     assert!(texts(&again).iter().any(|t| t == "Violation notice"));
 }
@@ -153,7 +161,7 @@ fn a_bound_control_inside_another_opens_and_shows_its_node() {
         &mut e,
         Command::WriteDataPart(WriteDataPart { namespace: ns.into(), item_id: None, xml: format!("<case xmlns=\"{ns}\"><name>Ada</name></case>") }),
     );
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let bind = r#"<w:dataBinding w:prefixMappings="xmlns:c='urn:case'" w:xpath="/c:case[1]/c:name[1]"/>"#;
     let inner = r#"<w:r><w:t>b</w:t></w:r><w:r><w:rPr><w:b/></w:rPr><w:t>c</w:t></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>d</w:t></w:r>"#;
     let xml = format!(
@@ -252,13 +260,14 @@ fn filling_a_bound_date_writes_its_date() {
     let (c, id) = control(&e, "C");
     run(&mut e, fill(&id, "3/5/2025"));
     assert!(case_xml(&e).contains("<d>2025-03-05T00:00:00Z</d>"), "{}", case_xml(&e));
-    let full = e.document().controls[&c].props.kind_xml.clone().unwrap_or_default();
-    assert!(full.contains(r#"w:fullDate="2025-03-05T00:00:00Z""#), "{full}");
-    let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    assert_eq!(full_date(&e, c).as_deref(), Some("2025-03-05T00:00:00Z"));
+    let main = crate::docx::write::main_xml(e.document(), e.docx()).expect("writes").expect("changed");
+    assert!(main.contains(r#"<w:date w:fullDate="2025-03-05T00:00:00Z"><w:dateFormat"#), "saved in its place");
+    let again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens");
     assert!(texts(&again)[0].contains("3/5/2025"), "{:?}", texts(&again));
     run(&mut e, fill(&id, "not a date"));
     assert!(case_xml(&e).contains("<d>not a date</d>"), "text that isn't a date is stored as it is: {}", case_xml(&e));
-    assert!(!e.document().controls[&c].props.kind_xml.clone().unwrap_or_default().contains("fullDate"), "and has no full date");
+    assert_eq!(full_date(&e, c), None, "and has no full date");
 }
 
 #[test]
@@ -274,8 +283,7 @@ fn a_tracked_replacement_in_a_date_reads_only_its_current_text() {
         let at = |u| super::super::position::Position::text(super::super::position::StoryId::Body, para, crate::layout::Unit(u));
         e.selection = super::super::selection::Selection::range(at(7), at(8), super::super::selection::Granularity::Char);
         run(&mut e, Command::InsertText("2".into()));
-        let xml = e.document().controls[&c].props.kind_xml.clone().unwrap_or_default();
-        assert!(xml.contains(r#"w:fullDate="2026-02-01T00:00:00Z""#), "tracked {track}: {xml}");
+        assert_eq!(full_date(&e, c).as_deref(), Some("2026-02-01T00:00:00Z"), "tracked {track}");
     }
 }
 
@@ -303,8 +311,7 @@ fn typing_beside_a_date_keeps_its_date() {
             crate::layout::Unit(at),
         ));
         run(&mut e, Command::InsertText("x".into()));
-        let xml = e.document().controls[&c].props.kind_xml.clone().unwrap_or_default();
-        assert!(xml.contains(r#"w:fullDate="2025-03-05T00:00:00Z""#), "typing at {at}, outside it, leaves its date: {xml}");
+        assert_eq!(full_date(&e, c).as_deref(), Some("2025-03-05T00:00:00Z"), "typing at {at}, outside it, leaves its date");
     }
     assert_eq!(texts(&e)[0], "xBefore 5 mars 2025x");
 }
@@ -361,8 +368,8 @@ fn a_new_data_parts_item_id_is_a_guid() {
     assert_eq!(e.document().data_parts.len(), n);
     let guid = "8a2d6c3e-1f4b-4c5d-9e6f-0a1b2c3d4e5f";
     ok(&json_cmd(&mut e, serde_json::json!({ "type": "writeDataPart", "namespace": "urn:q", "itemId": guid, "xml": "<q xmlns=\"urn:q\"/>" })));
-    let saved = crate::docx::write::save(e.document()).expect("saves");
-    let again = crate::docx::read_editable(&saved).expect("reads back");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
+    let (again, _) = crate::docx::read_editable(&saved).expect("reads back");
     assert!(
         again.data_parts.iter().any(|d| crate::docx::binding::same_item(&d.item_id, guid)),
         "{:?}",
@@ -378,14 +385,14 @@ fn a_gallery_control_is_inserted_set_and_kept_with_its_gallery_and_category() {
     let out = e.insert_gallery_control(Some("Custom 1".into()), None, fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
     let kept = |e: &Editor| {
-        let found = e.document().controls.values().find_map(|c| match c.props.kept_kind() {
+        let found = e.document().controls.values().find_map(|c| match c.props.kept.clone() {
             Some(k @ KeptKind::Gallery { .. }) => Some((k, c.props.showing_placeholder)),
             _ => None,
         });
         found.expect("a gallery control")
     };
     assert_eq!(kept(&e), (KeptKind::Gallery { gallery: Some("Custom 1".into()), category: None }, true));
-    let c = *e.document().controls.iter().find(|(_, c)| c.props.kept_kind().is_some()).map(|(k, _)| k).expect("the control");
+    let c = *e.document().controls.iter().find(|(_, c)| c.props.kept.clone().is_some()).map(|(k, _)| k).expect("the control");
     let id = super::super::merge::api_id(crate::docx::ElementId::Control(c));
     assert!(e.gallery_entries(Some("Custom 1"), None).any(|b| b.name == "Violation"), "a Custom 1 entry");
     assert_eq!(e.gallery_entries(Some("Cover Pages"), None).count(), 0, "not another gallery's");
@@ -393,7 +400,7 @@ fn a_gallery_control_is_inserted_set_and_kept_with_its_gallery_and_category() {
     assert!(matches!(e.set_gallery_control(&id, None, Some(Some("Sub-templates".into())), fonts()), Outcome::Changed(_)));
     assert!(super::content_controls::element_changed(&mut e, crate::docx::ElementId::Control(c)), "the category change is reported");
     assert_eq!(kept(&e).0, KeptKind::Gallery { gallery: Some("Custom 1".into()), category: Some("Sub-templates".into()) });
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let again = Editor::open(&saved, fonts()).expect("reopens");
     assert_eq!(kept(&again), (KeptKind::Gallery { gallery: Some("Custom 1".into()), category: Some("Sub-templates".into()) }, true));
 }
@@ -415,11 +422,11 @@ fn citation_bibliography_and_equation_controls_are_told_apart() {
     ]
     .concat();
     let e = Editor::open(&super::blank_body(&body), fonts()).expect("opens");
-    let kind = |a: &str| e.document().controls[&control(&e, a).0].props.kept_kind();
+    let kind = |a: &str| e.document().controls[&control(&e, a).0].props.kept.clone();
     assert_eq!(kind("C"), Some(KeptKind::Citation));
     assert_eq!(kind("Bib"), Some(KeptKind::Bibliography));
     assert_eq!(kind("Equa"), Some(KeptKind::Equation));
-    assert_eq!(kind("Cover"), Some(KeptKind::BuildingBlock { gallery: Some("Cover Pages".into()), category: None }));
+    assert_eq!(kind("Cover"), Some(KeptKind::BuildingBlock { gallery: Some("Cover Pages".into()), category: None, unique: true }));
 }
 
 #[test]

@@ -4,7 +4,8 @@ use crate::docx::{Block, Document, Inline};
 use crate::layout::env::BUILT;
 use crate::layout::ids::Revision;
 use crate::layout::incremental::{FULL_JOBS, Target};
-use crate::layout::{Change, DocumentLayout, dump, layout};
+use crate::layout::tests::layout;
+use crate::layout::{Change, DocumentLayout, dump};
 
 use super::{fonts, package, package_bytes};
 
@@ -56,7 +57,7 @@ fn edit_row(d: &mut Document, r: usize) {
 fn two_row_edits_match_a_full_layout(a: usize, b: usize, header: bool) {
     let fonts = fonts();
     let mut d = table_doc(60, header);
-    let mut dl = DocumentLayout::new();
+    let mut dl = crate::layout::tests::document_layout(&d);
     dl.edit(Revision(1), None);
     dl.complete(&d, &fonts);
     assert!(dl.snapshot().pages().len() >= 3, "the table spans 3 pages or more");
@@ -102,7 +103,7 @@ fn moving_endnotes_to_section_ends_relays_them() {
     ])
     .expect("document");
     assert!(!d.settings.endnotes_sect_end && d.sections.len() == 2);
-    let mut dl = DocumentLayout::new();
+    let mut dl = crate::layout::tests::document_layout(&d);
     dl.edit(Revision(1), None);
     dl.complete(&d, &fonts);
     let before = dump::page_text(&dl.snapshot(), &d);
@@ -119,7 +120,7 @@ fn laying_out_to_a_late_page_builds_the_environment_a_bounded_number_of_times() 
     let n = 200;
     let body: String = (0..n).map(|i| format!(r#"<w:p><w:pPr><w:pageBreakBefore/></w:pPr><w:r><w:t>P{i}</w:t></w:r></w:p>"#)).collect();
     let d = docx(&format!("{body}{}", sect()));
-    let mut dl = DocumentLayout::new();
+    let mut dl = crate::layout::tests::document_layout(&d);
     dl.edit(Revision(1), None);
     let before = BUILT.get();
     dl.through(&d, &fonts, Target::Page(n - 1));
@@ -154,8 +155,7 @@ fn noted(text: &str, notes: &[u32]) -> String {
 fn fresh_copy(block: &Block) -> Block {
     let Block::Para(p) = block else { unreachable!("a paragraph") };
     let mut p = p.clone();
-    p.src = None;
-    p.id = crate::docx::model::next_para_id();
+    p.renew_identity();
     Block::Para(p)
 }
 
@@ -168,7 +168,7 @@ fn a_body_page_count_added_incrementally_stays_current_on_later_edits() {
     let numpages = fresh_copy(restarting_notes(&format!("{base}{NUMPAGES}")).sections[0].blocks.last().expect("the field"));
     let brk = fresh_copy(&restarting_notes(BRK).sections[0].blocks[0]);
     let fonts = fonts();
-    let mut dl = DocumentLayout::new();
+    let mut dl = crate::layout::tests::document_layout(&d);
     dl.edit(Revision(1), None);
     dl.complete(&d, &fonts);
     let n = d.sections[0].blocks.len();
@@ -203,7 +203,7 @@ fn text_box_chains_an_edit_puts_in_are_laid_out() {
         crate::docx::read(&super::shapes::bytes(&format!("<w:p><w:r><w:t>Before</w:t></w:r></w:p>{boxes}")).expect("a package")).expect("reads");
     let mut d = full.clone();
     let kept = d.sections[0].blocks.split_off(1);
-    let mut dl = DocumentLayout::new();
+    let mut dl = crate::layout::tests::document_layout(&d);
     dl.edit(Revision(1), None);
     dl.complete(&d, &fonts);
     // A chain-free edit keeps the (empty) chains; one putting a chain in finds it.
@@ -223,11 +223,11 @@ fn text_box_chains_an_edit_puts_in_are_laid_out() {
 fn a_section_setting_changed_outside_steps_lays_out_again() {
     let fonts = fonts();
     let mut d = docx(&format!("<w:p><w:r><w:t>Text</w:t></w:r></w:p>{}", sect()));
-    let mut dl = DocumentLayout::new();
+    let mut dl = crate::layout::tests::document_layout(&d);
     dl.edit(Revision(1), None);
     dl.complete(&d, &fonts);
     d.sections[0].left += 72.0;
-    d.sections[0].v_align = "center".into();
+    d.sections[0].v_align = crate::docx::VerticalAlignment::Center;
     dl.edit(Revision(2), Some(Change { section: 0, first: 0, old_end: 1, new_end: 1, row: None }));
     dl.complete(&d, &fonts);
     assert_matches_full(&dl, &d);
@@ -244,7 +244,7 @@ fn laying_out_to_a_block_stops_where_laying_out_to_its_paragraph_does() {
         Block::Table(_) => panic!("a paragraph"),
     };
     let shown = |d: &Document, t: Target| {
-        let mut dl = DocumentLayout::new();
+        let mut dl = crate::layout::tests::document_layout(d);
         dl.edit(Revision(1), None);
         dl.through(d, &fonts, t);
         dl.snapshot().pages().len()
@@ -292,7 +292,7 @@ fn a_header_edit_lays_out_again_reusing_the_bodies() {
     use crate::layout::incremental::REUSED_PAGES;
     let fonts = fonts();
     let mut d = headed();
-    let mut dl = DocumentLayout::new();
+    let mut dl = crate::layout::tests::document_layout(&d);
     dl.edit(Revision(1), None);
     dl.complete(&d, &fonts);
     let pages = dl.snapshot().pages().len();
@@ -318,7 +318,7 @@ fn a_header_edit_lays_out_again_reusing_the_bodies() {
 fn laying_out_to_a_page_after_a_header_edit_stops_there() {
     let fonts = fonts();
     let mut d = headed();
-    let mut dl = DocumentLayout::new();
+    let mut dl = crate::layout::tests::document_layout(&d);
     dl.edit(Revision(1), None);
     dl.complete(&d, &fonts);
     let more = fresh_copy(&header_blocks(&mut d)[0]);
@@ -376,7 +376,7 @@ fn a_layout_published_page_by_page_ends_as_a_full_one() {
         ("word/header1.xml", &header),
     ])
     .expect("document");
-    let mut dl = DocumentLayout::new();
+    let mut dl = crate::layout::tests::document_layout(&d);
     dl.edit(Revision(1), None);
     let mut runs = 0;
     while dl.run(&d, &fonts, Budget::Pages(1)) != Step::Done {
@@ -424,10 +424,10 @@ fn a_live_drags_table_laid_out_in_parts_draws_as_laid_out_whole() {
     for n in [40, 75, 150] {
         let d = long_table_doc(n);
         let Block::Table(t) = &d.sections[0].blocks[0] else { panic!("table first") };
-        let mut whole = DocumentLayout::new();
+        let mut whole = crate::layout::tests::document_layout(&d);
         whole.edit(Revision(1), None);
         whole.complete(&d, &fonts);
-        let mut live = DocumentLayout::new();
+        let mut live = crate::layout::tests::document_layout(&d);
         live.set_live_tables(std::rc::Rc::from([t.id]));
         live.edit(Revision(1), None);
         live.complete(&d, &fonts);

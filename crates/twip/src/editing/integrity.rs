@@ -271,10 +271,10 @@ fn elements(doc: &Document, idx: &DocIndex, out: &mut Vec<Violation>) {
                 let kind = doc.controls.get(c).map(|c| &c.props.kind);
                 let next = list.get(k + 1).and_then(|n| doc.controls.get(n)).map(|c| &c.props.kind);
                 let prev = k.checked_sub(1).and_then(|p| doc.controls.get(&list[p])).map(|c| &c.props.kind);
-                if kind == Some(&ControlKind::RepeatingItem) && prev != Some(&ControlKind::RepeatingSection) {
+                if kind == Some(&ControlKind::RepeatingItem) && !matches!(prev, Some(ControlKind::RepeatingSection { .. })) {
                     out.push(Violation { invariant: "C3 item in a section", detail: format!("{what}: item {c:?} not directly in a section") });
                 }
-                if kind == Some(&ControlKind::RepeatingSection) && next != Some(&ControlKind::RepeatingItem) {
+                if matches!(kind, Some(ControlKind::RepeatingSection { .. })) && next != Some(&ControlKind::RepeatingItem) {
                     out.push(Violation { invariant: "C3 item in a section", detail: format!("{what}: section {c:?} without an item") });
                 }
             }
@@ -388,10 +388,8 @@ fn elements(doc: &Document, idx: &DocIndex, out: &mut Vec<Violation>) {
     for (k, s) in doc.sections.iter().enumerate() {
         walk(&s.blocks, &format!("section {k}"), doc, &mut seen_fields, &mut used, &mut members, out);
     }
-    let mut stories: Vec<(&String, &Vec<Block>)> = doc.stories.iter().collect();
-    stories.sort_by_key(|(k, _)| *k);
-    for (name, b) in stories {
-        walk(b, name, doc, &mut seen_fields, &mut used, &mut members, out);
+    for (id, b) in &doc.stories {
+        walk(b, &format!("header or footer {}", id.0), doc, &mut seen_fields, &mut used, &mut members, out);
     }
     for (kind, notes) in [("footnote", &doc.footnotes), ("endnote", &doc.endnotes)] {
         for (id, b) in notes {

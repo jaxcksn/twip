@@ -57,7 +57,7 @@ pub fn kind_name(k: &ControlKind) -> &'static str {
         ControlKind::Date { .. } => "date",
         ControlKind::DropDown => "drop_down",
         ControlKind::Group => "group",
-        ControlKind::RepeatingSection => "repeating_section",
+        ControlKind::RepeatingSection { .. } => "repeating_section",
         ControlKind::RepeatingItem => "repeating_item",
         ControlKind::Other => "other",
     }
@@ -77,18 +77,20 @@ impl Element {
         (self.locked, self.showing_code, self.dirty, &self.date).hash(&mut h);
         self.parent.hash(&mut h);
         if let Some(p) = &self.props {
-            (kind_name(&p.kind), &p.tag, &p.alias, p.lock.val(), p.showing_placeholder, &p.binding).hash(&mut h);
+            (kind_name(&p.kind), &p.tag, &p.alias, crate::docx::write::controls::lock_val(p.lock), p.showing_placeholder, &p.binding).hash(&mut h);
             // Its kind's settings: a gallery's gallery and category, a date's calendar and storage, a list's items
-            p.kind_xml.hash(&mut h);
+            (&p.kind, &p.items, p.combo, &p.kept, p.temporary).hash(&mut h);
         }
         h.finish()
     }
 }
 
-pub(super) fn story_name(s: StoryId, idx: &DocIndex) -> String {
+/// A story's name: a header's or footer's is its part's.
+#[cfg(test)]
+pub(super) fn story_name(s: StoryId, doc: &Document, docx: &crate::docx::Session, idx: &DocIndex) -> String {
     match s {
         StoryId::Body => "body".into(),
-        StoryId::HeaderFooter(k) => idx.part_name(k).unwrap_or("header").to_string(),
+        StoryId::HeaderFooter(k) => idx.part(k).and_then(|id| crate::docx::write::story_part(doc, docx, id)).unwrap_or_else(|| "header".into()),
         StoryId::Footnote(id) => format!("footnote {id}"),
         StoryId::Endnote(id) => format!("endnote {id}"),
         StoryId::TextBox(f) => format!("text box {}", f.0),
@@ -100,13 +102,11 @@ pub(super) fn story_name(s: StoryId, idx: &DocIndex) -> String {
 pub struct Filter {
     pub kind: Option<String>,
     pub matching: Option<(String, String)>,
-    pub story: Option<String>,
 }
 
 impl Filter {
-    fn keeps(&self, e: &Element, idx: &DocIndex) -> bool {
+    fn keeps(&self, e: &Element) -> bool {
         self.kind.as_deref().is_none_or(|k| k == e.kind())
-            && self.story.as_deref().is_none_or(|s| s == story_name(e.story, idx))
             && self.matching.as_ref().is_none_or(|(field, text)| {
                 let v = match field.as_str() {
                     "code" => e.code.as_deref(),
@@ -129,12 +129,12 @@ pub(super) fn stories<'d>(doc: &'d Document, idx: &DocIndex) -> Vec<(StoryId, &'
     let mut seen = Vec::new();
     for s in &doc.sections {
         for refs in [&s.headers, &s.footers] {
-            for name in refs.iter().flatten() {
-                if seen.contains(name) {
+            for &part in refs.iter().flatten() {
+                if seen.contains(&part) {
                     continue;
                 }
-                seen.push(name.clone());
-                if let (Some(b), Some(id)) = (doc.stories.get(name), idx.header_footer(name)) {
+                seen.push(part);
+                if let (Some(b), Some(id)) = (doc.stories.get(&part), idx.header_footer(part)) {
                     out.push((id, b));
                 }
             }
@@ -327,7 +327,7 @@ pub fn enumerate(doc: &Document, idx: &DocIndex, filter: &Filter) -> Vec<Element
         }
     }
     boxes(&mut w, &mut k);
-    w.out.into_iter().filter(|e| filter.keeps(e, idx)).collect()
+    w.out.into_iter().filter(|e| filter.keeps(e)).collect()
 }
 
 pub fn context(doc: &Document, idx: &DocIndex, sel: &Selection) -> Vec<(ElementId, bool)> {
@@ -477,7 +477,7 @@ pub fn touched(inverses: &[super::step::Step]) -> Touched {
             }
             Step::Para { para, .. } | Step::FieldViews { para, .. } => paras.push(*para),
             Step::AddImage { .. }
-            | Step::Resolver { .. }
+            | Step::Definitions { .. }
             | Step::DefaultTab(_)
             | Step::Hyphenation(_)
             | Step::PageSettings(_)

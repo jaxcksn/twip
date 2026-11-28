@@ -1,21 +1,34 @@
 //! Character and paragraph formatting
 
+use crate::docx::origin::ParagraphOrigin;
+use crate::docx::origin::RubyOrigin;
+use crate::docx::style_xml::StylesPart;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use crate::docx::char_props::RunXml;
+use crate::docx::definitions::Definitions;
 use crate::docx::model::Compat;
-use crate::docx::props::RunProps;
-use crate::docx::resolve::{Resolver, joined_style};
-use crate::docx::styles::Region;
-use crate::docx::write::props::{Cx, Props};
-use crate::docx::{Inline, ParaStyle, Raw, Row, Ruby, Run, RunStyle, Table};
+use crate::docx::para_props::ParaXml;
+use crate::docx::para_props::{self, ParaDirect};
+use crate::docx::para_xml;
+use crate::docx::write::props::Cx;
+use crate::docx::{Inline, ParaStyle, Row, Ruby, Run, RunStyle, Table};
 use crate::font::Fonts;
+use crate::format::cascade::TableRegion;
+use crate::format::resolve::joined_style;
 use crate::layout::{ParaId, Unit};
 
 use super::commands::Outcome;
 use super::index::Container;
 use super::step::{Step, TableProps};
 use super::{Editor, Tx};
+use crate::document::format::ShadingPattern;
+use crate::document::line::BorderStyle;
+use crate::document::paragraph::{ListId, ListRef};
+use crate::docx::char_props::RunDirect;
+use crate::docx::run_xml;
+use crate::format::{CharEdit, CharProps, Color, ParaBorders, ParaEdit, ParaProp, Prop, ScriptClass, Shading, TextBorder};
 
 const NEW_ROOT: &str = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">"#;
 
@@ -41,30 +54,72 @@ impl Toggle {
         }
     }
 
-    fn set(self, p: &mut Props, w: &str, on: bool) {
-        let flag = |name: &str| if on { format!("<{w}{name}/>") } else { format!("<{w}{name} {w}val=\"0\"/>") };
+    fn set(self, e: &mut CharEdit, on: bool) {
+        use crate::format::Toggle as T;
         match self {
             Toggle::Bold => {
-                p.set("b", flag("b"));
-                p.set("bCs", flag("bCs"));
+                e.toggle(T::BOLD, on);
+                e.toggle(T::BOLD_COMPLEX, on);
             }
             Toggle::Italic => {
-                p.set("i", flag("i"));
-                p.set("iCs", flag("iCs"));
+                e.toggle(T::ITALIC, on);
+                e.toggle(T::ITALIC_COMPLEX, on);
             }
-            Toggle::Underline => p.set("u", format!("<{w}u {w}val=\"{}\"/>", if on { "single" } else { "none" })),
-            Toggle::Strike => p.set("strike", flag("strike")),
+            Toggle::Underline => {
+                let style = if on { crate::docx::Underline::Single } else { crate::docx::Underline::None };
+                e.underline = Some(crate::format::UnderlineProps { style, color: None });
+                e.whole(Prop::Underline);
+            }
+            Toggle::Strike => e.toggle(T::STRIKE, on),
             Toggle::Subscript | Toggle::Superscript => {
-                let v = match (self, on) {
-                    (_, false) => "baseline",
-                    (Toggle::Subscript, true) => "subscript",
-                    _ => "superscript",
-                };
-                p.set("vertAlign", format!("<{w}vertAlign {w}val=\"{v}\"/>"))
+                use crate::docx::props::VertAlign;
+                e.vertical = Some(match (self, on) {
+                    (_, false) => VertAlign::Baseline,
+                    (Toggle::Subscript, true) => VertAlign::Subscript,
+                    _ => VertAlign::Superscript,
+                });
+                e.whole(Prop::Vertical);
             }
         }
     }
 }
+
+/// A size in points as half-points can hold it, between 1 and 1638.
+fn half_points(pt: f64) -> f64 {
+    ((pt * 2.0).round() as i64).clamp(2, 3276) as f64 / 2.0
+}
+
+/// Sets the size of every script class.
+fn sized(e: &mut CharEdit, pt: f64) {
+    (e.size, e.complex_size) = (Some(pt), Some(pt));
+    e.whole(Prop::Size);
+    e.whole(Prop::ComplexSize);
+}
+
+/// Points to the nearest twip, as the paragraph commands write lengths.
+pub(in crate::editing) fn twip(pt: f64) -> f64 {
+    (pt * 20.0).round() / 20.0
+}
+
+/// A colour as a command chose it: its theme colour when it is one.
+pub(in crate::editing) fn colour(c: super::theme::WordColour) -> crate::format::Color {
+    c.theme.filter(|r| crate::docx::props::theme_name(r.slot).is_some()).map_or(crate::format::Color::Rgb(c.rgb), crate::format::Color::Theme)
+}
+
+/// Every script class's font the family `name`, with no hint: set whole, the classes in the order `order` gives.
+pub(super) fn family(e: &mut CharEdit, name: &str, order: [ScriptClass; 4]) {
+    let f = Some(crate::format::FontRef::Family(name.into()));
+    e.fonts = crate::format::ScriptFonts { latin: f.clone(), latin_extended: f.clone(), east_asian: f.clone(), complex: f };
+    e.hint = None;
+    for c in order {
+        e.whole(Prop::Font(c));
+    }
+}
+
+/// The order the font command sets the script classes' fonts in.
+const FONT_ORDER: [ScriptClass; 4] = [ScriptClass::Latin, ScriptClass::LatinExtended, ScriptClass::Complex, ScriptClass::EastAsian];
+/// The order a font for the text typed next is set in.
+const PENDING_FONT_ORDER: [ScriptClass; 4] = [ScriptClass::Latin, ScriptClass::LatinExtended, ScriptClass::EastAsian, ScriptClass::Complex];
 
 pub(super) fn with_run(i: &Inline, run: &Run) -> Inline {
     let run = run.clone();
@@ -96,22 +151,94 @@ pub(super) fn with_run(i: &Inline, run: &Run) -> Inline {
         Inline::Ruby(r, _) => Inline::Ruby(r.clone(), run),
         Inline::DateBlock(name, text, _) => Inline::DateBlock(name, text.clone(), run),
         // A field edge's run carries its tracked changes.
-        Inline::Opaque(o) if o.field.is_some() => {
-            Inline::Opaque(Rc::new(crate::docx::Opaque { xml: o.xml.clone(), field: o.field.clone(), src: o.src.clone(), run: Some(run) }))
-        }
-        Inline::Bookmark(_) | Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::Opaque(_) => i.clone(),
+        Inline::FieldEdge { edge, .. } => Inline::FieldEdge { edge: Rc::new((**edge).clone()), run },
+        Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::Foreign(_) => i.clone(),
     }
 }
 
-/// A new `w:rPr` for a run from its own and its formatting.
-pub(super) type RubyEdit<'a> = dyn Fn(Option<&str>, &RunStyle) -> Option<String> + 'a;
+/// `p` with its highlight alone, and what it keeps beside it.
+fn highlight_alone(p: &CharProps) -> CharProps {
+    let highlight = |q: &crate::format::QName| &*q.ns == crate::docx::xml::W && &*q.local == "highlight";
+    let foreign = p.foreign.as_deref().map(|f| crate::format::ForeignProps {
+        children: Vec::new(),
+        attributes: f.attributes.iter().filter(|a| a.on.as_ref().is_none_or(highlight)).cloned().collect(),
+        kept: f.kept.iter().filter(|c| highlight(&c.name)).cloned().collect(),
+    });
+    CharProps { highlight: p.highlight, foreign: foreign.filter(|f| *f != Default::default()).map(Rc::new), ..Default::default() }
+}
+
+/// A run's new authored properties from its own and its formatting; `None` leaves them.
+pub(super) type RubyEdit<'a> = dyn Fn(&RunDirect, &RunStyle) -> Option<RunDirect> + 'a;
+
+/// A [`RubyEdit`] that edits each run's authored properties with `edit`, which says whether it changed them.
+pub(super) fn ruby_edit(edit: impl Fn(&mut CharEdit, &RunStyle) -> bool) -> impl Fn(&RunDirect, &RunStyle) -> Option<RunDirect> {
+    move |d, run| {
+        let mut e = CharEdit::new(d.props().map_or_else(CharProps::default, |p| (**p).clone()));
+        edit(&mut e, run).then(|| d.edit(e))
+    }
+}
+
+/// A style separator mark's flags (hidden, and the separator's), which formatting keeps.
+struct Separator {
+    hidden: Option<bool>,
+    spec: Option<bool>,
+}
+
+fn separator(p: &CharProps) -> Separator {
+    Separator { hidden: p.toggles.get(crate::format::Toggle::HIDDEN), spec: p.spec_vanish }
+}
+
+impl Separator {
+    fn restore(&self, p: &mut CharProps) {
+        if let Some(on) = self.hidden {
+            p.toggles.put(crate::format::Toggle::HIDDEN, on);
+        }
+        if self.spec.is_some() {
+            p.spec_vanish = self.spec;
+        }
+    }
+}
+
+/// `xml`, a definition's `w:rPr` (a style's, a list level's) in the part `cx` describes, with a typed edit of its
+/// properties, written again as an edit of it; as it is when `edit` changes nothing.
+#[cfg(test)]
+pub(super) fn edit_rpr_xml(
+    xml: Option<&str>,
+    colours: &crate::docx::props::ThemeColours,
+    cx: &Cx,
+    edit: impl FnOnce(&mut CharEdit) -> bool,
+) -> Option<String> {
+    let direct = RunDirect::from_xml(xml, cx);
+    let mut e = CharEdit::new(direct.props().map_or_else(CharProps::default, |q| (**q).clone()));
+    if !edit(&mut e) {
+        return xml.map(str::to_string);
+    }
+    direct.edit(e).xml(colours, cx).map(std::borrow::Cow::into_owned)
+}
+
+/// `xml` (a `w:pPr`, or none) with `edit`'s typed edit of the properties it holds, written over it; as it is when
+/// `edit` returns false.
+#[cfg(test)]
+pub(super) fn edit_ppr_xml(
+    xml: Option<&str>,
+    colours: &crate::docx::props::ThemeColours,
+    cx: &Cx,
+    edit: impl FnOnce(&mut ParaEdit) -> bool,
+) -> Option<String> {
+    let direct = ParaDirect::from_xml(xml, cx);
+    let mut e = ParaEdit::new((**direct.get()).clone());
+    if !edit(&mut e) {
+        return xml.map(str::to_string);
+    }
+    direct.edit(e).xml(colours, cx).map(std::borrow::Cow::into_owned)
+}
 
 /// A paragraph's formatting resolved again from its direct XML, with what reading gave it beyond that
 /// ([`Resolver::para_again`]), and what its runs resolve over.
 pub(super) struct Again {
     pub style: ParaStyle,
     /// Each part's first unit and base: one part, or one per paragraph a vanished mark joined onto it.
-    bases: Vec<(u32, RunProps)>,
+    bases: Vec<(u32, CharProps)>,
 }
 
 impl Again {
@@ -120,30 +247,29 @@ impl Again {
         self.bases.iter().rposition(|(s, _)| *s <= at).unwrap_or(0)
     }
 
-    pub fn base(&self, at: u32) -> &RunProps {
+    pub fn base(&self, at: u32) -> &CharProps {
         &self.bases[self.part(at)].1
     }
 
     /// What the paragraph mark resolves over: the last part's base.
-    pub fn mark_base(&self) -> &RunProps {
+    pub fn mark_base(&self) -> &CharProps {
         &self.bases[self.bases.len() - 1].1
     }
 }
 
-/// `t`'s properties a table style gives, resolved again from its and its rows' and cells' direct XML as reading resolves
-/// them: its style (the default one for one it names that's gone), borders, shading, band sizes, layout, alignment,
+/// `t`'s properties a table style gives, resolved again from its and its rows' and cells' authored properties as reading
+/// resolves them: its style (the default one for one it names that's gone), borders, shading, band sizes, layout, alignment,
 /// indent, width and spacing, its rows' heights, splitting and header flags, and every cell's borders, shading, margins
 /// and alignment, when they changed. A table joined from several as read keeps the alignment, indent and width its
 /// first row took from them.
-fn table_again(t: &Table, res: &Resolver, cx: &Cx) -> Option<(TableProps, Option<Vec<Row>>)> {
-    use crate::docx::props::{Borders, TblProps, TcProps, TrProps};
-    let colours = &res.styles.colours;
-    let parse_tbl = |raw: &Raw| raw.0.as_deref().and_then(|x| cx.parse(x, |_, n| TblProps::parse(Some(n), colours))).unwrap_or_default();
-    let direct = parse_tbl(&t.direct);
-    let style_id = res.styles.table_style(direct.style.as_deref()).map(str::to_string);
-    let style_region = res.styles.table_region(style_id.as_deref(), &[]);
-    let mut tbl = style_region.tbl.clone();
-    tbl.merge(&direct);
+fn table_again(t: &Table, res: &Definitions) -> Option<(TableProps, Option<Vec<Row>>)> {
+    use crate::docx::props::Borders;
+    use crate::docx::table_props::{cell_on, row_on, table_on, tbl_props};
+    let c = res.cascade();
+    let colours = &c.colours;
+    let style_id = c.table_style(t.direct.get().style.as_deref()).map(str::to_string);
+    let style_region = c.table_region(style_id.as_deref(), &[]);
+    let tbl = table_on(&style_region.format.table, t.direct.get(), colours);
     let b = &tbl.borders;
     let mut props = TableProps::of(t);
     props.style_id = style_id.clone();
@@ -152,17 +278,15 @@ fn table_again(t: &Table, res: &Resolver, cx: &Cx) -> Option<(TableProps, Option
     props.bands = (tbl.row_band.unwrap_or(0), tbl.col_band.unwrap_or(0));
     props.fixed = tbl.fixed.unwrap_or(false);
     props.cell_spacing = tbl.cell_spacing.unwrap_or(0.0);
-    let generic = res.styles.compat == Compat::Generic;
-    let parse_tr = |raw: &Raw| raw.0.as_deref().and_then(|x| cx.parse(x, |_, n| TrProps::parse(Some(n)))).unwrap_or_default();
+    let generic = c.rules.compat == Compat::Generic;
     // Joined tables' rows carry the shading of their own table: their first row's alignment came from that table.
     let joined = t.rows.iter().any(|r| r.table_shading.is_some());
     if !joined {
         let mut row_jc: Option<Option<crate::docx::props::Jc>> = None;
         let (mut first_jc, mut first_width, mut first_ind) = (None, None, None);
         for (ri, row) in t.rows.iter().enumerate() {
-            let mut trp = style_region.tr.clone();
-            trp.merge(&parse_tr(&row.direct));
-            let ex = parse_tbl(&row.exceptions);
+            let mut trp = row_on(&style_region.format.row, row.direct.get());
+            let ex = tbl_props(row.exceptions.get(), colours);
             trp.jc = trp.jc.or(ex.jc);
             row_jc = Some(if ri == 0 || row_jc == Some(trp.jc) { trp.jc } else { None });
             if ri == 0 {
@@ -189,19 +313,14 @@ fn table_again(t: &Table, res: &Resolver, cx: &Cx) -> Option<(TableProps, Option
         .rows
         .iter()
         .enumerate()
-        .take_while(|(i, r)| {
-            let mut trp = style_region.tr.clone();
-            trp.merge(&r.direct.0.as_deref().and_then(|x| cx.parse(x, |_, n| TrProps::parse(Some(n)))).unwrap_or_default());
-            trp.header == Some(true) || *i == 0 && look.first_row
-        })
+        .take_while(|(i, r)| row_on(&style_region.format.row, r.direct.get()).header == Some(true) || *i == 0 && look.first_row)
         .count();
     let unset = if style_id.is_none() { 0.5 } else { 0.0 };
     let mut rows = t.rows.clone();
     for (ri, row) in rows.iter_mut().enumerate() {
-        let mut trp = style_region.tr.clone();
-        trp.merge(&parse_tr(&row.direct));
-        (row.height, row.cant_split, row.header) = (trp.height.clone(), trp.cant_split.unwrap_or(false), trp.header.unwrap_or(false));
-        let ex = parse_tbl(&row.exceptions);
+        let trp = row_on(&style_region.format.row, row.direct.get());
+        (row.height, row.cant_split, row.header) = (trp.height, trp.cant_split.unwrap_or(false), trp.header.unwrap_or(false));
+        let ex = tbl_props(row.exceptions.get(), colours);
         let mut row_tbl = tbl.clone();
         row_tbl.borders.merge(&ex.borders);
         row_tbl.margins.merge(&ex.margins);
@@ -209,63 +328,66 @@ fn table_again(t: &Table, res: &Resolver, cx: &Cx) -> Option<(TableProps, Option
         row.borders = (ex.borders != Borders::default())
             .then(|| Rc::new([rb.top.clone(), rb.left.clone(), rb.bottom.clone(), rb.right.clone(), rb.inside_h.clone(), rb.inside_v.clone()]));
         let ncols = row.cells.len();
-        for (ci, c) in row.cells.iter_mut().enumerate() {
-            let region = res.cell_region(style_id.as_deref(), look, props.bands, (ri, ci), (nrows, ncols), headers);
-            let mut tcp = region.tc.clone();
-            tcp.merge(&c.direct.0.as_deref().and_then(|x| cx.parse(x, |_, n| TcProps::parse(Some(n), colours))).unwrap_or_default());
-            crate::docx::style_cell(c, &tcp, &row_tbl.margins, unset);
+        for (ci, cell) in row.cells.iter_mut().enumerate() {
+            let region = c.cell_region(style_id.as_deref(), look, props.bands, (ri, ci), (nrows, ncols), headers);
+            let tcp = cell_on(&region.format.cell, cell.direct.get(), colours);
+            crate::docx::style_cell(cell, &tcp, &row_tbl.margins, unset);
         }
     }
     let rows = (rows != t.rows).then_some(rows);
     Some((props, rows))
 }
 
-/// A ruby's base and annotation text resolved again over `base` from its XML, `edit` first giving the base text's runs
-/// new direct formatting (from their `w:rPr` and formatting), the annotation's too when it says so. `None` when it stays
-/// as it is.
-pub(super) fn ruby_again(r: &Ruby, base: &RunProps, edit: Option<(&RubyEdit, bool)>, res: &Resolver, cx: &Cx) -> Option<Rc<Ruby>> {
+/// A ruby's base and annotation text resolved again over `base` from the authored properties its XML holds, `edit`
+/// first giving the base text's runs new ones (from their own and their formatting), the annotation's too when it says
+/// so, written into the XML. `None` when it stays as it is.
+pub(super) fn ruby_again(r: &Ruby, base: &CharProps, edit: Option<(&RubyEdit, bool)>, res: &Definitions, cx: &Cx) -> Option<Rc<Ruby>> {
     use crate::docx::xml::is_w;
-    let raw = r.xml.0.as_deref()?;
+    let raw = &**r.origin_xml()?;
     let (mut splices, parts) = cx.parse(raw, |text, el| {
         let off = text.len() - raw.len() - "</x>".len();
         let mut splices: Vec<(std::ops::Range<usize>, String)> = Vec::new();
-        let mut parts: [Vec<(String, Option<String>)>; 2] = [Vec::new(), Vec::new()];
+        let mut parts: [Vec<(String, RunDirect)>; 2] = [Vec::new(), Vec::new()];
         for (k, name) in ["rubyBase", "rt"].into_iter().enumerate() {
             let Some(part) = el.children().find(|c| is_w(*c, name)) else { continue };
             for run in part.descendants().filter(|d| is_w(*d, "r")) {
                 let rpr = run.children().find(|c| is_w(*c, "rPr"));
-                let mut xml = rpr.map(|n| text[n.range()].to_string());
+                let xml = rpr.map(|n| &text[n.range()]);
+                let mut direct = RunDirect::from_xml(xml, cx);
                 let old = if k == 0 { &r.base } else { &r.text };
                 // Runs with text, new properties going before their first child
                 let first = run.children().find(|c| is_w(*c, "t")).and_then(|_| run.first_child());
                 if let Some((edit, _)) = edit.filter(|e| k == 0 || e.1)
                     && let Some(first) = first
                     && let Some((_, old)) = old.get(parts[k].len()).or(old.last())
+                    && let Some(d) = edit(&direct, old)
                 {
-                    let now = edit(xml.as_deref(), old);
-                    if now != xml {
+                    let now = d.xml(&res.cascade().colours, cx);
+                    if now.as_deref() != xml {
                         let at = match rpr {
                             Some(n) => n.range().start - off..n.range().end - off,
                             None => first.range().start - off..first.range().start - off,
                         };
-                        splices.push((at, now.clone().unwrap_or_default()));
-                        xml = now;
+                        let now = now.map(std::borrow::Cow::into_owned);
+                        direct = RunDirect::from_xml(now.as_deref(), cx);
+                        splices.push((at, now.unwrap_or_default()));
                     }
                 }
                 for t in run.children().filter(|c| is_w(*c, "t")) {
-                    parts[k].push((t.text().unwrap_or_default().to_string(), xml.clone()));
+                    parts[k].push((t.text().unwrap_or_default().to_string(), direct.clone()));
                 }
             }
         }
         (splices, parts)
     })?;
-    let again = |old: &[(String, Run)], new: Vec<(String, Option<String>)>| -> Vec<(String, Run)> {
+    let typed = base.clone();
+    let again = |old: &[(String, Run)], new: Vec<(String, RunDirect)>| -> Vec<(String, Run)> {
         new.into_iter()
             .enumerate()
-            .map(|(k, (t, rpr))| {
+            .map(|(k, (t, direct))| {
                 let run = match old.get(k) {
-                    Some((_, o)) => res.rerun_xml(base, o, rpr.as_deref(), cx),
-                    None => res.run_from_xml(base, rpr.as_deref(), cx),
+                    Some((_, o)) => run_xml::again(res, &typed, o, direct),
+                    None => Rc::new(run_xml::resolve(res, &typed, direct, false)),
                 };
                 (t, run)
             })
@@ -273,7 +395,10 @@ pub(super) fn ruby_again(r: &Ruby, base: &RunProps, edit: Option<(&RubyEdit, boo
     };
     let [b, t] = parts;
     let (base_text, text) = (again(&r.base, b), again(&r.text, t));
-    if splices.is_empty() && base_text == r.base && text == r.text {
+    let same = |a: &[(String, crate::docx::Run)], b: &[(String, crate::docx::Run)]| {
+        a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x.0 == y.0 && x.1.layout_eq(&y.1))
+    };
+    if splices.is_empty() && same(&base_text, &r.base) && same(&text, &r.text) {
         return None;
     }
     let mut xml = raw.to_string();
@@ -282,7 +407,7 @@ pub(super) fn ruby_again(r: &Ruby, base: &RunProps, edit: Option<(&RubyEdit, boo
     for (at, with) in splices {
         xml.replace_range(at, &with);
     }
-    Some(Rc::new(Ruby { base: base_text, text, xml: crate::docx::Raw(Some(Rc::from(xml.as_str()))), ..(*r).clone() }))
+    Some(Rc::new(Ruby { base: base_text, text, ..r.with_origin_xml(Rc::from(xml.as_str())) }))
 }
 
 impl Editor {
@@ -290,11 +415,11 @@ impl Editor {
         if tx.stale_tables.is_empty() && tx.stale_paras.is_empty() {
             return;
         }
-        let Some(res) = self.doc.resolver.clone() else { return };
+        let Some(res) = self.doc.definitions.clone() else { return };
         let cx = self.cx();
         for &table in &tx.stale_tables.clone() {
             let Some(t) = self.index.table(&self.doc, table) else { continue };
-            if let Some((props, rows)) = table_again(t, &res, &cx) {
+            if let Some((props, rows)) = table_again(t, &res) {
                 if props != TableProps::of(t) {
                     let _ = self.step(tx, Step::TableProps { table, props });
                 }
@@ -317,7 +442,7 @@ impl Editor {
         for para in paras {
             let Some(again) = self.para_again(para, None, &res, &cx) else { continue };
             let Some(p) = self.index.para(&self.doc, para) else { continue };
-            let mark = res.rerun(again.mark_base(), &p.mark, &cx);
+            let mark = run_xml::rerun(&res, again.mark_base(), &p.mark);
             let mut cache: HashMap<(*const RunStyle, usize), Run> = HashMap::new();
             let mut changed = false;
             let mut at = 0u32;
@@ -333,8 +458,8 @@ impl Editor {
                 let new = cache
                     .entry((Rc::as_ptr(run), k))
                     .or_insert_with(|| {
-                        let again = res.rerun(base, run, &cx);
-                        if *again == **run { run.clone() } else { again }
+                        let again = run_xml::rerun(&res, base, run);
+                        if again.layout_eq(run) { run.clone() } else { again }
                     })
                     .clone();
                 changed |= !Rc::ptr_eq(&new, run);
@@ -346,8 +471,8 @@ impl Editor {
                 }
                 with.push(i);
             }
-            let style_changed = *p.style != again.style || *p.mark != *mark;
-            let (style, mark) = (Rc::new(again.style), if *p.mark != *mark { mark } else { p.mark.clone() });
+            let style_changed = !p.style.layout_eq(&again.style) || !p.mark.layout_eq(&mark);
+            let (style, mark) = (Rc::new(again.style), if !p.mark.layout_eq(&mark) { mark } else { p.mark.clone() });
             if style_changed {
                 let list = p.list.clone();
                 let _ = self.step(tx, Step::Para { para, style, mark, list });
@@ -359,64 +484,72 @@ impl Editor {
     }
 
     pub(super) fn next_style_paragraph(&self, para: ParaId, mut second: crate::docx::Paragraph) -> Option<crate::docx::Paragraph> {
-        let res = self.doc.resolver.clone()?;
+        let res = self.doc.definitions.clone()?;
         let p = self.index.para(&self.doc, para)?;
         let id = p.style.style_id.as_deref()?;
-        let next = res.styles.by_id.get(id)?.next.clone().filter(|n| n != id && res.styles.by_id.contains_key(n))?;
+        let c = res.cascade();
+        let next = c.styles.get(id)?.next.as_deref().filter(|n| *n != id && c.styles.styles.contains_key(*n))?.to_string();
         let cx = self.cx();
-        let mut pr = Props::parse(p.style.direct.0.as_deref(), "pPr", &cx);
-        pr.set("pStyle", format!("<{w}pStyle {w}val=\"{}\"/>", crate::docx::write::props::esc(&next), w = cx.w));
+        let mut e = ParaEdit::new((**p.style.direct.get()).clone());
+        e.style = Some(next.as_str().into());
+        e.whole(ParaProp::Style);
         let region = self.region_of_para(para, &res);
-        second.style = Rc::new(res.para_from_xml(pr.xml().as_deref(), region.as_ref(), &cx).style);
+        second.style = Rc::new(para_xml::of(&res, &p.style.direct.edit(e), region.as_ref(), &cx).style);
         Some(second)
     }
 
+    /// The theme colours a theme colour's value is written as.
+    pub(super) fn colours(&self) -> crate::docx::props::ThemeColours {
+        self.doc.definitions.as_ref().map_or_else(Default::default, |r| r.cascade().colours)
+    }
+
     pub(super) fn cx(&self) -> Cx {
-        Cx::of_xml(self.doc.source.as_ref().map_or(NEW_ROOT, |s| s.xml.as_str()))
+        Cx::of_xml(self.docx.source.as_ref().map_or(NEW_ROOT, |s| s.xml.as_str()))
     }
 
     /// The names of the part character formatting is written in: the numbering part when a list's number is
     /// formatted, the styles part when a style is, else the document's. Whether it declares the w14 namespace
     /// follows.
     pub(super) fn formatted_part_cx(&self) -> Cx {
-        match (&self.label_target, &self.style_target, &self.doc.resolver) {
+        match (&self.label_target, &self.style_target, &self.doc.definitions) {
             (Some(t), _, _) => t.cx.clone(),
-            (None, Some(_), Some(r)) => r.styles.cx(),
+            (None, Some(_), Some(r)) => r.typed().styles.cx(),
             _ => self.cx(),
         }
     }
 
-    pub(super) fn region_of_para(&self, para: ParaId, res: &Resolver) -> Option<Region> {
+    pub(super) fn region_of_para(&self, para: ParaId, res: &Definitions) -> Option<TableRegion> {
         let slot = self.index.para_slot(para)?;
         let Container::Cell { table, row, cell } = slot.container else { return None };
-        Some(res.region_of(self.index.table(&self.doc, table)?, row, cell))
+        Some(res.cascade().region_of(self.index.table(&self.doc, table)?, row, cell))
     }
 
     /// What the runs at unit `at` of `para` resolve over.
-    pub(super) fn run_base(&self, para: ParaId, at: Unit, res: &Resolver, cx: &Cx) -> Option<RunProps> {
+    pub(super) fn run_base(&self, para: ParaId, at: Unit, res: &Definitions, cx: &Cx) -> Option<CharProps> {
         let mut again = self.para_again(para, None, res, cx)?;
         let k = again.part(at.0);
         Some(again.bases.swap_remove(k).1)
     }
 
-    /// `para` resolved again from its direct `w:pPr` (`ppr` in place of it, when given) and, for a paragraph vanished
-    /// marks joined onto its start, from those paragraphs' too, joined as reading joins them.
-    pub(super) fn para_again(&self, para: ParaId, ppr: Option<Option<&str>>, res: &Resolver, cx: &Cx) -> Option<Again> {
+    /// `para` resolved again from its authored properties (`direct` in place of them, when given) and, for a
+    /// paragraph vanished marks joined onto its start, from those paragraphs' too, joined as reading joins them.
+    pub(super) fn para_again(&self, para: ParaId, direct: Option<ParaDirect>, res: &Definitions, cx: &Cx) -> Option<Again> {
         let p = self.index.para(&self.doc, para)?;
         let region = self.region_of_para(para, res);
-        let last = res.para_from_xml(ppr.unwrap_or(p.style.direct.0.as_deref()), region.as_ref(), cx);
-        let parts = p.src.as_ref().filter(|s| s.joined.len() + 1 == s.ranges.len()).map_or(&[][..], |s| &s.joined[..]);
+        let last = para_xml::of(res, direct.as_ref().unwrap_or(&p.style.direct), region.as_ref(), cx);
+        let parts = p.joined_before();
         if parts.is_empty() {
-            let style = res.para_again(&p.style, last.style, region.as_ref(), cx);
+            let style = crate::docx::para_xml::again(res, &p.style, last.style, region.as_ref(), cx);
             return Some(Again { style, bases: vec![(0, last.base)] });
         }
-        let (legacy, generic) = (res.styles.compat == Compat::Legacy, res.styles.compat == Compat::Generic);
+        let compat = res.cascade().rules.compat;
+        let (legacy, generic) = (compat == Compat::Legacy, compat == Compat::Generic);
         let len = super::step::para_len(p).0;
         let mut bases = Vec::with_capacity(parts.len() + 1);
         let (mut joined, mut spec): (Option<Rc<ParaStyle>>, Option<Rc<ParaStyle>>) = (None, None);
         let mut start = 0;
         for part in parts {
-            let r = res.para_from_xml(part.ppr.0.as_deref(), region.as_ref(), cx);
+            let r = crate::docx::para_xml::of(res, &part.ppr, region.as_ref(), cx);
             let taken = spec.take();
             let style = match joined.take() {
                 None => Rc::new(r.style),
@@ -432,7 +565,7 @@ impl Editor {
         }
         let style = joined_style(joined.as_ref()?, &Rc::new(last.style), start, spec.as_deref(), legacy);
         bases.push((start.min(len), last.base));
-        Some(Again { style: res.para_again(&p.style, style, region.as_ref(), cx), bases })
+        Some(Again { style: crate::docx::para_xml::again(res, &p.style, style, region.as_ref(), cx), bases })
     }
 
     pub(crate) fn selected_ranges(&mut self) -> Vec<(ParaId, Unit, Unit)> {
@@ -522,28 +655,20 @@ impl Editor {
         v
     }
 
-    pub(super) fn pending_props(&mut self, edit: &dyn Fn(&mut Props, &str)) {
-        let Some(res) = self.doc.resolver.clone() else { return };
-        let cx = self.cx();
-        let Some(caret) = self.caret() else { return };
-        let (Some((para, at)), Some(run)) = (caret.para_offset(), self.run_at(&caret)) else { return };
-        let Some(base) = self.run_base(para, at, &res, &cx) else { return };
-        let mut p = Props::parse(run.direct.0.as_deref(), "rPr", &cx);
-        edit(&mut p, &cx.w);
-        self.pending = Some(res.rerun_xml(&base, &run, p.xml().as_deref(), &cx));
+    pub(super) fn pending_font(&mut self, font: &str) {
+        self.pending_typed(&|e| family(e, font, PENDING_FONT_ORDER));
     }
 
-    pub(super) fn pending_font(&mut self, font: &str) {
-        let Some(res) = self.doc.resolver.clone() else { return };
+    /// The formatting text typed at the caret takes: its run's, with a typed edit of its authored properties.
+    pub(super) fn pending_typed(&mut self, edit: &dyn Fn(&mut CharEdit)) {
+        let Some(res) = self.doc.definitions.clone() else { return };
         let cx = self.cx();
         let Some(caret) = self.caret() else { return };
         let (Some((para, at)), Some(run)) = (caret.para_offset(), self.run_at(&caret)) else { return };
         let Some(base) = self.run_base(para, at, &res, &cx) else { return };
-        let mut p = Props::parse(run.direct.0.as_deref(), "rPr", &cx);
-        let n = crate::docx::write::props::esc(font);
-        let w = &cx.w;
-        p.set("rFonts", format!("<{w}rFonts {w}ascii=\"{n}\" {w}hAnsi=\"{n}\" {w}eastAsia=\"{n}\" {w}cs=\"{n}\"/>"));
-        self.pending = Some(res.rerun_xml(&base, &run, p.xml().as_deref(), &cx));
+        let mut e = CharEdit::new(run.direct.props().map_or_else(CharProps::default, |p| (**p).clone()));
+        edit(&mut e);
+        self.pending = Some(run_xml::again(&res, &base, &run, run.direct.edit(e)));
     }
 
     pub(super) fn runs_in(&self, (para, a, b): (ParaId, Unit, Unit)) -> Vec<Run> {
@@ -564,50 +689,48 @@ impl Editor {
         out
     }
 
-    pub(super) fn format_runs(&mut self, label: &'static str, edit: &dyn Fn(&mut Props, &str, &RunStyle), fonts: &Fonts) -> Outcome {
-        self.format_runs_settled(label, edit, &|_, _, _| false, fonts)
+    /// Formats the selected runs with a typed edit of their authored properties.
+    pub(super) fn format_runs_typed(&mut self, label: &'static str, edit: &dyn Fn(&mut CharEdit, &RunStyle), fonts: &Fonts) -> Outcome {
+        self.format_runs_typed_settled(label, edit, &|_, _| false, fonts)
     }
 
-    /// [`Editor::format_runs`], then `settle` sees each run as `edit` leaves it (its styles under it) and may change
-    /// its properties again, returning whether it did. A style being formatted is edited alone.
-    pub(super) fn format_runs_settled(
+    /// [`Editor::format_runs_typed`], then `settle` sees each run as `edit` leaves it (its styles under it) and may
+    /// change its properties again, returning whether it did. A style being formatted is edited alone.
+    pub(super) fn format_runs_typed_settled(
         &mut self,
         label: &'static str,
-        edit: &dyn Fn(&mut Props, &str, &RunStyle),
-        settle: &dyn Fn(&mut Props, &str, &RunStyle) -> bool,
+        edit: &dyn Fn(&mut CharEdit, &RunStyle),
+        settle: &dyn Fn(&mut CharEdit, &RunStyle) -> bool,
         fonts: &Fonts,
     ) -> Outcome {
         if self.label_target.is_some() {
             return self.format_label_part(edit, settle);
         }
         if self.style_target.is_some() {
-            return self.format_style_part("rPr", &|p, cx, _, run| edit(p, &cx.w, run));
+            return self.format_style_rpr(edit);
         }
         if self.refuse_expanded() || self.refuse_locked_content() {
             return Outcome::Unchanged("locked");
         }
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let cx = self.cx();
-        let w = cx.w.clone();
         // A style separator mark keeps its flags
-        let rpr = |xml: Option<&str>, run: &RunStyle, base: &RunProps, mark: bool| -> Option<String> {
-            let mut p = Props::parse(xml, "rPr", &cx);
-            let sep = mark && p.get("specVanish").is_some() && xml.is_some_and(|x| crate::docx::write::props::flag_of(x, "specVanish"));
-            let flags = sep.then(|| ["vanish", "specVanish"].map(|k| p.get(k).map(str::to_string)));
-            edit(&mut p, &w, run);
-            for (k, x) in ["vanish", "specVanish"].into_iter().zip(flags.into_iter().flatten()) {
-                if let Some(x) = x {
-                    p.set(k, x);
-                }
+        let typed = |direct: &RunDirect, run: &RunStyle, base: &CharProps, mark: bool| -> RunDirect {
+            let mut e = CharEdit::new(direct.props().map_or_else(CharProps::default, |p| (**p).clone()));
+            let sep = (mark && direct.spec_vanish()).then(|| separator(&e));
+            edit(&mut e, run);
+            if let Some(flags) = &sep {
+                flags.restore(&mut e);
             }
-            let new = res.rerun_xml(base, run, p.xml().as_deref(), &cx);
-            settle(&mut p, &w, &new);
-            p.xml()
+            let new = run_xml::again(&res, base, run, direct.edit(e.clone()));
+            settle(&mut e, &new);
+            direct.edit(e)
         };
-        let patch_as = |run: &RunStyle, base: &RunProps, mark: bool| -> Run {
-            res.rerun_xml(base, run, rpr(run.direct.0.as_deref(), run, base, mark).as_deref(), &cx)
+        let patch_as = |run: &RunStyle, base: &CharProps, mark: bool| -> Run {
+            let base = base.clone();
+            run_xml::again(&res, &base, run, typed(&run.direct, run, &base, mark))
         };
-        let patch = |run: &RunStyle, base: &RunProps| patch_as(run, base, false);
+        let patch = |run: &RunStyle, base: &CharProps| patch_as(run, base, false);
         let mut ranges: Vec<(ParaId, Unit, Unit)> = Vec::new();
         // The paragraphs whose marks are in the selection.
         let mut marks: Vec<ParaId> = Vec::new();
@@ -632,7 +755,7 @@ impl Editor {
             let Some(again) = self.para_again(para, None, &res, &cx) else { continue };
             let Some(p) = self.index.para(&self.doc, para) else { continue };
             let mark = patch_as(&p.mark, again.mark_base(), true);
-            if *mark == *p.mark {
+            if mark.same_run(&p.mark) {
                 continue;
             }
             let (style, list) = (p.style.clone(), p.list.clone());
@@ -671,7 +794,8 @@ impl Editor {
                         with.push(Inline::Text(part, new));
                     }
                     Inline::Ruby(r, _) => {
-                        let edit = |xml: Option<&str>, run: &RunStyle| rpr(xml, run, base, false);
+                        let typed_base = base.clone();
+                        let edit = |d: &RunDirect, run: &RunStyle| Some(typed(d, run, &typed_base, false));
                         with.push(Inline::Ruby(ruby_again(r, base, Some((&edit, false)), &res, &cx).unwrap_or_else(|| r.clone()), new));
                     }
                     other => with.push(with_run(other, &new)),
@@ -713,38 +837,46 @@ impl Editor {
         out
     }
 
-    pub(super) fn format_paras(&mut self, label: &'static str, edit: &dyn Fn(&mut Props, &Cx, &crate::docx::Paragraph), fonts: &Fonts) -> Outcome {
-        if self.style_target.is_some() {
-            return self.format_style_part("pPr", &|p, cx, para, _| edit(p, cx, para));
-        }
-        if let Some(id) = self.auto_redefined() {
-            return self.format_auto_redefined(&id, edit, fonts);
-        }
-        self.format_paras_direct(label, edit, fonts)
-    }
-
-    /// [`Self::format_paras`] on the paragraphs themselves, even in a style that updates automatically: for what
-    /// isn't direct formatting (applying a style).
-    pub(super) fn format_paras_direct(
+    /// Paragraph formatting as a typed edit of each selected paragraph's authored properties; of the style being
+    /// formatted instead, or of the selection's style when it updates automatically.
+    pub(super) fn format_paras_typed(
         &mut self,
         label: &'static str,
-        edit: &dyn Fn(&mut Props, &Cx, &crate::docx::Paragraph),
+        edit: &dyn Fn(&mut ParaEdit, &crate::docx::Paragraph),
+        fonts: &Fonts,
+    ) -> Outcome {
+        if self.style_target.is_some() {
+            return self.format_style_ppr(edit);
+        }
+        if let Some(id) = self.auto_redefined() {
+            return self.format_auto_redefined_typed(&id, edit, fonts);
+        }
+        self.format_paras_direct_typed(label, edit, fonts)
+    }
+
+    /// [`Self::format_paras_typed`] on the paragraphs themselves, even in a style that updates automatically: for
+    /// what isn't direct formatting (applying a style).
+    pub(super) fn format_paras_direct_typed(
+        &mut self,
+        label: &'static str,
+        edit: &dyn Fn(&mut ParaEdit, &crate::docx::Paragraph),
         fonts: &Fonts,
     ) -> Outcome {
         if self.refuse_expanded() || self.refuse_locked_content() {
             return Outcome::Unchanged("locked");
         }
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let cx = self.cx();
         let paras = self.selected_paras();
         let mut tx = self.begin(label);
         for para in paras {
             let Some(p) = self.index.para(&self.doc, para) else { continue };
-            let mut pr = Props::parse(p.style.direct.0.as_deref(), "pPr", &cx);
-            edit(&mut pr, &cx, p);
-            let Some(r) = self.para_again(para, Some(pr.xml().as_deref()), &res, &cx) else { continue };
+            let mut e = ParaEdit::new((**p.style.direct.get()).clone());
+            edit(&mut e, p);
+            let direct = p.style.direct.edit(e);
+            let Some(r) = self.para_again(para, Some(direct), &res, &cx) else { continue };
             let Some(p) = self.index.para(&self.doc, para) else { continue };
-            if r.style == *p.style {
+            if r.style.layout_eq(&p.style) && r.style.authored_eq(&p.style) {
                 continue;
             }
             let (mark, list) = (p.mark.clone(), p.list.clone());
@@ -758,142 +890,130 @@ impl Editor {
     }
 
     pub(super) fn format(&mut self, f: &Format, fonts: &Fonts) -> Outcome {
-        let twips = |pt: f64| ((pt * 20.0).round() as i64).to_string();
         match f {
-            &Format::Set(t, on) => self.format_runs(t.label(), &|p, w, _| t.set(p, w, on), fonts),
+            &Format::Set(t, on) => self.format_runs_typed(t.label(), &|e, _| t.set(e, on), fonts),
             Format::FontSize(pt) => {
-                let hp = ((pt * 2.0).round() as i64).clamp(2, 3276);
-                self.format_runs(
-                    "Font Size",
-                    &|p, w, _| {
-                        p.set("sz", format!("<{w}sz {w}val=\"{hp}\"/>"));
-                        p.set("szCs", format!("<{w}szCs {w}val=\"{hp}\"/>"));
-                    },
-                    fonts,
-                )
+                let pt = half_points(*pt);
+                self.format_runs_typed("Font Size", &|p, _| sized(p, pt), fonts)
             }
             Format::GrowFont(grow) => {
                 const SIZES: [f64; 16] = [8.0, 9.0, 10.0, 10.5, 11.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 26.0, 28.0, 36.0, 48.0];
                 let grow = *grow;
-                self.format_runs(
+                self.format_runs_typed(
                     "Font Size",
-                    &|p, w, run| {
+                    &|p, run| {
                         let s = run.size;
                         let next = if grow {
                             SIZES.iter().copied().find(|&x| x > s + 0.01).unwrap_or(((s / 10.0).floor() + 1.0) * 10.0)
                         } else {
                             SIZES.iter().rev().copied().find(|&x| x < s - 0.01).unwrap_or((s - 1.0).max(1.0))
                         };
-                        let hp = ((next * 2.0).round() as i64).clamp(2, 3276);
-                        p.set("sz", format!("<{w}sz {w}val=\"{hp}\"/>"));
-                        p.set("szCs", format!("<{w}szCs {w}val=\"{hp}\"/>"));
+                        sized(p, half_points(next));
                     },
                     fonts,
                 )
             }
             Format::FontColor(c) => {
-                let c = *c;
-                self.format_runs(
+                let c = c.map_or(crate::format::Color::Auto, colour);
+                self.format_runs_typed(
                     "Font Color",
-                    &|p, w, _| p.set("color", super::commands::colour_attrs(&format!("<{w}color/>"), w, "val", super::commands::THEME_COLOR, c)),
-                    fonts,
-                )
-            }
-            Format::Highlight(name) => {
-                let name = name.clone();
-                self.format_runs(
-                    "Highlight",
-                    &|p, w, _| match &name {
-                        Some(n) => p.set("highlight", format!("<{w}highlight {w}val=\"{}\"/>", crate::docx::write::props::esc(n))),
-                        None => p.remove("highlight"),
+                    &|e, _| {
+                        e.color = Some(c);
+                        e.whole(Prop::Color);
                     },
                     fonts,
                 )
             }
-            Format::FontFamily(name) => {
-                let n = crate::docx::write::props::esc(name);
-                self.format_runs(
-                    "Font",
-                    &|p, w, _| p.set("rFonts", format!("<{w}rFonts {w}ascii=\"{n}\" {w}hAnsi=\"{n}\" {w}cs=\"{n}\" {w}eastAsia=\"{n}\"/>")),
+            Format::Highlight(name) => {
+                let h = *name;
+                self.format_runs_typed(
+                    "Highlight",
+                    &|e, _| {
+                        e.highlight = h.map(Some);
+                        e.whole(Prop::Highlight);
+                    },
                     fonts,
                 )
             }
-            Format::ClearFormatting => self.format_runs("Clear Formatting", &|p, _, _| *p = Props::parse(None, "rPr", &Cx::of_xml(NEW_ROOT)), fonts),
+            Format::FontFamily(name) => self.format_runs_typed("Font", &|e, _| family(e, name, FONT_ORDER), fonts),
+            Format::ClearFormatting => self.format_runs_typed("Clear Formatting", &|e, _| e.props = CharProps::default(), fonts),
             Format::Indent(more) => {
                 let more = *more;
                 self.indent_list(more, fonts).unwrap_or_else(|| self.indent_plain(more, fonts))
             }
             Format::Hanging(more) => {
                 let (more, tab) = (*more, self.tab_grid());
-                self.format_paras(
+                self.format_paras_typed(
                     "Hanging Indent",
-                    &|p, cx, q| {
+                    &|e, q| {
                         // The first line stays where it is; the other lines move to the next or last tab stop.
                         let first_line = q.style.ind_left + q.style.ind_first;
                         let left = grid_step(q.style.ind_left, tab, more);
                         let first = first_line - left;
-                        let (first, hanging) = if first < 0.0 { (None, Some(twips(-first))) } else { (Some(twips(first)), None) };
-                        p.attrs("ind", &[("left", Some(twips(left))), ("start", None), ("firstLine", first), ("hanging", hanging)], cx)
+                        e.indent_left = Some(twip(left));
+                        e.indent_first = Some(if first < 0.0 { -twip(-first) } else { twip(first) });
+                        e.part(ParaProp::IndentLeft);
+                        e.part(ParaProp::IndentFirst);
                     },
                     fonts,
                 )
             }
-            &Format::StepFont(grow) => self.format_runs(
-                "Font Size",
-                &|p, w, run| {
-                    let next = if grow { run.size + 1.0 } else { run.size - 1.0 };
-                    let hp = ((next * 2.0).round() as i64).clamp(2, 3276);
-                    p.set("sz", format!("<{w}sz {w}val=\"{hp}\"/>"));
-                    p.set("szCs", format!("<{w}szCs {w}val=\"{hp}\"/>"));
-                },
-                fonts,
-            ),
-            Format::ClearParagraph => self.format_paras_direct(
-                "Reset Paragraph",
-                &|p, _, _| p.kids.retain(|(n, _)| matches!(n.as_str(), "pStyle" | "rPr" | "sectPr" | "pPrChange" | "cnfStyle" | "divId")),
-                fonts,
-            ),
+            &Format::StepFont(grow) => {
+                self.format_runs_typed("Font Size", &|p, run| sized(p, half_points(if grow { run.size + 1.0 } else { run.size - 1.0 })), fonts)
+            }
+            Format::ClearParagraph => self.format_paras_direct_typed("Reset Paragraph", &|e, _| e.props = para_props::reset(&e.props, true), fonts),
             Format::ParaBorders(which) => {
                 let which = which.clone();
-                self.format_paras(
+                self.format_paras_typed(
                     "Borders",
-                    &|p, cx, _| {
-                        let w = &cx.w;
-                        let line = |side: &str| format!("<{w}{side} {w}val=\"single\" {w}sz=\"4\" {w}space=\"1\" {w}color=\"auto\"/>");
-                        match which.as_str() {
-                            "box" => p.set("pBdr", format!("<{w}pBdr>{}{}{}{}</{w}pBdr>", line("top"), line("left"), line("bottom"), line("right"))),
-                            "bottom" => p.set("pBdr", format!("<{w}pBdr>{}</{w}pBdr>", line("bottom"))),
-                            _ => p.remove("pBdr"),
-                        }
+                    &|e, _| {
+                        let line = Some(TextBorder { style: BorderStyle::Single, width: 0.5, space: 1.0, shadow: false, color: Some(Color::Auto) });
+                        e.borders = match which.as_str() {
+                            "box" => ParaBorders { top: line, left: line, bottom: line, right: line, between: None },
+                            "bottom" => ParaBorders { bottom: line, ..ParaBorders::default() },
+                            _ => ParaBorders::default(),
+                        };
+                        e.whole(ParaProp::Borders);
                     },
                     fonts,
                 )
             }
             Format::ParaShading(c) => {
                 let c = *c;
-                self.format_paras(
+                self.format_paras_typed(
                     "Shading",
-                    &|p, cx, _| match c {
-                        Some(c) => {
-                            let tag = format!("<{w}shd {w}val=\"clear\" {w}color=\"auto\"/>", w = cx.w);
-                            p.set("shd", super::commands::colour_attrs(&tag, &cx.w, "fill", super::commands::THEME_FILL, Some(c)))
-                        }
-                        None => p.remove("shd"),
+                    &|e, _| {
+                        e.shading = c.map(|c| Shading { pattern: ShadingPattern::Clear, color: Some(Color::Auto), fill: Some(colour(c)) });
+                        e.whole(ParaProp::Shading);
                     },
                     fonts,
                 )
             }
             Format::ParaStyle(id) => {
-                let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
-                if !res.styles.by_id.get(id).is_some_and(|s| s.kind == crate::docx::styles::StyleKind::Paragraph) {
+                let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
+                if !res.cascade().styles.get(id).is_some_and(|s| s.kind == crate::format::StyleKind::Paragraph) {
                     return Outcome::Unchanged("no such paragraph style");
                 }
-                let v = crate::docx::write::props::esc(id);
-                self.format_paras_direct("Style", &|p, cx, _| p.set("pStyle", format!("<{w}pStyle {w}val=\"{v}\"/>", w = cx.w)), fonts)
+                let id: Rc<str> = id.as_str().into();
+                self.format_paras_direct_typed(
+                    "Style",
+                    &|e, _| {
+                        e.style = Some(id.clone());
+                        e.whole(ParaProp::Style);
+                    },
+                    fonts,
+                )
             }
             Format::CharStyle(id) => {
-                let v = crate::docx::write::props::esc(id);
-                self.format_runs("Style", &|p, w, _| p.set("rStyle", format!("<{w}rStyle {w}val=\"{v}\"/>")), fonts)
+                let id: Rc<str> = id.as_str().into();
+                self.format_runs_typed(
+                    "Style",
+                    &|e, _| {
+                        e.style = Some(id.clone());
+                        e.whole(Prop::Style);
+                    },
+                    fonts,
+                )
             }
         }
     }
@@ -910,12 +1030,12 @@ impl Editor {
     /// last) default tab stop.
     fn indent_plain(&mut self, more: bool, fonts: &Fonts) -> Outcome {
         let tab = self.tab_grid();
-        let twips = |pt: f64| ((pt * 20.0).round() as i64).to_string();
-        self.format_paras(
+        self.format_paras_typed(
             "Indent",
-            &|p, cx, q| {
-                if q.style.num.is_none_or(|(id, _)| id == 0) {
-                    p.attrs("ind", &[("left", Some(twips(grid_step(q.style.ind_left, tab, more)))), ("start", None)], cx);
+            &|e, q| {
+                if q.style.num.is_none_or(|ListRef { list: ListId(id), level: _ }| id == 0) {
+                    e.indent_left = Some(twip(grid_step(q.style.ind_left, tab, more)));
+                    e.part(ParaProp::IndentLeft);
                 }
             },
             fonts,
@@ -931,7 +1051,7 @@ impl Editor {
         }
         let paras = self.selected_paras();
         let items = self.list_items(&paras);
-        let &(first, (num, ilvl)) = items.first()?;
+        let &(first, ListRef { list: ListId(num), level: ilvl }) = items.first()?;
         let whole = ilvl == 0 && self.first_in_list(first, num);
         let list = move |e: &mut Self| if whole { e.shift_list(num, more, fonts) } else { e.list_level(!more, fonts) };
         if items.len() == paras.len() {
@@ -982,11 +1102,8 @@ impl Editor {
 
 /// The hidden paragraph marks of `p`, as [`Editor::hidden_marks`] gives them.
 pub fn hidden_marks_of(p: &crate::docx::Paragraph) -> Vec<(Unit, bool)> {
-    let parts = p.src.as_ref().filter(|s| s.joined.len() + 1 == s.ranges.len()).map_or(&[][..], |s| &s.joined[..]);
-    let own = p
-        .mark
-        .hidden
-        .then(|| (super::step::para_len(p), p.mark.direct.0.as_deref().is_some_and(|x| crate::docx::write::props::flag_of(x, "specVanish"))));
+    let parts = p.joined_before();
+    let own = p.mark.hidden.then(|| (super::step::para_len(p), p.mark.direct.spec_vanish()));
     parts.iter().map(|j| (Unit(j.end), j.spec_vanish)).chain(own).collect()
 }
 
@@ -1027,16 +1144,16 @@ impl Editor {
 
     /// `para`'s mark made a style separator.
     fn separator_mark(&mut self, para: ParaId, fonts: &Fonts) -> Outcome {
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let cx = self.cx();
         let (Some(again), Some(p)) = (self.para_again(para, None, &res, &cx), self.index.para(&self.doc, para)) else {
             return Outcome::Unchanged("no paragraph");
         };
-        let mut props = Props::parse(p.mark.direct.0.as_deref(), "rPr", &cx);
-        let w = &cx.w;
-        props.set("vanish", format!("<{w}vanish/>"));
-        props.set("specVanish", format!("<{w}specVanish/>"));
-        let mark = res.rerun_xml(again.mark_base(), &p.mark, props.xml().as_deref(), &cx);
+        let mut e = run_xml::edit_of(&p.mark);
+        e.toggle(crate::format::Toggle::HIDDEN, true);
+        e.spec_vanish = Some(true);
+        e.whole(Prop::SpecVanish);
+        let mark = run_xml::again(&res, again.mark_base(), &p.mark, p.mark.direct.edit(e));
         let (style, list) = (p.style.clone(), p.list.clone());
         let mut tx = self.begin("Style Separator");
         if self.step(&mut tx, Step::Para { para, style, mark, list }).is_err() {
@@ -1067,19 +1184,11 @@ impl Editor {
     /// removed, and its paragraphs' direct formatting, the paragraphs in the default paragraph style. One undo step.
     pub fn clear_all_formatting(&mut self, fonts: &Fonts) -> Outcome {
         self.joined("Clear Formatting", fonts, |e| {
-            let runs = e.format_runs(
-                "Clear Formatting",
-                &|p, _, _| p.kids.retain(|(n, _)| matches!(n.as_str(), "highlight" | "ins" | "del" | "moveFrom" | "moveTo" | "rPrChange")),
-                fonts,
-            );
+            let runs = e.format_runs_typed("Clear Formatting", &|p, _| p.props = highlight_alone(&p.props), fonts);
             if matches!(runs, Outcome::Refused(_)) {
                 return runs;
             }
-            let paras = e.format_paras_direct(
-                "Clear Formatting",
-                &|p, _, _| p.kids.retain(|(n, _)| matches!(n.as_str(), "rPr" | "sectPr" | "pPrChange" | "cnfStyle" | "divId")),
-                fonts,
-            );
+            let paras = e.format_paras_direct_typed("Clear Formatting", &|e, _| e.props = para_props::reset(&e.props, false), fonts);
             if matches!(paras, Outcome::Changed(_)) { paras } else { runs }
         })
     }
@@ -1092,7 +1201,7 @@ pub enum Format {
     GrowFont(bool),
     /// A colour, or automatic.
     FontColor(Option<super::theme::WordColour>),
-    Highlight(Option<String>),
+    Highlight(Option<crate::format::Highlight>),
     FontFamily(String),
     ClearFormatting,
     Indent(bool),

@@ -1,5 +1,6 @@
 //! Go To
 
+use crate::docx::origin::PictureOrigin;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
@@ -118,34 +119,6 @@ fn first_para(blocks: &[Block]) -> Option<ParaId> {
         Block::Para(p) => Some(ParaId(p.id)),
         Block::Table(t) => t.rows.iter().flat_map(|r| &r.cells).find_map(|c| first_para(&c.blocks)),
     })
-}
-
-/// The local name of the element `xml` starts with, whatever its prefix.
-fn local_name(xml: &str) -> Option<&str> {
-    let tag = xml.trim_start().strip_prefix('<')?;
-    let name = &tag[..tag.find(|c: char| c.is_whitespace() || c == '>' || c == '/').unwrap_or(tag.len())];
-    name.rsplit(':').next()
-}
-
-/// An embedded object's program id, from its `w:object` as read (in whatever prefix: a picture's source is a run
-/// child of the main namespace or `mc:AlternateContent`): the first `ProgID` attribute, either quote, any spacing round
-/// its `=`.
-fn prog_id(src: &str) -> Option<&str> {
-    if local_name(src) != Some("object") {
-        return None;
-    }
-    let mut rest = src;
-    while let Some(i) = rest.find("ProgID") {
-        let before = rest[..i].chars().next_back();
-        rest = &rest[i + "ProgID".len()..];
-        if !before.is_some_and(char::is_whitespace) {
-            continue;
-        }
-        let Some(value) = rest.trim_start().strip_prefix('=').map(str::trim_start) else { continue };
-        let Some(quote) = value.chars().next().filter(|&q| q == '"' || q == '\'') else { continue };
-        return value[1..].split(quote).next();
-    }
-    None
 }
 
 /// The index `target` picks among `n` items, `before` of which come before where Go To starts and `after` the first
@@ -357,19 +330,18 @@ impl Editor {
                 let hit = match (what, i) {
                     (GoToWhat::Footnote, Inline::NoteRef { kind: crate::docx::NoteKind::Foot, .. })
                     | (GoToWhat::Endnote, Inline::NoteRef { kind: crate::docx::NoteKind::End, .. }) => Some(Land::Caret),
-                    (GoToWhat::Graphic, Inline::Picture(pic, _)) if prog_id(pic.src.0.as_deref().unwrap_or("")).is_none() => {
+                    (GoToWhat::Graphic, Inline::Picture(pic, _)) if pic.prog_id().is_none() => {
                         Some(Land::Object(ObjectRef::Inline { para, offset: Unit(u) }))
                     }
                     (GoToWhat::Graphic, Inline::Float(f, _)) => Some(Land::Object(ObjectRef::Floating(FloatId(f.id)))),
-                    (GoToWhat::Object, Inline::Picture(pic, _)) => prog_id(pic.src.0.as_deref().unwrap_or(""))
-                        .filter(|id| named(name, id, true))
-                        .map(|_| Land::Object(ObjectRef::Inline { para, offset: Unit(u) })),
-                    (GoToWhat::Equation, Inline::Opaque(o))
-                        if o.xml.0.as_deref().and_then(local_name).is_some_and(|n| n == "oMath" || n == "oMathPara") =>
-                    {
-                        Some(Land::Caret)
+                    (GoToWhat::Object, Inline::Picture(pic, _)) => {
+                        pic.prog_id().filter(|id| named(name, id, true)).map(|_| Land::Object(ObjectRef::Inline { para, offset: Unit(u) }))
                     }
-                    (GoToWhat::Bookmark, Inline::Bookmark(n)) if !n.starts_with('/') && !n.starts_with('_') => {
+                    (GoToWhat::Equation, Inline::Foreign(o)) if o.equation => Some(Land::Caret),
+                    (GoToWhat::Bookmark, Inline::Range(r))
+                        if let Some((n, true)) = r.bookmark()
+                            && !n.starts_with('_') =>
+                    {
                         let end = ends.get(&n.to_ascii_lowercase()).copied().flatten().map(|e| Position::text(story, e.para, e.unit));
                         Some(end.filter(|e| e.story == story).map_or(Land::Caret, Land::Range))
                     }
@@ -545,15 +517,9 @@ mod tests {
     }
 
     #[test]
-    fn program_ids_and_names() {
-        assert_eq!(prog_id(r#"<w:object><o:OLEObject Type="Embed" ProgID="Excel.Sheet.12" r:id="x"/></w:object>"#), Some("Excel.Sheet.12"));
-        assert_eq!(prog_id("<w:pict/>"), None);
-        assert_eq!(prog_id(r#"<wpml:object><o:OLEObject ProgID="Excel.Sheet.12"/></wpml:object>"#), Some("Excel.Sheet.12"), "any prefix");
-        assert_eq!(prog_id(r#"<w:objects ProgID="x"/>"#), None);
+    fn program_names() {
         assert!(named(Some("excel.sheet"), "Excel.Sheet.12", true));
         assert!(!named(Some("A"), "\u{c4}xcel.Sheet", true), "a name ending inside a character");
-        assert_eq!(prog_id("<w:object><o:OLEObject ProgID = 'Word.Document.12'/></w:object>"), Some("Word.Document.12"));
-        assert_eq!(prog_id(r#"<w:object><o:OLEObject XProgID="a" ProgID="b"/></w:object>"#), Some("b"));
         assert!(!named(Some("Word"), "Excel.Sheet.12", true));
         assert!(named(None, "x", false) && named(Some(" "), "x", false));
         assert!(named(Some("page"), "PAGE", false) && !named(Some("PAGEREF"), "PAGE", false));

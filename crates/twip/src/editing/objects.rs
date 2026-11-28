@@ -1,6 +1,8 @@
 //! Object selection
 
-use crate::docx::Inline;
+use crate::api::value::{HorizontalReference, ObjectHorizontalAlignment, ObjectVerticalAlignment, ObjectWrap, VerticalReference, WrapSide};
+use crate::docx::origin::FloatOrigin;
+use crate::docx::{FloatWrap, HorizontalAlign, HorizontalRelation, Inline, VerticalAlign, VerticalRelation, WrapText};
 use crate::font::Fonts;
 use crate::layout::{FloatId, Unit};
 
@@ -13,6 +15,7 @@ use super::snap::{SnapLine, Snapping};
 use super::step::Step;
 use super::stories::{inline_at, reachable};
 use super::view::{Axis, Grid, GuideLine, Guides, Measure, Outline, Pt, Px, Tone};
+use crate::docx::run_xml;
 use crate::layout::vertical::Turn;
 
 impl Editor {
@@ -301,7 +304,7 @@ pub(super) struct ObjectDrag {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ObjectCmd {
-    Wrap(String),
+    Wrap(ObjectWrap),
     LockAnchor(bool),
     /// A width and height, and the axes the command set: a set axis loses its relative size.
     Size(f64, f64, [bool; 2]),
@@ -315,12 +318,16 @@ pub(super) struct ToggledCheckbox {
     pub after: Position,
 }
 
-fn ooxml<T: serde::Serialize>(v: T) -> String {
-    serde_json::to_value(v).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default()
-}
-
-fn from_ooxml<T: serde::de::DeserializeOwned + Default>(s: &str) -> T {
-    serde_json::from_value(serde_json::Value::String(s.into())).unwrap_or_default()
+/// A float's wrapping and whether it is behind the text, for `w` (inline handled before).
+fn float_wrap(w: ObjectWrap) -> (FloatWrap, bool) {
+    match w {
+        ObjectWrap::Square => (FloatWrap::Square, false),
+        ObjectWrap::Tight => (FloatWrap::Tight, false),
+        ObjectWrap::Through => (FloatWrap::Through, false),
+        ObjectWrap::TopAndBottom => (FloatWrap::TopAndBottom, false),
+        ObjectWrap::BehindText => (FloatWrap::None, true),
+        ObjectWrap::Inline | ObjectWrap::InFrontOfText => (FloatWrap::None, false),
+    }
 }
 
 /// How far below its paragraph's top a picture floated from the paragraph's first line goes, pt (Word's 3175 EMU).
@@ -780,7 +787,7 @@ impl Editor {
                         effect: [0.0; 4],
                         shape: shape.clone(),
                         text: None,
-                        src: Default::default(),
+                        origin: crate::docx::Origin::NONE,
                     },
                     run,
                 )
@@ -797,8 +804,7 @@ impl Editor {
     }
 
     pub(super) fn insert_text_box(&mut self, fonts: &Fonts) -> Outcome {
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
-        let cx = self.cx();
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let Some(caret) = self.selection.focus() else { return Outcome::Unchanged("no caret") };
         let Some((para, _)) = caret.para_offset() else { return Outcome::Unchanged("caret at a row end") };
         if matches!(caret.story, StoryId::TextBox(_)) {
@@ -813,15 +819,15 @@ impl Editor {
         let Some(run) = self.run_at(&caret) else { return Outcome::Unchanged("no run") };
         let name = self.new_object_name("Text Box");
         let Some(p) = self.index.para(&self.doc, para) else { return Outcome::Unchanged("no paragraph") };
-        let r = res.para_from_xml(None, None, &cx);
-        let text_run = res.run_from_xml(&r.base, None, &cx);
+        let r = crate::docx::para_xml::with(&res, Default::default(), None, None);
+        let text_run = run_xml::plain(&res, &r.base);
         let pid = crate::docx::next_para_id();
         let inner = crate::docx::Paragraph {
             style: std::rc::Rc::new(r.style),
             mark: text_run,
             list: None,
             inlines: Vec::new(),
-            src: None,
+            origin: crate::docx::Origin::NONE,
             id: pid,
             div: None,
             controls: Vec::new(),
@@ -843,14 +849,14 @@ impl Editor {
                 v_anchor: 0,
                 flow: 0,
             }),
-            h_relative: "column".into(),
+            h_relative: HorizontalRelation::Column,
             h_align: None,
             h_offset: 0.0,
-            v_relative: "paragraph".into(),
+            v_relative: VerticalRelation::Paragraph,
             v_align: None,
             v_offset: 0.0,
-            wrap: "none".into(),
-            wrap_text: "bothSides".into(),
+            wrap: FloatWrap::None,
+            wrap_text: WrapText::BothSides,
             dist: [3.6, 3.6, 9.0, 9.0],
             effect: [0.0; 4],
             poly: None,
@@ -860,9 +866,8 @@ impl Editor {
             layout_in_cell: true,
             order: usize::MAX / 2,
             z: self.front_z(),
-            src: None,
+            origin: crate::docx::Origin::NONE,
             locked: false,
-            frame_src: None,
             in_note: false,
             parts: Vec::new(),
             // The shape the saved box reopens with: its white fill and outline draw now.
@@ -928,7 +933,7 @@ impl Editor {
             return Outcome::Unchanged("fixed size");
         }
         // The image's own size, times the share of it a crop shows.
-        let natural = |e: &Self, image: Option<usize>, shape: Option<&crate::drawing::Shape>| {
+        let natural = |e: &Self, image: Option<crate::docx::ResourceId>, shape: Option<&crate::drawing::Shape>| {
             let (w, h) = e.natural_size(image)?;
             let [l, t, r, b] = shape.and_then(|s| s.pic()).map_or([0.0; 4], |p| p.blip.src.map(crate::drawing::units::Pct::fraction));
             let shown = |a: f64, b: f64| (1.0 - a - b).max(0.001);
@@ -945,24 +950,20 @@ impl Editor {
                         Some(s) => s,
                         None => return Outcome::Unchanged("no image size"),
                     },
-                    ObjectCmd::Wrap(w) if w == "inline" => return Outcome::Unchanged("already inline"),
+                    ObjectCmd::Wrap(ObjectWrap::Inline) => return Outcome::Unchanged("already inline"),
                     ObjectCmd::Wrap(_) if self.object_fixed(o) => return Outcome::Unchanged("fixed picture"),
-                    ObjectCmd::Wrap(w) => return self.float_inline(para, offset, &w, fonts),
+                    ObjectCmd::Wrap(w) => return self.float_inline(para, offset, w, fonts),
                     ObjectCmd::LockAnchor(_) => return Outcome::Unchanged("inline picture"),
                     ObjectCmd::AltText(..) => return Outcome::Unchanged("handled above"),
                 };
                 self.set_picture_size(para, offset, w, h, fonts)
             }
-            ObjectRef::Floating(f) if matches!(&c, ObjectCmd::Wrap(w) if w == "inline") => self.inline_float(f, fonts),
+            ObjectRef::Floating(f) if c == ObjectCmd::Wrap(ObjectWrap::Inline) => self.inline_float(f, fonts),
             ObjectRef::Floating(f) => {
                 let Some(mut n) = self.float_of(f).cloned() else { return Outcome::Unchanged("no float") };
                 let label = match &c {
-                    ObjectCmd::Wrap(w) => {
-                        (n.wrap, n.behind) = match w.as_str() {
-                            "behind" => ("none".into(), true),
-                            "front" => ("none".into(), false),
-                            other => (other.into(), false),
-                        };
+                    &ObjectCmd::Wrap(w) => {
+                        (n.wrap, n.behind) = float_wrap(w);
                         "Wrap Text"
                     }
                     &ObjectCmd::LockAnchor(on) => {
@@ -995,8 +996,8 @@ impl Editor {
     }
 
     /// An image's own size, points, at its resolution (96 dpi when it has none).
-    fn natural_size(&self, image: Option<usize>) -> Option<(f64, f64)> {
-        let (w, h, dx, dy) = image.and_then(|i| self.doc.images.get(i)).and_then(|b| crate::docx::image::image_info(b))?;
+    fn natural_size(&self, image: Option<crate::docx::ResourceId>) -> Option<(f64, f64)> {
+        let (w, h, dx, dy) = image.and_then(|i| self.doc.images.get(i)).and_then(crate::docx::image::image_info)?;
         Some((w * 72.0 / if dx > 1.0 { dx } else { 96.0 }, h * 72.0 / if dy > 1.0 { dy } else { 96.0 }))
     }
 
@@ -1046,10 +1047,28 @@ impl Editor {
         let twips = |v: f64| (v * 20.0).trunc() / 20.0;
         let mut stay = [false; 2];
         if let Some(h) = p.horizontal {
-            n.h_relative = ooxml(h.relative_to);
+            n.h_relative = match h.relative_to {
+                HorizontalReference::Column => HorizontalRelation::Column,
+                HorizontalReference::Margin => HorizontalRelation::Margin,
+                HorizontalReference::Page => HorizontalRelation::Page,
+                HorizontalReference::Character => HorizontalRelation::Character,
+                HorizontalReference::LeftMargin => HorizontalRelation::LeftMargin,
+                HorizontalReference::RightMargin => HorizontalRelation::RightMargin,
+                HorizontalReference::InsideMargin => HorizontalRelation::InsideMargin,
+                HorizontalReference::OutsideMargin => HorizontalRelation::OutsideMargin,
+            };
             n.relative.pos[0] = h.percent.map(|v| (v * 10.0).round() as i64);
             (n.h_align, n.h_offset) = match (h.align, h.offset) {
-                (Some(a), _) => (Some(ooxml(a)), n.h_offset),
+                (Some(a), _) => (
+                    Some(match a {
+                        ObjectHorizontalAlignment::Left => HorizontalAlign::Left,
+                        ObjectHorizontalAlignment::Center => HorizontalAlign::Center,
+                        ObjectHorizontalAlignment::Right => HorizontalAlign::Right,
+                        ObjectHorizontalAlignment::Inside => HorizontalAlign::Inside,
+                        ObjectHorizontalAlignment::Outside => HorizontalAlign::Outside,
+                    }),
+                    n.h_offset,
+                ),
                 (None, Some(o)) => (None, twips(o.0)),
                 (None, None) if h.percent.is_some() => (None, n.h_offset),
                 (None, None) => {
@@ -1059,10 +1078,28 @@ impl Editor {
             };
         }
         if let Some(v) = p.vertical {
-            n.v_relative = ooxml(v.relative_to);
+            n.v_relative = match v.relative_to {
+                VerticalReference::Paragraph => VerticalRelation::Paragraph,
+                VerticalReference::Line => VerticalRelation::Line,
+                VerticalReference::Margin => VerticalRelation::Margin,
+                VerticalReference::Page => VerticalRelation::Page,
+                VerticalReference::TopMargin => VerticalRelation::TopMargin,
+                VerticalReference::BottomMargin => VerticalRelation::BottomMargin,
+                VerticalReference::InsideMargin => VerticalRelation::InsideMargin,
+                VerticalReference::OutsideMargin => VerticalRelation::OutsideMargin,
+            };
             n.relative.pos[1] = v.percent.map(|p| (p * 10.0).round() as i64);
             (n.v_align, n.v_offset) = match (v.align, v.offset) {
-                (Some(a), _) => (Some(ooxml(a)), n.v_offset),
+                (Some(a), _) => (
+                    Some(match a {
+                        ObjectVerticalAlignment::Top => VerticalAlign::Top,
+                        ObjectVerticalAlignment::Center => VerticalAlign::Center,
+                        ObjectVerticalAlignment::Bottom => VerticalAlign::Bottom,
+                        ObjectVerticalAlignment::Inside => VerticalAlign::Inside,
+                        ObjectVerticalAlignment::Outside => VerticalAlign::Outside,
+                    }),
+                    n.v_offset,
+                ),
                 (None, Some(o)) => (None, twips(o.0)),
                 (None, None) if v.percent.is_some() => (None, n.v_offset),
                 (None, None) => {
@@ -1091,7 +1128,12 @@ impl Editor {
         let Selection::Object(ObjectRef::Floating(f)) = self.selection else { return Outcome::unavailable("no floating object selected") };
         let Some(mut n) = self.float_of(f).cloned() else { return Outcome::Unchanged("no float") };
         if let Some(s) = w.side {
-            n.wrap_text = ooxml(s);
+            n.wrap_text = match s {
+                WrapSide::BothSides => WrapText::BothSides,
+                WrapSide::Left => WrapText::Left,
+                WrapSide::Right => WrapText::Right,
+                WrapSide::Largest => WrapText::Largest,
+            };
         }
         for (k, v) in [w.top, w.bottom, w.left, w.right].into_iter().enumerate() {
             if let Some(v) = v {
@@ -1108,20 +1150,55 @@ impl Editor {
         let [top, bottom, left, right] = fl.dist.map(Points);
         Some(crate::api::state::ObjectPlacement {
             horizontal: HorizontalPosition {
-                relative_to: from_ooxml(&fl.h_relative),
-                align: fl.h_align.as_deref().map(from_ooxml),
+                relative_to: match fl.h_relative {
+                    HorizontalRelation::Column | HorizontalRelation::Unrecognised => HorizontalReference::Column,
+                    HorizontalRelation::Margin => HorizontalReference::Margin,
+                    HorizontalRelation::Page => HorizontalReference::Page,
+                    HorizontalRelation::Character => HorizontalReference::Character,
+                    HorizontalRelation::LeftMargin => HorizontalReference::LeftMargin,
+                    HorizontalRelation::RightMargin => HorizontalReference::RightMargin,
+                    HorizontalRelation::InsideMargin => HorizontalReference::InsideMargin,
+                    HorizontalRelation::OutsideMargin => HorizontalReference::OutsideMargin,
+                },
+                align: fl.h_align.map(|a| match a {
+                    HorizontalAlign::Left | HorizontalAlign::Unrecognised => ObjectHorizontalAlignment::Left,
+                    HorizontalAlign::Center => ObjectHorizontalAlignment::Center,
+                    HorizontalAlign::Right => ObjectHorizontalAlignment::Right,
+                    HorizontalAlign::Inside => ObjectHorizontalAlignment::Inside,
+                    HorizontalAlign::Outside => ObjectHorizontalAlignment::Outside,
+                }),
                 offset: (fl.h_align.is_none() && fl.relative.pos[0].is_none()).then_some(Points(fl.h_offset)),
                 percent: fl.relative.pos[0].map(|t| t as f64 / 10.0),
             },
             vertical: VerticalPosition {
-                relative_to: from_ooxml(&fl.v_relative),
-                align: fl.v_align.as_deref().map(from_ooxml),
+                relative_to: match fl.v_relative {
+                    VerticalRelation::Paragraph | VerticalRelation::Unrecognised => VerticalReference::Paragraph,
+                    VerticalRelation::Line => VerticalReference::Line,
+                    VerticalRelation::Margin => VerticalReference::Margin,
+                    VerticalRelation::Page => VerticalReference::Page,
+                    VerticalRelation::TopMargin => VerticalReference::TopMargin,
+                    VerticalRelation::BottomMargin => VerticalReference::BottomMargin,
+                    VerticalRelation::InsideMargin => VerticalReference::InsideMargin,
+                    VerticalRelation::OutsideMargin => VerticalReference::OutsideMargin,
+                },
+                align: fl.v_align.map(|a| match a {
+                    VerticalAlign::Top => ObjectVerticalAlignment::Top,
+                    VerticalAlign::Center => ObjectVerticalAlignment::Center,
+                    VerticalAlign::Bottom => ObjectVerticalAlignment::Bottom,
+                    VerticalAlign::Inside => ObjectVerticalAlignment::Inside,
+                    VerticalAlign::Outside => ObjectVerticalAlignment::Outside,
+                }),
                 offset: (fl.v_align.is_none() && fl.relative.pos[1].is_none()).then_some(Points(fl.v_offset)),
                 percent: fl.relative.pos[1].map(|t| t as f64 / 10.0),
             },
             allow_overlap: fl.allow_overlap,
             layout_in_cell: fl.layout_in_cell,
-            wrap_side: from_ooxml(&fl.wrap_text),
+            wrap_side: match fl.wrap_text {
+                WrapText::BothSides => WrapSide::BothSides,
+                WrapText::Left => WrapSide::Left,
+                WrapText::Right => WrapSide::Right,
+                WrapText::Largest => WrapSide::Largest,
+            },
             distance: crate::api::state::TextDistance { top, bottom, left, right },
         })
     }
@@ -1141,7 +1218,7 @@ impl Editor {
         })
     }
 
-    fn float_inline(&mut self, para: crate::layout::ParaId, offset: Unit, wrap: &str, fonts: &Fonts) -> Outcome {
+    fn float_inline(&mut self, para: crate::layout::ParaId, offset: Unit, wrap: ObjectWrap, fonts: &Fonts) -> Outcome {
         let Some(Inline::Picture(pic, run)) = self.index.para(&self.doc, para).and_then(|p| inline_at(p, offset)).cloned() else {
             return Outcome::Unchanged("no picture");
         };
@@ -1162,11 +1239,7 @@ impl Editor {
                 Some((page, l.region.rect([x0, y0 + dy, x1, y1 + dy])))
             })
         });
-        let (wrap, behind) = match wrap {
-            "behind" => ("none", true),
-            "front" => ("none", false),
-            w => (w, false),
-        };
+        let (wrap, behind) = float_wrap(wrap);
         let id = crate::docx::next_para_id();
         // A picture that is all of a picture control floats with its control, in a box of its own.
         let control = self.whole_picture_control(para, offset);
@@ -1174,7 +1247,7 @@ impl Editor {
             let mut q = self.index.para(&self.doc, para)?.clone();
             q.controls.clear();
             q.inlines = vec![Inline::ControlStart(c), Inline::Picture(pic.clone(), run.clone()), Inline::ControlEnd(c)];
-            let crate::docx::Block::Para(q) = super::clipboard::fresh(&crate::docx::Block::Para(q)) else { return None };
+            let q = q.fresh_identity();
             Some(crate::docx::TextBox {
                 blocks: vec![crate::docx::Block::Para(q)],
                 insets: [0.0; 4],
@@ -1193,14 +1266,14 @@ impl Editor {
             alt: pic.alt.clone(),
             lock_aspect: pic.lock_aspect || boxed.is_some(),
             text_box: boxed.clone().or_else(|| pic.text.clone().map(|t| t.text_box)),
-            h_relative: "column".into(),
+            h_relative: HorizontalRelation::Column,
             h_align: None,
             h_offset: 0.0,
-            v_relative: "paragraph".into(),
+            v_relative: VerticalRelation::Paragraph,
             v_align: None,
             v_offset: 0.0,
-            wrap: wrap.into(),
-            wrap_text: "bothSides".into(),
+            wrap,
+            wrap_text: WrapText::BothSides,
             dist: [0.0, 0.0, 9.0, 9.0],
             effect: pic.effect,
             poly: None,
@@ -1210,9 +1283,8 @@ impl Editor {
             layout_in_cell: true,
             order: usize::MAX / 2,
             z: self.front_z(),
-            src: None,
+            origin: crate::docx::Origin::NONE,
             locked: false,
-            frame_src: None,
             in_note: false,
             parts: Vec::new(),
             shape: if boxed.is_some() { None } else { pic.shape.clone() },
@@ -1221,9 +1293,9 @@ impl Editor {
             relative: Default::default(),
         };
         if let Some(deg) = float.shape.as_ref().map(|s| s.xfrm.rot.normalized().degrees()) {
-            super::shapes::rotate_to(&mut float, &[], deg, self.doc.settings.compat_mode);
+            super::shapes::rotate_to(&mut float, &[], deg, self.doc.settings.policy.mode);
         }
-        let unwrapped = crate::docx::Float { wrap: "none".into(), ..float.clone() };
+        let unwrapped = crate::docx::Float { wrap: FloatWrap::None, ..float.clone() };
         self.rewrap(&unwrapped, &mut float);
         self.begin_batch(Some("Wrap Text".into()));
         let mut tx = self.begin("Wrap Text");
@@ -1307,7 +1379,7 @@ impl Editor {
             effect: fl.effect,
             shape: fl.shape.clone(),
             text,
-            src: Default::default(),
+            origin: crate::docx::Origin::NONE,
         };
         let with = vec![Inline::Picture(pic, run.clone())];
         let mut tx = self.begin("Wrap Text");
@@ -1337,7 +1409,7 @@ impl Editor {
             let twips = |v: f64| (v * 20.0).trunc() / 20.0;
             let offset = d.region.inverse().along(d.offset);
             fl.h_offset = twips(fl.h_offset + offset[0]);
-            if !matches!(fl.v_relative.as_str(), "paragraph" | "line") {
+            if !matches!(fl.v_relative, VerticalRelation::Paragraph | VerticalRelation::Line) {
                 fl.v_offset = twips(fl.v_offset + offset[1]);
             }
         }
@@ -1405,7 +1477,7 @@ impl Editor {
             return None;
         }
         let (dest, top, region) = self.anchor_at(page, anchor, new).filter(|&(p, ..)| p != anchor)?;
-        if matches!(fl.v_relative.as_str(), "paragraph" | "line") {
+        if matches!(fl.v_relative, VerticalRelation::Paragraph | VerticalRelation::Line) {
             fl.v_offset = ((region.inverse().rect(new)[1] - top) * 20.0).trunc() / 20.0;
             fl.v_align = None;
         }
@@ -1428,8 +1500,8 @@ impl Editor {
         let sec = self.doc.sections.get(body.and_then(|a| self.para_section(a)).unwrap_or(info.section))?;
         let set = &self.doc.settings;
         let facing = Facing { mirror: set.mirror_margins, gutter_at_top: set.gutter_at_top, book_fold: set.book_fold };
-        let (left, right, top) = margins_in(sec, self.doc.review.view, facing, info.number);
-        let s = sec.section_in(self.doc.review.view);
+        let (left, right, top) = margins_in(sec, self.review.view, facing, info.number);
+        let s = sec.section_in(self.review.view);
         let width = s.page_w - left - right;
         let mut fr = crate::layout::float::Frames {
             page_w: s.page_w,
@@ -1516,10 +1588,9 @@ impl Editor {
         let (w, h) = (new[2] - new[0], new[3] - new[1]);
         let sized = [(w - (old[2] - old[0])).abs() > 1e-9, (h - (old[3] - old[1])).abs() > 1e-9];
         // An alignment its size moves (right, centre, inside, outside) goes to an offset when the size changes
-        let by_size = |a: &Option<String>, start: &str| a.as_deref().is_some_and(|a| a != start);
         let moved = [
-            unplace[0] || (new[0] - old[0]).abs() > 1e-9 || sized[0] && by_size(&fl.h_align, "left"),
-            unplace[1] || (new[1] - old[1]).abs() > 1e-9 || sized[1] && by_size(&fl.v_align, "top"),
+            unplace[0] || (new[0] - old[0]).abs() > 1e-9 || sized[0] && fl.h_align.is_some_and(|a| a != HorizontalAlign::Left),
+            unplace[1] || (new[1] - old[1]).abs() > 1e-9 || sized[1] && fl.v_align.is_some_and(|a| a != VerticalAlign::Top),
         ];
         // An aligned or percentage place goes to an offset from its reference where the float now is.
         let placed = [fl.h_align.is_some() || fl.relative.pos[0].is_some(), fl.v_align.is_some() || fl.relative.pos[1].is_some()];
@@ -1529,7 +1600,7 @@ impl Editor {
             None
         };
         // A character's x is only known to layout: the float keeps its place from it, moved by the drag.
-        let from_char = frames.as_ref().filter(|_| moved[0] && placed[0] && fl.h_relative == "character").map(|(fr, _)| {
+        let from_char = frames.as_ref().filter(|_| moved[0] && placed[0] && fl.h_relative == HorizontalRelation::Character).map(|(fr, _)| {
             let x = |f: &crate::docx::Float| crate::layout::float::h_pos(f, fr);
             crate::layout::float::sized(&fl, fr).as_ref().map_or_else(|| x(&fl), x) + new[0] - old[0]
         });
@@ -1691,7 +1762,7 @@ impl Editor {
         let Some(Inline::Sym { ch, font, run, control: Some(c) }) = self.index.para(&self.doc, para).and_then(|q| inline_at(q, u)).cloned() else {
             return Outcome::Unchanged("no checkbox");
         };
-        let Some(crate::docx::ControlKind::Checkbox { checked, unchecked }) = self.doc.controls.get(&c).map(|c| c.props.kind.clone()) else {
+        let Some(crate::docx::ControlKind::Checkbox { checked, unchecked, .. }) = self.doc.controls.get(&c).map(|c| c.props.kind.clone()) else {
             return Outcome::Unchanged("no checkbox");
         };
         if !self.editable(&p) {

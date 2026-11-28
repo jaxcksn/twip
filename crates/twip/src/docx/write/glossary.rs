@@ -14,8 +14,8 @@ pub(super) fn write(doc: &Document, src: &Source, parts: &mut Vec<(String, Vec<u
     let Some(g) = &doc.glossary else { return Ok(()) };
     match &src.glossary {
         Some(gs) => {
-            if let Some(xml) = patched(doc, g, gs)? {
-                parts.push((gs.part.clone(), g.map.to_glossary_xml(&xml).into_owned().into_bytes()));
+            if let Some(xml) = patched(doc, src, g, gs)? {
+                parts.push((gs.part.clone(), super::super::glossary::to_glossary_xml(&g.map, &xml).into_owned().into_bytes()));
             }
         }
         None => {
@@ -29,7 +29,7 @@ pub(super) fn write(doc: &Document, src: &Source, parts: &mut Vec<(String, Vec<u
             );
             let mut text = String::new();
             for (n, b) in made.iter().enumerate() {
-                text.push_str(&part_xml_of("w:", b, n, &new_blocks_xml(&shell, &b.body, &doc.controls, &doc.people)?));
+                text.push_str(&part_xml_of("w:", b, n, &new_blocks_xml(&shell, &b.body, &doc.controls, &doc.people, &super::colours_of(doc))?));
             }
             let xml = shell.replace("<w:docParts></w:docParts>", &format!("<w:docParts>{text}</w:docParts>"));
             // Beside the main part.
@@ -38,7 +38,7 @@ pub(super) fn write(doc: &Document, src: &Source, parts: &mut Vec<(String, Vec<u
                 None => "glossary/document.xml".to_string(),
             };
             let name = package::free_name(&src.package, parts, &name)?;
-            package::set(parts, &name, g.map.to_glossary_xml(&xml).into_owned().into_bytes());
+            package::set(parts, &name, super::super::glossary::to_glossary_xml(&g.map, &xml).into_owned().into_bytes());
             package::add_part(&src.package, parts, &src.main, &name, GLOSSARY_TYPE, GLOSSARY_REL)?;
         }
     }
@@ -68,13 +68,13 @@ fn part_xml_of(w: &str, b: &BuildingBlock, n: usize, body: &str) -> String {
          <{w}behaviors><{w}behavior {w}val=\"content\"/></{w}behaviors><{w}guid {w}val=\"{}\"/></{w}docPartPr><{w}docPartBody>{body}</{w}docPartBody></{w}docPart>",
         esc(&b.name),
         esc(&b.category),
-        esc(&b.gallery.xml()),
+        esc(&crate::docx::glossary::gallery_xml(&b.gallery)),
         esc(&guid)
     )
 }
 
 /// The glossary part as read with the edits made since, or `None` when nothing changed.
-fn patched(doc: &Document, g: &Glossary, gs: &GlossarySource) -> Result<Option<String>, String> {
+fn patched(doc: &Document, src: &Source, g: &Glossary, gs: &GlossarySource) -> Result<Option<String>, String> {
     let dom = roxmltree::Document::parse(&gs.xml).map_err(|e| e.to_string())?;
     let w = match dom.root_element().lookup_prefix(W) {
         Some(p) if !p.is_empty() => format!("{p}:"),
@@ -101,7 +101,7 @@ fn patched(doc: &Document, g: &Glossary, gs: &GlossarySource) -> Result<Option<S
     }
     let mut text = String::new();
     for (n, b) in g.parts.iter().enumerate().skip(gs.parts.len()).filter(|(_, b)| b.state == PartState::Added) {
-        text.push_str(&part_xml_of(&w, b, n, &new_blocks_xml(&gs.xml, &b.body, &doc.controls, &doc.people)?));
+        text.push_str(&part_xml_of(&w, b, n, &new_blocks_xml(&gs.xml, &b.body, &doc.controls, &doc.people, &super::colours_of(doc))?));
     }
     if !text.is_empty() {
         let list = dom.descendants().find(|n| is_w(*n, "docParts")).ok_or("a glossary without its parts list")?;
@@ -110,7 +110,17 @@ fn patched(doc: &Document, g: &Glossary, gs: &GlossarySource) -> Result<Option<S
         splices.push((close..close, text));
     }
     let (orig, now): (Vec<&[Block]>, Vec<&[Block]>) = lists.iter().copied().unzip();
-    part_xml_with(&gs.xml, &boxes(&orig, &now), &lists, &splices, &super::SectionEdits::default(), &doc.controls, &gone_controls(doc), &doc.people)
+    part_xml_with(
+        &gs.xml,
+        &boxes(&orig, &now),
+        &lists,
+        &splices,
+        &super::SectionEdits::default(),
+        &doc.controls,
+        &gone_controls(doc, src),
+        &doc.people,
+        &super::colours_of(doc),
+    )
 }
 
 #[cfg(test)]
@@ -147,7 +157,7 @@ mod tests {
         let held = b"<x/>".to_vec();
         let bytes =
             write::repackage(&blank::blank_docx(), &[("word/glossary/document.xml".into(), held.clone())], zip::CompressionMethod::Deflated).unwrap();
-        let mut doc = read_editable(&bytes).unwrap();
+        let (mut doc, docx) = read_editable(&bytes).unwrap();
         let block = BuildingBlock {
             name: "Note".into(),
             category: "General".into(),
@@ -158,30 +168,30 @@ mod tests {
             editable: true,
         };
         doc.glossary = Some(Glossary { parts: vec![block], map: Default::default() });
-        let saved = write::save(&doc).unwrap();
+        let saved = write::save(&doc, &docx).unwrap();
         let files = entries(&saved);
         assert_eq!(files.iter().find(|(n, _)| n == "word/glossary/document.xml").map(|(_, d)| d), Some(&held), "the other part is kept");
         assert!(files.iter().any(|(n, _)| n == "word/glossary/document2.xml"));
-        let again = read_editable(&saved).unwrap();
+        let (again, _) = read_editable(&saved).unwrap();
         assert_eq!(again.glossary.as_ref().map(|g| g.parts.len()), Some(1));
     }
 
     #[test]
     fn an_unedited_glossary_saves_as_read() {
         let bytes = fixture();
-        let doc = read_editable(&bytes).unwrap();
-        assert_eq!(write::save(&doc).unwrap(), bytes);
+        let (doc, docx) = read_editable(&bytes).unwrap();
+        assert_eq!(write::save(&doc, &docx).unwrap(), bytes);
     }
 
     #[test]
     fn an_edited_body_changes_only_its_building_block() {
         let bytes = fixture();
-        let mut doc = read_editable(&bytes).unwrap();
+        let (mut doc, docx) = read_editable(&bytes).unwrap();
         let g = doc.glossary.as_mut().unwrap();
         let Block::Para(p) = &mut g.parts[0].body[0] else { panic!("a paragraph") };
         let Some(Inline::Text(t, _)) = p.inlines.iter_mut().find(|i| matches!(i, Inline::Text(..))) else { panic!("text") };
         *t = "Violation record".into();
-        let saved = write::save(&doc).unwrap();
+        let saved = write::save(&doc, &docx).unwrap();
         let (before, after) = (entries(&bytes), entries(&saved));
         assert_eq!(before.len(), after.len());
         for ((n1, d1), (n2, d2)) in before.iter().zip(&after) {
@@ -200,7 +210,7 @@ mod tests {
         assert!(!new.contains("~g~"));
         assert_eq!(doc_part(&new, "Greeting"), doc_part(&old, "Greeting"));
         // It reads back with the edit.
-        let again = read_editable(&saved).unwrap();
+        let (again, _) = read_editable(&saved).unwrap();
         let Block::Para(p) = &again.glossary.as_ref().unwrap().parts[0].body[0] else { panic!("a paragraph") };
         assert!(p.inlines.iter().any(|i| matches!(i, Inline::Text(s, _) if s == "Violation record")));
     }
@@ -234,7 +244,7 @@ mod editing_tests {
     #[test]
     fn edits_on_a_sub_template_save_into_its_building_block() {
         let mut e = open("FX-SUBTEMPLATES.docx");
-        let before = crate::docx::write::save(e.document()).unwrap();
+        let before = crate::docx::write::save(e.document(), e.docx()).unwrap();
         edit(&mut e, "Violation");
         // A new paragraph at the end of the second paragraph (its comment is in the first).
         let Block::Para(p) = &e.document().glossary.as_ref().unwrap().parts[0].body[2] else { panic!("a paragraph") };
@@ -243,13 +253,13 @@ mod editing_tests {
         e.execute(Command::InsertParagraph, fonts());
         e.execute(Command::InsertText("Added line".into()), fonts());
         e.execute(Command::CloseSubTemplate, fonts());
-        let saved = crate::docx::write::save(e.document()).unwrap();
+        let saved = crate::docx::write::save(e.document(), e.docx()).unwrap();
         let (old, new) = (glossary_xml(&before), glossary_xml(&saved));
         assert!(violation(&new).contains("Added line"));
         // The other building blocks are as read, and Violation's comment markers stay.
         assert_eq!(new.replace(violation(&new), ""), old.replace(violation(&old), ""));
         assert!(violation(&new).contains("commentReference"));
-        let again = crate::docx::read_editable(&saved).unwrap();
+        let (again, _) = crate::docx::read_editable(&saved).unwrap();
         let body = &again.glossary.as_ref().unwrap().parts[0].body;
         assert!(body.iter().any(|b| matches!(b, Block::Para(p) if p.inlines.iter().any(|i| matches!(i, Inline::Text(s, _) if s == "Added line")))));
     }
@@ -260,7 +270,7 @@ mod editing_tests {
         edit(&mut e, "Appeals notice");
         e.execute(Command::SetTrackChanges(true), fonts());
         e.execute(Command::InsertText("Note: ".into()), fonts());
-        let saved = crate::docx::write::save(e.document()).unwrap();
+        let saved = crate::docx::write::save(e.document(), e.docx()).unwrap();
         let xml = glossary_xml(&saved);
         let at = xml.find(r#"w:val="Appeals notice""#).unwrap();
         let part = &xml[at..at + xml[at..].find("</w:docPart>").unwrap()];
@@ -280,8 +290,8 @@ mod review_tests {
         e.execute(Command::EditSubTemplate(SubTemplateName { name: "Violation".into(), category: None }), fonts());
         e.execute(Command::AcceptAllRevisions(Default::default()), fonts());
         e.execute(Command::CloseSubTemplate, fonts());
-        let saved = crate::docx::write::save(e.document()).unwrap();
-        let again = crate::docx::read_editable(&saved).unwrap();
+        let saved = crate::docx::write::save(e.document(), e.docx()).unwrap();
+        let (again, _) = crate::docx::read_editable(&saved).unwrap();
         let body = &again.glossary.as_ref().unwrap().parts[0].body;
         let tracked =
             body.iter().any(|b| matches!(b, crate::docx::Block::Para(p) if p.inlines.iter().any(|i| i.run().is_some_and(|r| r.rev.ins.is_some()))));

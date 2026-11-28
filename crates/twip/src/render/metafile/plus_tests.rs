@@ -110,7 +110,7 @@ fn plain_records_after_get_dc_draw_until_the_next_emf_plus_comment() {
 fn the_dual_fixture_draws_its_emf_plus_fill() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/render/metafile-emf.docx");
     let d = crate::docx::read(&std::fs::read(path).expect("fixture")).expect("reads");
-    let dual = d.images.iter().find(|i| i.windows(4).any(|w| w == b"EMF+")).expect("the dual picture");
+    let dual = d.images.iter().map(|(_, i)| i).find(|i| i.windows(4).any(|w| w == b"EMF+")).expect("the dual picture");
     let mut l = super::tests::Log::default();
     assert!(super::emf::play(&mut l, dual));
     assert_eq!(drawn(&l.ops), ["fill 7.2,7.2,208.8,64.8 #70ad47", "stroke 7.2,36.0,208.8,36.0 2.16 #385723"]);

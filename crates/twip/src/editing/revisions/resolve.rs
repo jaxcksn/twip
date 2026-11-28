@@ -1,11 +1,13 @@
 //! Revision accept and reject
 
+use crate::docx::table_props::PreviousXml;
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::rc::Rc;
 
 use crate::docx::review::{AuthorId, CellMarkKind, RangeKind, RevisionId, RevisionMark};
-use crate::docx::{Block, Document, Inline, Paragraph, Raw, Row, Run, RunStyle, Table, VMerge};
+use crate::docx::table_props::TableXml;
+use crate::docx::{Block, Document, Inline, Paragraph, Row, Run, RunStyle, Table, VMerge};
 use crate::font::Fonts;
 use crate::layout::{ParaId, TableId, Unit};
 
@@ -127,8 +129,7 @@ fn decide(r: &Run, accept: bool, take: impl Fn(&RevisionMark) -> bool) -> Option
 
 /// Whether the field edge at `p.inlines[k]` goes with what `pick` resolves.
 fn edge_goes(p: &Paragraph, k: usize, pick: &Pick, accept: bool) -> bool {
-    let Some(Inline::Opaque(o)) = p.inlines.get(k) else { return false };
-    let Some(r) = o.run.as_ref().filter(|_| o.field.is_some()) else { return false };
+    let Some(Inline::FieldEdge { run: r, .. }) = p.inlines.get(k) else { return false };
     let para = ParaId(p.id);
     let at: u32 = p.inlines[..k].iter().map(|i| i.units() as u32).sum();
     let in_range = pick.covers(para, at, p.inlines[k].units() as u32);
@@ -175,9 +176,9 @@ fn resolve_inlines(p: &Paragraph, pick: &Pick, accept: bool) -> Option<(Vec<Inli
                 continue;
             }
             // A field edge's changes are on its run.
-            let edge = matches!(&piece, Inline::Opaque(o) if o.field.is_some());
+            let edge = matches!(&piece, Inline::FieldEdge { .. });
             let r = match &piece {
-                Inline::Opaque(o) if edge => o.run.as_ref(),
+                Inline::FieldEdge { run, .. } => Some(run),
                 _ => piece.run(),
             };
             let Some(r) = r else {
@@ -337,7 +338,7 @@ impl Editor {
                 base(Who::Author(a)).with_moves(&f, |it| it.mark.author == a)
             }
             Scope::Shown => {
-                let show = self.doc.review.markup.show.clone();
+                let show = self.review.markup.show.clone();
                 if !f.items.iter().any(|it| show.shows(&it.mark)) {
                     return None;
                 }
@@ -620,12 +621,14 @@ impl Editor {
                         p.restore_row(&mut r);
                     }
                     // Its properties as written before, its own revisions kept
-                    let now = crate::docx::write::props::Props::parse(r.direct.0.as_deref(), "trPr", &cx);
-                    let mut was = crate::docx::write::props::Props::parse(c.previous_raw.0.as_deref(), "trPr", &cx);
+                    let colours = self.colours();
+                    let now = crate::docx::write::props::Props::parse(r.direct.xml(&colours, &cx).as_deref(), "trPr", &cx);
+                    let mut was = crate::docx::write::props::Props::parse(c.previous_direct.xml(&colours, &cx).as_deref(), "trPr", &cx);
+                    was.reorder(crate::docx::write::props::TRPR);
                     for (name, xml) in now.kids.iter().filter(|(n, _)| matches!(n.as_str(), "ins" | "del")) {
                         was.set(name, xml.clone());
                     }
-                    r.direct = Raw(was.xml().map(|x| Rc::from(x.as_str())));
+                    r.direct = crate::docx::table_props::RowDirect::from_xml(was.xml().as_deref(), &cx);
                     restyle = true;
                 }
             }
@@ -643,8 +646,10 @@ impl Editor {
                         if let Some(p) = &ch.previous {
                             p.restore_cell(c);
                         }
-                        let raw = ch.previous_raw.0.clone().unwrap_or_else(|| Rc::from(format!("<{}tcPr/>", cx.w).as_str()));
-                        c.direct = Raw(Some(raw));
+                        c.direct = match &ch.previous_direct {
+                            crate::docx::table_props::PreviousDirect::Cell(d) if d.origin_xml().is_some() => d.clone(),
+                            _ => crate::docx::table_props::CellDirect::from_xml(Some(&format!("<{}tcPr/>", cx.w)), &cx),
+                        };
                         restyle = true;
                     }
                 }
@@ -689,7 +694,10 @@ impl Editor {
                 if let Some(p) = &c.previous {
                     p.restore_table(&mut x);
                 }
-                x.direct = c.previous_raw.clone();
+                x.direct = match &c.previous_direct {
+                    crate::docx::table_props::PreviousDirect::Table(d) => d.clone(),
+                    _ => Default::default(),
+                };
                 restyle = true;
             }
             x
@@ -780,7 +788,7 @@ impl Editor {
         for r in revisions(&self.doc, &self.index) {
             listed.add(r.kind, 1);
         }
-        let (all, _) = m.counts(&self.doc.review.markup.show);
+        let (all, _) = m.counts(&self.review.markup.show);
         if all != listed {
             return Err(format!("counts {all:?} != the list's {listed:?}"));
         }
@@ -791,7 +799,7 @@ impl Editor {
     /// kind and reviewer shown; deletions in Balloons mode, formatting changes in either.
     pub fn in_balloon(&self, kind: RevisionKind, author: crate::docx::review::AuthorId) -> bool {
         use crate::docx::review::{BalloonMode, MarkupView};
-        let review = &self.doc.review;
+        let review = &self.review;
         let mode = review.markup.balloons;
         if review.view != MarkupView::All || mode == BalloonMode::Inline || !review.markup.show.shows_change(kind.is_formatting(), author) {
             return false;
@@ -803,7 +811,7 @@ impl Editor {
     /// The revisions in balloons beside `visible` pages, by page and line: those starting on the pages' paragraphs.
     pub(in crate::editing) fn revision_balloons(&mut self, visible: std::ops::Range<usize>) -> Vec<super::super::view::RevisionBalloon> {
         use crate::docx::review::{BalloonMode, MarkupView};
-        let review = &self.doc.review;
+        let review = &self.review;
         if visible.is_empty() || review.view != MarkupView::All || review.markup.balloons == BalloonMode::Inline {
             return Vec::new();
         }
@@ -895,7 +903,7 @@ impl Editor {
     /// Whether paragraph `p` shows nothing, its mark hidden too: layout leaves it out before a table and at a story's
     /// end, or joins it to the next. A cell's last paragraph keeps its line.
     fn blank(&self, p: ParaId) -> bool {
-        let review = &self.doc.review;
+        let review = &self.review;
         let at_cell_end = |s: super::super::index::Slot| {
             matches!(s.container, super::super::index::Container::Cell { .. })
                 && self.index.blocks(&self.doc, s.container).is_some_and(|b| s.block + 1 == b.len())

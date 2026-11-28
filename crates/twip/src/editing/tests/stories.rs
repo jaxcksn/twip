@@ -8,6 +8,7 @@ use super::super::text::UnitText;
 use super::{fonts, mv, open, para_id, texts};
 use crate::api::command::{DropCap, DropCapPosition};
 use crate::api::value::Orientation;
+use crate::docx::char_props::RunXml;
 use crate::docx::{Block, Inline};
 use crate::layout::{FloatId, ParaId, TableId, Unit};
 
@@ -156,9 +157,9 @@ fn unlinking_an_inherited_header_copies_it_into_the_page_section() {
     assert!(e.document().sections[2].headers[0].is_some(), "the third section gets its own copy");
     assert!(e.document().sections[1].headers[0].is_none(), "the second still links");
     assert!(e.document().sections[0].headers[0].is_some(), "the first keeps its header");
-    let own = e.document().sections[2].headers[0].clone();
+    let own = e.document().sections[2].headers[0];
     let Some(StoryId::HeaderFooter(k)) = story(&e) else { panic!("{:?}", e.selection()) };
-    assert_eq!(e.index().part_name(k).map(str::to_string), own, "the caret follows into the copy");
+    assert_eq!(e.index().part(k), own, "the caret follows into the copy");
 }
 
 #[test]
@@ -227,10 +228,11 @@ fn edit_header_replaces_a_reference_to_a_missing_part() {
     assert!(e.document().sections[0].headers[0].is_some() && e.document().stories.is_empty(), "a reference with no part");
     let out = e.execute(Command::EditHeader, fonts());
     assert!(in_header(&e), "{out:?}");
-    let name = e.document().sections[0].headers[0].clone().expect("a header");
-    assert!(e.document().stories.contains_key(&name), "the reference names the new part");
+    let id = e.document().sections[0].headers[0].expect("a header");
+    assert!(e.document().stories.contains_key(&id), "the reference names the new part");
     e.execute(Command::Undo(Default::default()), fonts());
-    assert_eq!(e.document().sections[0].headers[0].as_deref(), Some("word/header1.xml"), "undo brings the reference back");
+    let back = e.document().sections[0].headers[0].map(|id| super::part_name(&e, id));
+    assert_eq!(back.as_deref(), Some("word/header1.xml"), "undo brings the reference back");
 }
 
 #[test]
@@ -238,22 +240,22 @@ fn a_new_header_leaves_another_sections_missing_part_its_name() {
     let body = format!("{}{}<w:sectPr>{HEADER_REF}{SEC}</w:sectPr>", sect_p("One", HEADER_REF), p("Two"));
     let mut e = package(&body, Some(None));
     let missing = Some("word/header1.xml");
-    assert!(e.document().sections.iter().all(|s| s.headers[0].as_deref() == missing), "both refer to the missing part");
+    let named = |e: &Editor, k: usize| e.document().sections[k].headers[0].map(|id| super::part_name(e, id));
+    assert!((0..2).all(|k| named(&e, k).as_deref() == missing), "both refer to the missing part");
     let out = e.execute(Command::EditHeader, fonts());
     assert!(in_header(&e), "{out:?}");
-    let name = e.document().sections[0].headers[0].clone().expect("a header");
-    assert_ne!(Some(name.as_str()), missing, "a new part's own name");
-    assert_eq!(e.document().sections[1].headers[0].as_deref(), missing, "the other section keeps its reference");
+    assert_ne!(named(&e, 0).as_deref(), missing, "a new part's own name");
+    assert_eq!(named(&e, 1).as_deref(), missing, "the other section keeps its reference");
 }
 
 #[test]
 fn remove_header_over_a_missing_part_gives_an_empty_one() {
     let mut e = package(&format!("{}<w:sectPr>{HEADER_REF}{SEC}</w:sectPr>", p("One")), Some(None));
-    let before = e.document().sections[0].headers.clone();
+    let before = e.document().sections[0].headers;
     let out = e.execute(Command::RemoveHeaderFooter(json(serde_json::json!({ "kind": "header", "pages": "default" }))), fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
-    let name = e.document().sections[0].headers[0].clone().expect("a header");
-    assert!(e.document().stories.contains_key(&name));
+    let id = e.document().sections[0].headers[0].expect("a header");
+    assert!(e.document().stories.contains_key(&id));
     e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(e.document().sections[0].headers, before);
 }
@@ -261,8 +263,9 @@ fn remove_header_over_a_missing_part_gives_an_empty_one() {
 #[test]
 fn a_refused_header_removal_step_leaves_the_reference() {
     let mut e = package(&format!("{}<w:sectPr>{HEADER_REF}{SEC}</w:sectPr>", p("One")), Some(None));
-    let before = e.document().sections[0].headers.clone();
-    let step = super::super::step::Step::HeaderPart { name: "word/header1.xml".into(), section: 0, footer: false, slot: 0, blocks: None };
+    let before = e.document().sections[0].headers;
+    let id = before[0].expect("a reference to the missing part");
+    let step = super::super::step::Step::HeaderPart { id, section: 0, footer: false, slot: 0, blocks: None };
     let mut tx = e.begin("Remove Header");
     assert!(e.step(&mut tx, step).is_err());
     e.abort(tx);
@@ -351,14 +354,14 @@ fn converted_notes_take_the_other_kinds_styles() {
     let Some(Block::Para(q)) = e.document().endnotes.values().next().and_then(|b| b.first()) else { panic!("no endnote") };
     assert_eq!(q.style.style_id.as_deref(), Some("EndnoteText"));
     let mark = |q: &crate::docx::Paragraph| q.inlines.iter().find_map(|i| if let Inline::NoteMark(_, _, r) = i { Some(r.clone()) } else { None });
-    assert_eq!(mark(q).map(|r| r.direct.clone()), mark(&fresh_endnote).map(|r| r.direct.clone()), "the mark's run is an inserted endnote's");
+    assert_eq!(mark(q).map(|r| written(&r)), mark(&fresh_endnote).map(|r| written(&r)), "the mark's run is an inserted endnote's");
     let reference = e.index().para(e.document(), body).and_then(|p| {
         p.inlines.iter().find_map(|i| match i {
             Inline::NoteRef { run, .. } => Some(run.clone()),
             _ => None,
         })
     });
-    assert!(reference.is_some_and(|r| r.direct.0.as_deref().is_some_and(|x| x.contains("EndnoteReference"))), "the reference's run");
+    assert!(reference.is_some_and(|r| written(&r).contains("EndnoteReference")), "the reference's run");
 }
 
 #[test]
@@ -381,7 +384,7 @@ fn converting_a_note_restyles_its_cells_and_a_single_quoted_reference() {
     for i in &mut q.inlines {
         if let Inline::NoteRef { run, .. } = i {
             let mut r = (**run).clone();
-            r.direct = crate::docx::Raw(Some(r#"<w:rPr><w:rStyle w:val='FootnoteReference'/></w:rPr>"#.into()));
+            r.direct = crate::docx::char_props::RunDirect::in_w(r#"<w:rPr><w:rStyle w:val='FootnoteReference'/></w:rPr>"#);
             *run = std::rc::Rc::new(r);
         }
     }
@@ -398,7 +401,7 @@ fn converting_a_note_restyles_its_cells_and_a_single_quoted_reference() {
             _ => None,
         })
     });
-    assert!(reference.is_some_and(|r| r.direct.0.as_deref().is_some_and(|x| x.contains("EndnoteReference"))), "the reference's run");
+    assert!(reference.is_some_and(|r| written(&r).contains("EndnoteReference")), "the reference's run");
 }
 
 #[test]
@@ -626,7 +629,7 @@ fn selecting_an_earlier_note_does_not_lay_out_the_rest_of_the_document() {
 
 /// The main part's XML as saved.
 fn saved_document(e: &Editor) -> String {
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part")
 }
 
@@ -691,4 +694,10 @@ fn note_options_for_this_section_take_every_selected_section() {
     assert!(matches!(e.execute(Command::SetNoteProperties(props), fonts()), Outcome::Changed(_)));
     let fmts: Vec<Option<String>> = e.document().sections.iter().map(|s| s.notes[0].fmt.clone()).collect();
     assert_eq!(fmts, [Some("lowerRoman".into()), Some("lowerRoman".into()), None], "the selected sections");
+}
+
+/// A run's `w:rPr` as saving writes it, in a part that binds the main namespace to `w`.
+fn written(r: &crate::docx::RunStyle) -> String {
+    let cx = crate::docx::write::props::Cx::of_xml(r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">"#);
+    r.direct.xml(&Default::default(), &cx).map(std::borrow::Cow::into_owned).unwrap_or_default()
 }

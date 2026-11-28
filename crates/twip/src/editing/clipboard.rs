@@ -1,11 +1,13 @@
 //! Clipboard
 
+use crate::docx::style_xml::StylesPart;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
+use crate::docx::char_props::RunXml;
 use crate::docx::props::VertAlign;
 use crate::docx::review::CellMarkKind;
-use crate::docx::write::props::{Props, esc};
+use crate::docx::write::props::esc;
 use crate::docx::{Block, Inline, Paragraph, Run, RunStyle, VMerge};
 use crate::font::Fonts;
 use crate::layout::{ParaId, Unit};
@@ -15,6 +17,9 @@ use super::commands::Outcome;
 use super::position::Position;
 use super::selection::Selection;
 use super::step::{Step, para_len};
+use crate::document::paragraph::{ListId, ListRef};
+use crate::docx::run_xml;
+use crate::format::{CharEdit, CharProps, Color, FontRef, Prop, ScriptClass, ScriptFonts, UnderlineProps};
 
 #[derive(Clone, Debug, Default)]
 pub struct Fragment {
@@ -273,8 +278,8 @@ fn range_markers(p: &Paragraph, comments: bool) -> Vec<(usize, u32, Key<'_>, boo
     let mut marks = Vec::new();
     for (k, i) in p.inlines.iter().enumerate() {
         let m = match i {
-            Inline::Bookmark(n) => Some(n.strip_prefix('/').map_or((Key::Bookmark(n), true), |n| (Key::Bookmark(n), false))),
-            Inline::Opaque(o) => o.permission().map(|(start, id)| (Key::Perm(id), start)),
+            Inline::Range(r) if let Some((n, start)) = r.bookmark() => Some((Key::Bookmark(n), start)),
+            Inline::Range(r) if let Some((start, id)) = r.permission() => Some((Key::Perm(id), start)),
             Inline::Range(r) if comments && r.kind == RangeKind::CommentStart => Some((Key::Comment(r.id), true)),
             Inline::Range(r) if comments && r.kind == RangeKind::CommentEnd => Some((Key::Comment(r.id), false)),
             Inline::CommentRef { id, .. } if comments => Some((Key::Comment(id.0), false)),
@@ -347,45 +352,6 @@ pub(super) fn slice(p: &Paragraph, a: Unit, b: Unit) -> Vec<Inline> {
         }
     }
     out
-}
-
-pub(super) fn fresh(b: &Block) -> Block {
-    match b {
-        Block::Para(p) => {
-            let mut p = p.clone();
-            p.id = crate::docx::next_para_id();
-            p.src = None;
-            for i in &mut p.inlines {
-                let story = match i {
-                    Inline::Float(f, _) => {
-                        f.id = crate::docx::next_para_id();
-                        f.text_box.as_mut()
-                    }
-                    Inline::Picture(pic, _) => pic.text.as_mut().map(|t| {
-                        t.id = crate::docx::next_para_id();
-                        &mut t.text_box
-                    }),
-                    _ => None,
-                };
-                if let Some(tb) = story {
-                    tb.blocks = tb.blocks.iter().map(fresh).collect();
-                }
-            }
-            Block::Para(p)
-        }
-        Block::Table(t) => {
-            let mut t = t.clone();
-            t.id = crate::docx::next_para_id();
-            t.src = None;
-            for r in &mut t.rows {
-                r.src = None;
-                for c in &mut r.cells {
-                    c.blocks = c.blocks.iter().map(fresh).collect();
-                }
-            }
-            Block::Table(t)
-        }
-    }
 }
 
 fn plain(blocks: &[Block], hidden: bool, out: &mut String) {
@@ -557,7 +523,7 @@ fn without_revisions(r: &Run) -> Run {
 /// The run holding `i`'s tracked changes: a field edge's is its markers'.
 fn marked_run(i: &Inline) -> Option<&Run> {
     match i {
-        Inline::Opaque(o) if o.field.is_some() => o.run.as_ref(),
+        Inline::FieldEdge { run, .. } => Some(run),
         _ => i.run(),
     }
 }
@@ -655,14 +621,9 @@ impl Fragment {
         s
     }
 
-    /// The images its objects draw, by their index where it was copied (an index none of them draws holds none).
-    pub fn images(&self) -> Vec<Vec<u8>> {
-        let Some(o) = &self.origin else { return Vec::new() };
-        let mut v = vec![Vec::new(); o.images.iter().map(|(k, _)| k + 1).max().unwrap_or(0)];
-        for (k, data) in &o.images {
-            v[*k].clone_from(data);
-        }
-        v
+    /// The images its objects draw, by their id where it was copied.
+    pub fn images(&self) -> crate::docx::Resources {
+        self.origin.as_ref().map_or_else(Default::default, |o| o.images.clone())
     }
 
     /// Its HTML, its objects as their alternative text.
@@ -698,7 +659,7 @@ impl Editor {
 
     /// Copied content with what copying keeps beside its blocks: its hidden text, the notes and comments it refers to.
     fn completed(&mut self, mut f: Fragment) -> Fragment {
-        f.hidden_text = self.doc.review.show_hidden;
+        f.hidden_text = self.review.show_hidden;
         strip_partial_comments(&mut f.blocks);
         f.refs = self.refs_of(&f.blocks);
         f
@@ -757,9 +718,28 @@ impl Editor {
         // Only those these blocks refer to: a cell block pastes its cells' content piece by piece.
         let mut refs = taken.refs.get_or_insert_with(|| RefIndex::of(&f.refs)).held(&f.refs, blocks);
         // From another document: its paragraphs show as this document's styles have them, or keep their own look.
+        let mut controls = std::borrow::Cow::Borrowed(&f.controls);
         if let Some(o) = f.origin.as_deref().filter(|o| o.key != self.key) {
+            let here = self.cx();
+            let gone = super::import::drop_package_bound(blocks, &mut refs);
+            if gone > 0 {
+                let what = format!("{gone} pasted element(s) referring to the document they came from were left out");
+                self.events.push(super::input::Notice::Warning(crate::docx::diagnostics::WarningCode::UnsupportedElement, what));
+            }
+            super::import::write_runs_here(blocks, &mut refs, &here);
+            // Its stored XML read under this document's root
+            let from = if o.main.is_empty() {
+                o.definitions.as_deref().map(|r| r.typed().styles.cx())
+            } else {
+                Some(crate::docx::write::props::Cx::of_xml(&o.main))
+            };
+            let rebind = from.map(|from| super::import::Rebind::between(&from, &here)).filter(|r| !r.is_empty());
+            if let Some(r) = rebind {
+                r.blocks(blocks, &mut refs);
+                controls.to_mut().values_mut().for_each(|c| r.control(&mut c.props));
+            }
             if f.look == Look::Source
-                && let Some(from) = o.resolver.as_deref()
+                && let Some(from) = o.definitions.as_deref()
             {
                 self.keep_para_looks(blocks, from);
             }
@@ -768,10 +748,10 @@ impl Editor {
         if let Some(o) = f.origin.as_deref().filter(|o| o.key != self.key || !o.images.is_empty()) {
             self.import(tx, blocks, &mut refs, o, &mut taken.lists);
         }
-        for (id, c) in adopt(blocks, &f.controls) {
+        for (id, c) in adopt(blocks, &controls) {
             let _ = self.step(tx, Step::Control { id, control: Some(c) });
         }
-        self.paste_refs(tx, blocks, &refs, Some(&f.controls));
+        self.paste_refs(tx, blocks, &refs, Some(&controls));
         self.unique_markers(blocks, f.moved, taken);
     }
 
@@ -780,10 +760,9 @@ impl Editor {
     fn unique_markers(&self, blocks: &mut [Block], moved: bool, taken: &mut Taken) {
         let mut bookmarks = false;
         let mut perms: HashSet<i64> = HashSet::new();
-        each_inline(blocks, &mut |i| match i {
-            Inline::Bookmark(_) => bookmarks = true,
-            Inline::Opaque(o) => perms.extend(o.permission().map(|(_, id)| id)),
-            _ => {}
+        each_inline(blocks, &mut |i| {
+            bookmarks |= i.bookmark().is_some();
+            perms.extend(i.permission().map(|(_, id)| id));
         });
         if !bookmarks && perms.is_empty() {
             return;
@@ -793,13 +772,10 @@ impl Editor {
             for para in self.index.para_ids().filter(|p| !taken.replaced.contains(p)) {
                 let Some(p) = self.index.para(&self.doc, para) else { continue };
                 for i in &p.inlines {
-                    match i {
-                        Inline::Bookmark(n) if !n.starts_with('/') => {
-                            taken.names.insert(n.to_lowercase());
-                        }
-                        Inline::Opaque(o) => taken.ids.extend(o.permission().map(|(_, id)| id)),
-                        _ => {}
+                    if let Some((n, true)) = i.bookmark() {
+                        taken.names.insert(n.to_lowercase());
                     }
+                    taken.ids.extend(i.permission().map(|(_, id)| id));
                 }
             }
         }
@@ -812,21 +788,21 @@ impl Editor {
         let mut given: HashSet<i64> = HashSet::new();
         each_inlines(blocks, &mut |inlines| {
             if bookmarks {
-                inlines.retain(|i| match i {
-                    Inline::Bookmark(n) => {
-                        let name = n.trim_start_matches('/').to_lowercase();
+                inlines.retain(|i| match i.bookmark() {
+                    Some((n, start)) => {
+                        let name = n.to_lowercase();
                         let keep = moved || !names.contains(&name);
-                        if keep && !n.starts_with('/') {
+                        if keep && start {
                             kept.push(name);
                         }
                         keep
                     }
-                    _ => true,
+                    None => true,
                 });
             }
             for i in inlines.iter_mut() {
-                let Inline::Opaque(o) = i else { continue };
-                let Some((_, id)) = o.permission() else { continue };
+                let Inline::Range(r) = i else { continue };
+                let Some((_, id)) = r.permission() else { continue };
                 let to = *map.entry(id).or_insert_with(|| {
                     if !ids.contains(&id) {
                         return id;
@@ -846,10 +822,10 @@ impl Editor {
                     given.insert(to);
                     to
                 });
-                if to != id
-                    && let Some(x) = o.xml.0.as_deref().and_then(|x| with_perm_id(x, to))
-                {
-                    *i = Inline::Opaque(Rc::new(crate::docx::Opaque { xml: crate::docx::Raw(Some(x.into())), field: None, src: None, run: None }));
+                // A permission of its own: the copy's settings, apart from the original's.
+                if to != id {
+                    r.id = to;
+                    r.permission = r.permission.as_deref().map(|p| Rc::new(p.clone()));
                 }
             }
         });
@@ -909,7 +885,7 @@ impl Editor {
         let mut stories = Vec::with_capacity(refs.notes.len());
         for (kind, id, body) in &refs.notes {
             let to = to_ids[&(*kind, *id)];
-            let mut body: Vec<Block> = body.iter().map(fresh).collect();
+            let mut body: Vec<Block> = body.iter().map(Block::fresh_identity).collect();
             for (c, k) in defs.map(|d| adopt(&mut body, d)).unwrap_or_default() {
                 let _ = self.step(tx, Step::Control { id: c, control: Some(k) });
             }
@@ -963,7 +939,7 @@ impl Editor {
             }
             c.id = to;
             c.parent = c.parent.map(|p| map.get(&p).copied().unwrap_or(p));
-            c.body = c.body.iter().map(fresh).collect();
+            c.body = c.body.iter().map(Block::fresh_identity).collect();
             for (id, k) in defs.map(|d| adopt(&mut c.body, d)).unwrap_or_default() {
                 let _ = self.step(tx, Step::Control { id, control: Some(k) });
             }
@@ -1014,6 +990,8 @@ impl Editor {
             let mut out = Vec::new();
             for (k, blk) in blocks.iter().enumerate().take(sb.block + 1).skip(sa.block) {
                 match blk {
+                    // Paragraphs between the ends, whole
+                    Block::Para(p) if k != sa.block && k != sb.block => out.push(Block::Para(p.clone())),
                     Block::Para(p) => {
                         let from = if k == sa.block { oa } else { Unit(0) };
                         let to = if k == sb.block { ob } else { para_len(p) };
@@ -1040,69 +1018,56 @@ impl Editor {
         Some(Fragment { id, blocks: out, open_end: true, ..Default::default() })
     }
 
-    pub(super) fn keep_look(&self, src: &Run, base: &crate::docx::props::RunProps, cache: &mut HashMap<*const RunStyle, Run>) -> Run {
+    pub(super) fn keep_look(&self, src: &Run, base: &crate::format::CharProps, cache: &mut HashMap<*const RunStyle, Run>) -> Run {
         if let Some(r) = cache.get(&Rc::as_ptr(src)) {
             return r.clone();
         }
-        let Some(res) = self.doc.resolver.clone() else { return src.clone() };
-        let cx = self.cx();
-        let mut out = res.run_from_xml(base, src.direct.0.as_deref(), &cx);
-        if *out != **src {
-            let w = cx.w.clone();
-            let mut p = Props::parse(src.direct.0.as_deref(), "rPr", &cx);
-            let flag = |name: &str, on: bool| if on { format!("<{w}{name}/>") } else { format!("<{w}{name} {w}val=\"0\"/>") };
-            if out.bold != src.bold {
-                p.set("b", flag("b", src.bold));
-                p.set("bCs", flag("bCs", src.bold));
-            }
-            if out.italic != src.italic {
-                p.set("i", flag("i", src.italic));
-                p.set("iCs", flag("iCs", src.italic));
-            }
-            if out.caps != src.caps {
-                p.set("caps", flag("caps", src.caps));
-            }
-            if out.small_caps != src.small_caps {
-                p.set("smallCaps", flag("smallCaps", src.small_caps));
-            }
-            if out.strike != src.strike {
-                p.set("strike", flag("strike", src.strike));
-            }
-            if out.hidden != src.hidden {
-                p.set("vanish", flag("vanish", src.hidden));
+        let Some(res) = self.doc.definitions.clone() else { return src.clone() };
+        let base = base.clone();
+        let mut out = Rc::new(run_xml::resolve(&res, &base, src.direct.clone(), false));
+        if !out.layout_eq(src) {
+            use crate::format::Toggle as T;
+            let mut e = CharEdit::new(src.direct.props().map_or_else(CharProps::default, |p| (**p).clone()));
+            let toggles = [
+                (out.bold, src.bold, &[T::BOLD, T::BOLD_COMPLEX][..]),
+                (out.italic, src.italic, &[T::ITALIC, T::ITALIC_COMPLEX]),
+                (out.caps, src.caps, &[T::CAPS]),
+                (out.small_caps, src.small_caps, &[T::SMALL_CAPS]),
+                (out.strike, src.strike, &[T::STRIKE]),
+                (out.hidden, src.hidden, &[T::HIDDEN]),
+            ];
+            for (here, want, ts) in toggles {
+                if here != want {
+                    ts.iter().for_each(|&t| e.toggle(t, want));
+                }
             }
             if out.underline != src.underline {
-                p.set("u", format!("<{w}u {w}val=\"{}\"/>", src.underline.as_deref().unwrap_or("none")));
+                e.underline = Some(UnderlineProps { style: src.underline.unwrap_or(crate::docx::Underline::None), color: None });
+                e.whole(Prop::Underline);
             }
             if (out.size - src.size).abs() > 0.01 {
-                let hp = (src.size * 2.0).round() as i64;
-                p.set("sz", format!("<{w}sz {w}val=\"{hp}\"/>"));
-                p.set("szCs", format!("<{w}szCs {w}val=\"{hp}\"/>"));
+                let pt = (src.size * 2.0).round() / 2.0;
+                (e.size, e.complex_size) = (Some(pt), Some(pt));
+                e.whole(Prop::Size);
+                e.whole(Prop::ComplexSize);
             }
             if out.ascii != src.ascii || out.h_ansi != src.h_ansi || out.east_asia != src.east_asia || out.cs != src.cs {
-                p.set(
-                    "rFonts",
-                    format!(
-                        "<{w}rFonts {w}ascii=\"{}\" {w}hAnsi=\"{}\" {w}eastAsia=\"{}\" {w}cs=\"{}\"/>",
-                        esc(&src.ascii),
-                        esc(&src.h_ansi),
-                        esc(&src.east_asia),
-                        esc(&src.cs)
-                    ),
-                );
+                let f = |name: &str| Some(FontRef::Family(name.into()));
+                e.fonts = ScriptFonts { latin: f(&src.ascii), latin_extended: f(&src.h_ansi), east_asian: f(&src.east_asia), complex: f(&src.cs) };
+                e.hint = None;
+                for c in [ScriptClass::Latin, ScriptClass::LatinExtended, ScriptClass::EastAsian, ScriptClass::Complex] {
+                    e.whole(Prop::Font(c));
+                }
             }
             if out.color != src.color {
-                p.set("color", format!("<{w}color {w}val=\"{}\"/>", src.color.map_or("auto".to_string(), |c| format!("{c:06X}"))));
+                e.color = Some(src.color.map_or(Color::Auto, Color::Rgb));
+                e.whole(Prop::Color);
             }
             if out.vert_align != src.vert_align {
-                let v = match src.vert_align {
-                    VertAlign::Superscript => "superscript",
-                    VertAlign::Subscript => "subscript",
-                    VertAlign::Baseline => "baseline",
-                };
-                p.set("vertAlign", format!("<{w}vertAlign {w}val=\"{v}\"/>"));
+                e.vertical = Some(src.vert_align);
+                e.whole(Prop::Vertical);
             }
-            out = res.run_from_xml(base, p.xml().as_deref(), &cx);
+            out = Rc::new(run_xml::resolve(&res, &base, src.direct.edit(e), false));
         }
         cache.insert(Rc::as_ptr(src), out.clone());
         out
@@ -1112,11 +1077,11 @@ impl Editor {
         if look == Look::Destination {
             return inlines.to_vec();
         }
-        let Some(res) = self.doc.resolver.clone() else { return inlines.to_vec() };
+        let Some(res) = self.doc.definitions.clone() else { return inlines.to_vec() };
         let cx = self.cx();
         let Some(p) = self.index.para(&self.doc, para) else { return inlines.to_vec() };
         let region = self.region_of_para(para, &res);
-        let base = res.para_from_xml(p.style.direct.0.as_deref(), region.as_ref(), &cx).base;
+        let base = crate::docx::para_xml::of(&res, &p.style.direct, region.as_ref(), &cx).base;
         let mut cache = HashMap::new();
         inlines
             .iter()
@@ -1141,7 +1106,7 @@ impl Editor {
             return None;
         }
         let mut tx = self.begin("Paste");
-        let mut blocks: Vec<Block> = f.blocks.iter().map(fresh).collect();
+        let mut blocks: Vec<Block> = f.blocks.iter().map(Block::fresh_identity).collect();
         self.take_in(&mut tx, &mut blocks, f, &mut Taken::default());
         for b in &mut blocks {
             match b {
@@ -1190,11 +1155,11 @@ impl Editor {
             self.abort(tx);
             return Outcome::Unchanged("caret at a row end");
         };
-        let mut blocks: Vec<Block> = f.blocks.iter().map(fresh).collect();
+        let mut blocks: Vec<Block> = f.blocks.iter().map(Block::fresh_identity).collect();
         self.take_in(&mut tx, &mut blocks, f, &mut Taken::default());
         // Landing in a list item: its list goes on through the pasted items.
         if self.paste_defaults.lists()
-            && let Some((num, _)) = self.index.para(&self.doc, para).and_then(|p| p.style.num)
+            && let Some(ListRef { list: ListId(num), level: _ }) = self.index.para(&self.doc, para).and_then(|p| p.style.num)
         {
             self.join_list(&mut blocks, num);
         }
@@ -1295,6 +1260,13 @@ impl Editor {
                 self.abort(tx);
                 return Outcome::Unchanged("paste failed");
             }
+            // Its properties and runs are resolved again here when the pasted paragraph's would have been (from
+            // another document).
+            if let Some(Block::Para(p)) = middle.first()
+                && tx.stale_paras.contains(&ParaId(p.id))
+            {
+                tx.stale_paras.push(para);
+            }
             middle.remove(0);
             let with = self.fit_inlines(para, inl, f.look);
             if self.step(&mut tx, Step::Text { para, range: at..at, with, edges: Default::default() }).is_err() {
@@ -1305,7 +1277,13 @@ impl Editor {
         let last_open = f.open_end && matches!(middle.last(), Some(Block::Para(_)));
         let last_inlines = if last_open {
             match middle.pop() {
-                Some(Block::Para(p)) => Some(p.inlines),
+                Some(Block::Para(p)) => {
+                    // Its runs join the tail, resolved again there when they would have been in it.
+                    if tx.stale_paras.contains(&ParaId(p.id)) {
+                        tx.stale_paras.push(tail);
+                    }
+                    Some(p.inlines)
+                }
                 _ => None,
             }
         } else {
@@ -1358,39 +1336,47 @@ pub(super) fn drop_unpaired(blocks: &mut [Block]) {
     let (mut perm_starts, mut perm_ends): (HashSet<i64>, HashSet<i64>) = (HashSet::new(), HashSet::new());
     let mut any = false;
     each_inline(blocks, &mut |i| match i {
-        Inline::Bookmark(n) => {
+        Inline::Range(r) if let Some((n, start)) = r.bookmark() => {
             any = true;
-            match n.strip_prefix('/') {
-                Some(n) => ends.insert(n.to_lowercase()),
-                None => starts.insert(n.to_lowercase()),
+            if start {
+                starts.insert(n.to_lowercase())
+            } else {
+                ends.insert(n.to_lowercase())
             };
         }
-        Inline::Opaque(o) => {
-            any |= o.field.is_some();
-            if let Some((start, id)) = o.permission() {
-                any = true;
-                if start {
-                    perm_starts.insert(id);
-                } else {
-                    perm_ends.insert(id);
-                }
+        Inline::Range(r) if let Some((start, id)) = r.permission() => {
+            any = true;
+            if start {
+                perm_starts.insert(id);
+            } else {
+                perm_ends.insert(id);
             }
         }
+        Inline::FieldEdge { .. } => any = true,
         Inline::Range(r) if !matches!(r.kind, RangeKind::CommentStart | RangeKind::CommentEnd) => any = true,
         _ => {}
     });
     // Fields across paragraphs: both edges, each paired in its own container (the top level, cells, text boxes).
-    let mut paired: HashSet<*const crate::docx::Opaque> = HashSet::new();
+    let mut paired: HashSet<*const crate::docx::Edge> = HashSet::new();
     if any {
         edges_paired(blocks, &mut paired);
     }
     let keep = |i: &Inline| match i {
-        Inline::Bookmark(n) => match n.strip_prefix('/') {
-            Some(n) => starts.contains(&n.to_lowercase()),
-            None => ends.contains(&n.to_lowercase()),
-        },
-        Inline::Opaque(o) if o.field.is_some() => paired.contains(&Rc::as_ptr(o)),
-        Inline::Opaque(o) => o.permission().is_none_or(|(start, id)| if start { perm_ends.contains(&id) } else { perm_starts.contains(&id) }),
+        Inline::Range(r) if let Some((n, start)) = r.bookmark() => {
+            if start {
+                ends.contains(&n.to_lowercase())
+            } else {
+                starts.contains(&n.to_lowercase())
+            }
+        }
+        Inline::Range(r) if let Some((start, id)) = r.permission() => {
+            if start {
+                perm_ends.contains(&id)
+            } else {
+                perm_starts.contains(&id)
+            }
+        }
+        Inline::FieldEdge { edge, .. } => paired.contains(&Rc::as_ptr(edge)),
         Inline::Range(r) => matches!(r.kind, RangeKind::CommentStart | RangeKind::CommentEnd),
         _ => true,
     };
@@ -1398,10 +1384,10 @@ pub(super) fn drop_unpaired(blocks: &mut [Block]) {
 }
 
 /// The field edges of `blocks` that pair within their container, and within each container they hold.
-fn edges_paired(blocks: &[Block], out: &mut HashSet<*const crate::docx::Opaque>) {
+fn edges_paired(blocks: &[Block], out: &mut HashSet<*const crate::docx::Edge>) {
     let ptr = |(b, k): (usize, usize)| match &blocks[b] {
         Block::Para(p) => match &p.inlines[k] {
-            Inline::Opaque(o) => Some(Rc::as_ptr(o)),
+            Inline::FieldEdge { edge, .. } => Some(Rc::as_ptr(edge)),
             _ => None,
         },
         Block::Table(_) => None,
@@ -1500,7 +1486,7 @@ pub(super) fn adopt(
         .iter()
         .filter_map(|(old, new)| {
             let mut c = defs.get(old)?.clone();
-            c.props.rest.retain(|(n, _)| n != "id");
+            c.props.id = None;
             Some((*new, crate::docx::Control::new(c.props)))
         })
         .collect();
@@ -1588,11 +1574,4 @@ pub(super) fn drop_partial(blocks: &mut [Block], index: &super::index::DocIndex)
 /// The highest id given so far to notes of `kind`.
 fn map_max(map: &HashMap<(crate::docx::NoteKind, i64), i64>, kind: crate::docx::NoteKind) -> i64 {
     map.iter().filter(|(k, _)| k.0 == kind).map(|(_, v)| *v).max().unwrap_or(0)
-}
-
-/// A permission marker's XML with its id `to`.
-fn with_perm_id(x: &str, to: i64) -> Option<String> {
-    let at = x.find(":id=\"").map(|k| k + 5).or_else(|| x.find(" id=\"").map(|k| k + 5))?;
-    let end = at + x[at..].find('"')?;
-    Some(format!("{}{to}{}", &x[..at], &x[end..]))
 }

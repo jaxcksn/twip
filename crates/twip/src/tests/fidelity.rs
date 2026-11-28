@@ -8,6 +8,7 @@
 //! `construct edit` pairs that still fail; one that passes fails the run. `TWIP_FIDELITY_OUT=dir` writes every saved
 //! package there, with each construct's source, for the schema check (`tests/fidelity/validate`).
 
+use crate::docx::review::PasswordHash;
 use std::collections::BTreeSet;
 use std::io::{Cursor, Read, Write};
 use std::path::Path;
@@ -521,7 +522,7 @@ fn check(c: &Construct, edit: fn(&mut Editor, &Spot) -> Outcome, out: Option<&Pa
         Outcome::Unchanged(why) => return Some(format!("the edit did nothing: {why}")),
         _ => {}
     }
-    let saved = match crate::docx::write::save(e.document()) {
+    let saved = match crate::docx::write::save(e.document(), e.docx()) {
         Ok(b) => b,
         Err(err) => return Some(format!("save: {err}")),
     };
@@ -573,6 +574,7 @@ fn every_edit_keeps_every_construct() {
         let (pictures, boxes) = picture_tools_packages();
         std::fs::write(d.join("picture-tools.docx"), pictures).expect("writes");
         std::fs::write(d.join("text-box-columns.docx"), boxes).expect("writes");
+        std::fs::write(d.join("generated.docx"), crate::editing::tests::authored::generated_package()).expect("writes");
     }
     let cases: Vec<(&Construct, &str, fn(&mut Editor, &Spot) -> Outcome)> = CONSTRUCTS
         .iter()
@@ -604,9 +606,9 @@ fn every_edit_keeps_every_construct() {
 #[test]
 fn content_kept_as_read_is_reported() {
     let c = CONSTRUCTS.iter().find(|c| c.name == "equation").expect("the equation construct");
-    let doc = crate::docx::read_editable(&package(c)).expect("reads");
-    let w = doc.diagnostics.warnings.iter().find(|w| w.code == crate::docx::diagnostics::WarningCode::UnsupportedElement);
-    assert!(w.is_some_and(|w| w.message.starts_with("m:oMath")), "{:?}", doc.diagnostics);
+    let (_, docx) = crate::docx::read_editable(&package(c)).expect("reads");
+    let w = docx.diagnostics.warnings.iter().find(|w| w.code == crate::docx::diagnostics::WarningCode::UnsupportedElement);
+    assert!(w.is_some_and(|w| w.message.starts_with("m:oMath")), "{:?}", docx.diagnostics);
 }
 
 #[test]
@@ -623,7 +625,7 @@ fn a_resized_vml_picture_is_saved_at_its_new_size() {
     };
     let out = e.execute(Command::SetObjectSize(size), fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let xml = String::from_utf8(entries(&saved).into_iter().find(|(n, _)| n == "word/document.xml").expect("the main part").1).expect("UTF-8");
     assert!(xml.contains("width:72pt") && xml.contains("height:54pt") && xml.contains("v:imagedata"), "{xml}");
 }
@@ -640,7 +642,7 @@ fn page_setup_writes_only_what_changed() {
     let margins = crate::api::command::Margins { top: Some(Points(36.0)), bottom: None, left: None, right: None, gutter: None, apply_to: None };
     let out = e.execute(Command::SetMargins(margins), fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let xml = String::from_utf8(entries(&saved).into_iter().find(|(n, _)| n == "word/document.xml").unwrap().1).unwrap();
     assert!(xml.contains(r#"w:top="720""#) && xml.contains(cols) && xml.contains(r#"<w:pgSz w:w="12240" w:h="15840"/>"#), "{xml}");
 }
@@ -685,7 +687,7 @@ fn section_settings_package() -> Vec<u8> {
         let out = e.execute(n(c.clone()), fonts());
         assert!(matches!(out, Outcome::Changed(_)), "{c}: {out:?}");
     }
-    crate::docx::write::save(e.document()).expect("saves")
+    crate::docx::write::save(e.document(), e.docx()).expect("saves")
 }
 
 #[test]
@@ -711,7 +713,7 @@ fn converted_notes_package() -> Vec<u8> {
         let out = e.execute(n(c.clone()), fonts());
         assert!(matches!(out, Outcome::Changed(_)), "{c}: {out:?}");
     }
-    crate::docx::write::save(e.document()).expect("saves")
+    crate::docx::write::save(e.document(), e.docx()).expect("saves")
 }
 
 #[test]
@@ -727,7 +729,7 @@ fn converted_notes_keep_their_references_and_bodies() {
     assert_eq!(refs(&saved), (e, f + 1, 1), "references swapped");
     let main = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part");
     assert!(main.contains("footnoteColumns") && main.contains("w:val=\"2\"/>"), "footnote columns");
-    let doc = crate::docx::read_editable(&saved).expect("reads back");
+    let (doc, _) = crate::docx::read_editable(&saved).expect("reads back");
     assert_eq!((doc.footnotes.keys().filter(|k| **k > 0).count(), doc.endnotes.keys().filter(|k| **k > 0).count()), (e, f + 1), "bodies swapped");
 }
 
@@ -763,7 +765,7 @@ fn table_properties_package() -> Vec<u8> {
         let out = e.execute(n(c.clone()), fonts());
         assert!(matches!(out, Outcome::Changed(_)), "{c}: {out:?}");
     }
-    crate::docx::write::save(e.document()).expect("saves")
+    crate::docx::write::save(e.document(), e.docx()).expect("saves")
 }
 
 #[test]
@@ -789,7 +791,7 @@ fn table_properties_are_saved_and_read_back() {
     }
     let settings = String::from_utf8(entries(&saved).into_iter().find(|(n, _)| n == "word/settings.xml").expect("settings").1).expect("UTF-8");
     assert!(settings.contains("<w:defaultTableStyle w:val=\"TableNormal\"/>"), "{settings}");
-    let doc = crate::docx::read_editable(&saved).expect("reads back");
+    let (doc, _) = crate::docx::read_editable(&saved).expect("reads back");
     let tables: Vec<&crate::docx::Table> =
         doc.sections.iter().flat_map(|s| s.blocks.iter()).filter_map(|b| if let crate::docx::Block::Table(t) = b { Some(t) } else { None }).collect();
     let (t, new) = (tables[0], tables[tables.len() - 1]);
@@ -830,7 +832,7 @@ fn picture_tools_packages() -> (Vec<u8>, Vec<u8>) {
         let out = e.execute(n(c.clone()), fonts());
         assert!(matches!(out, Outcome::Changed(_)), "{c}: {out:?}");
     }
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     // A text box in two columns, in a document of its own.
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-NEST-2-BOX.docx");
     let mut e = Editor::open(&std::fs::read(path).expect("the fixture"), fonts()).expect("opens");
@@ -846,7 +848,7 @@ fn picture_tools_packages() -> (Vec<u8>, Vec<u8>) {
     e.set_caret_for_benchmark(Selection::Object(ObjectRef::Floating(crate::layout::FloatId(tb))));
     let out = e.execute(n(serde_json::json!({ "type": "setShapeText", "columns": { "count": 2, "spacing": 18 }, "autofit": "shrinkText" })), fonts());
     assert!(matches!(out, Outcome::Changed(_)), "text box columns: {out:?}");
-    let boxed = crate::docx::write::save(e.document()).expect("saves");
+    let boxed = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let xml = crate::docx::package::read(&boxed, &[], "word/document.xml").expect("reads").expect("the main part");
     assert!(xml.contains("numCol=\"2\"") && xml.contains("<a:normAutofit"), "the columns are saved");
     (saved, boxed)
@@ -878,7 +880,7 @@ fn document_properties_package() -> Vec<u8> {
     }
     let shown = texts(&e)[0].clone();
     assert!(shown.contains("Acme") && shown.contains("42") && shown.contains("Annual report"), "{shown}");
-    crate::docx::write::save(e.document()).expect("saves")
+    crate::docx::write::save(e.document(), e.docx()).expect("saves")
 }
 
 #[test]
@@ -890,7 +892,7 @@ fn document_properties_and_variables_are_saved() {
     assert!(part("docProps/custom.xml").contains("name=\"Client\"><vt:lpwstr>Acme</vt:lpwstr>"));
     assert!(part("word/settings.xml").contains("w:name=\"CaseNumber\" w:val=\"42\""), "{}", part("word/settings.xml"));
     assert!(part("_rels/.rels").contains("custom-properties"));
-    let doc = crate::docx::read_editable(&saved).expect("reads back");
+    let (doc, _) = crate::docx::read_editable(&saved).expect("reads back");
     assert_eq!(doc.properties.lookup("client").as_deref(), Some("Acme"));
     assert_eq!(doc.settings.variables, vec![("CaseNumber".to_string(), "42".to_string())]);
 }
@@ -922,7 +924,7 @@ fn form_fields_package() -> Vec<u8> {
     run(&mut e, serde_json::json!({ "type": "insertFormField", "value": "checkBox" }));
     run(&mut e, serde_json::json!({ "type": "insertFormField", "value": "text" }));
     run(&mut e, serde_json::json!({ "type": "setFormFieldShading", "value": false }));
-    crate::docx::write::save(e.document()).expect("saves")
+    crate::docx::write::save(e.document(), e.docx()).expect("saves")
 }
 
 #[test]
@@ -970,7 +972,7 @@ fn control_options_package() -> Vec<u8> {
         &mut e,
         serde_json::json!({ "type": "setControl", "id": tick, "options": { "checkedSymbol": { "font": "Wingdings", "character": "\u{FC}" } } }),
     );
-    crate::docx::write::save(e.document()).expect("saves")
+    crate::docx::write::save(e.document(), e.docx()).expect("saves")
 }
 
 #[test]
@@ -980,7 +982,7 @@ fn control_options_are_saved_and_read_back() {
     for el in ["w15:val=\"tags\"", "<w15:color", "<w:temporary/>", "<w:rStyle w:val=\"Strong\"/>", "w14:font=\"Wingdings\"", "w14:val=\"00FC\""] {
         assert!(xml.contains(el), "{el}");
     }
-    let doc = crate::docx::read_editable(&saved).expect("reads back");
+    let (doc, _) = crate::docx::read_editable(&saved).expect("reads back");
     assert!(doc.controls.values().any(|c| matches!(c.props.kind, crate::docx::ControlKind::Checkbox { checked: '\u{FC}', .. })));
 }
 
@@ -997,7 +999,7 @@ fn protection_package() -> Vec<u8> {
         let out = e.execute(n(c.clone()), fonts());
         assert!(matches!(out, Outcome::Changed(_)), "{c}: {out:?}");
     }
-    crate::docx::write::save(e.document()).expect("saves")
+    crate::docx::write::save(e.document(), e.docx()).expect("saves")
 }
 
 #[test]
@@ -1005,7 +1007,7 @@ fn protection_and_editable_ranges_are_saved() {
     let saved = protection_package();
     let xml = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part");
     assert!(xml.contains("w:edGrp=\"everyone\"") && xml.contains("<w:permEnd"), "the editable range");
-    let doc = crate::docx::read_editable(&saved).expect("reads back");
+    let (doc, _) = crate::docx::read_editable(&saved).expect("reads back");
     let p = doc.settings.protection.expect("protection");
     assert!(p.enforced && p.password.as_ref().is_some_and(|pw| pw.matches("secret") && !pw.matches("Secret")));
 }
@@ -1035,7 +1037,7 @@ fn text_effects_package() -> (Vec<u8>, serde_json::Value) {
     e.select_range(para_id(&e, 1), Unit(0), Unit(11), fonts());
     let out = e.execute(n(serde_json::json!({ "type": "setTextEffects", "glow": null })), fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
-    (crate::docx::write::save(e.document()).expect("saves"), all)
+    (crate::docx::write::save(e.document(), e.docx()).expect("saves"), all)
 }
 
 #[test]
@@ -1111,7 +1113,7 @@ fn a_styles_effects_turn_off_on_its_runs() {
     let Tri::Uniform(after) = shown(&mut e) else { panic!("uniform") };
     assert_eq!((after.glow, after.shadow, after.reflection, after.outline), (None, None, None, None));
     assert!(after.fill.is_some(), "the style's fill shows");
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let xml = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part");
     let at = xml.find(">all style<").expect("the styled run");
     let run = &xml[xml[..at].rfind("<w:r>").expect("its run")..at];
@@ -1134,7 +1136,7 @@ fn a_styles_effects_turn_off_on_its_runs() {
     // A run's own glow, with no style's under it, is removed outright.
     e.select_range(para_id(&e, 1), Unit(0), Unit(11), fonts());
     assert!(matches!(e.execute(n(serde_json::json!({ "type": "setTextEffects", "glow": null })), fonts()), Outcome::Changed(_)));
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let xml = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part");
     let at = xml.find(">glow direct<").expect("the direct run");
     assert!(!xml[xml[..at].rfind("<w:r>").expect("its run")..at].contains("w14:glow"));
@@ -1159,7 +1161,7 @@ fn page_background_packages() -> (Vec<u8>, Vec<u8>) {
         &mut e,
         serde_json::json!({ "type": "setPageColor", "value": { "type": "solid", "colour": { "theme": "accent1", "transforms": [{ "kind": "shade", "value": 0.75 }] } } }),
     );
-    let text = crate::docx::write::save(e.document()).expect("saves");
+    let text = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut e = Editor::open(&bytes, fonts()).expect("opens");
     let png: Vec<u8> = PNG.to_vec();
     let image = serde_json::to_value(crate::api::value::Bytes(png)).expect("bytes");
@@ -1168,7 +1170,7 @@ fn page_background_packages() -> (Vec<u8>, Vec<u8>) {
         &mut e,
         serde_json::json!({ "type": "setPageColor", "value": { "type": "pattern", "preset": "dkDnDiag", "foreground": { "rgb": "#1F4E79" }, "background": { "rgb": "#FFFFFF" } } }),
     );
-    let picture = crate::docx::write::save(e.document()).expect("saves");
+    let picture = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     (text, picture)
 }
 
@@ -1178,13 +1180,13 @@ fn new_headers_package() -> Vec<u8> {
     let w = serde_json::json!({ "type": "setWatermark", "value": { "kind": "text", "text": "DRAFT", "layout": "horizontal", "size": 72 } });
     let out = e.execute(serde_json::from_value(w).expect("a command"), fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
-    crate::docx::write::save(e.document()).expect("saves")
+    crate::docx::write::save(e.document(), e.docx()).expect("saves")
 }
 
 #[test]
 fn a_watermark_makes_the_headers_a_document_lacks() {
     let saved = new_headers_package();
-    let doc = crate::docx::read_editable(&saved).expect("reads back");
+    let (doc, _) = crate::docx::read_editable(&saved).expect("reads back");
     assert!(doc.sections[0].headers.iter().all(|h| h.as_ref().is_some_and(|n| doc.stories.contains_key(n))), "{:?}", doc.sections[0].headers);
     let main = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").unwrap_or_default();
     for t in ["default", "first", "even"] {
@@ -1208,7 +1210,7 @@ fn watermarks_and_page_colours_are_saved_and_read_back() {
     assert!(part(&text, "word/document.xml").contains(r#"w:themeColor="accent1" w:themeShade="BF""#));
     assert!(part(&picture, "word/document.xml").contains(r#"type="pattern""#));
     for p in [&text, &picture] {
-        let doc = crate::docx::read_editable(p).expect("reads back");
+        let (doc, _) = crate::docx::read_editable(p).expect("reads back");
         assert!(doc.settings.display_background_shape && doc.page_colour.is_some());
         let marks = doc.stories.values().flat_map(|b| b.iter()).filter_map(|b| if let crate::docx::Block::Para(p) = b { Some(p) } else { None });
         let n =

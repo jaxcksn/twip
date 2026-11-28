@@ -1,6 +1,7 @@
 //! Content controls bound to custom XML data: an edited control writes its node, a changed node shows in its controls
 
 use crate::docx::binding::{self, Span};
+use crate::docx::char_props::{RunDirect, RunXml};
 use crate::docx::{ControlId, ControlKind, DataPart, Inline};
 use crate::layout::{ParaId, Unit};
 
@@ -10,6 +11,7 @@ use super::position::Position;
 use super::position::StoryId;
 use super::selection::Selection;
 use super::step::{self, Edges, Map, Step, StepError};
+use crate::docx::run_xml;
 use std::ops::Range;
 
 fn units(inlines: &[Inline], k: usize) -> Unit {
@@ -113,7 +115,6 @@ impl Editor {
             return;
         }
         let edits = edits(tx);
-        let w = self.cx().w;
         let mut changes = Vec::new();
         for para in edited_paras(&edits) {
             let Some(p) = self.index.para(&self.doc, para) else { continue };
@@ -135,9 +136,9 @@ impl Editor {
                                 _ => None,
                             })
                             .collect();
-                        if let Some(xml) = binding::with_full_date(&ctl.props, &text, &w) {
+                        if let Some(kind) = binding::with_full_date(&ctl.props, &text) {
                             let mut ctl = ctl.clone();
-                            ctl.props.kind_xml = Some(xml);
+                            ctl.props.kind = kind;
                             changes.push((c, ctl));
                         }
                     }
@@ -277,12 +278,12 @@ impl Editor {
     /// ([`binding::own_run`]).
     pub(super) fn control_own_run(&self, c: ControlId, para: ParaId, start: usize) -> Option<crate::docx::Run> {
         let (ctl, p) = (self.doc.controls.get(&c)?, self.index.para(&self.doc, para)?);
-        Some(binding::own_run(&ctl.props, &p.inlines, start, &p.mark, |x| {
-            let res = self.doc.resolver.as_deref()?;
+        Some(binding::own_run(&ctl.props, &p.inlines, start, &p.mark, |r| {
+            let res = self.doc.definitions.as_deref()?;
             let cx = self.cx();
             let at = crate::layout::Unit(p.inlines[..start.min(p.inlines.len())].iter().map(|i| i.units() as u32).sum());
             let base = self.run_base(para, at, res, &cx)?;
-            Some(res.run_from_xml(&base, Some(x), &cx))
+            Some(std::rc::Rc::new(run_xml::resolve(res, &base, RunDirect::shared(r.props.clone(), r.xml.clone()), false)))
         }))
     }
 

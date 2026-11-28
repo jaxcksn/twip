@@ -4,6 +4,7 @@
 use std::cell::RefCell;
 
 use divan::Bencher;
+use twip::internal::docx::review::ReviewView;
 use twip::internal::docx::{Block, Inline};
 use twip::internal::layout::cache::LayoutCache;
 use twip::internal::layout::ids::Revision;
@@ -20,15 +21,17 @@ fn read(name: &str) -> twip::internal::docx::Document {
 #[divan::bench(args = ["big.docx", "docx-feature-showcase.docx", "editor/FX-LONG-50.docx", "editor/FX-LONG-100.docx"], sample_count = 20)]
 fn full(bencher: Bencher, name: &str) {
     let (fonts, doc) = (crate::fonts(), read(name));
-    bencher.bench_local(|| layout(&doc, &fonts));
+    let view = ReviewView::opening(&doc.settings);
+    bencher.bench_local(|| layout(&doc, &view, &fonts));
 }
 
 #[divan::bench(ignore = cfg!(codspeed_build), args = DOCS, sample_count = 20)]
 fn cached(bencher: Bencher, name: &str) {
     let (fonts, doc) = (crate::fonts(), read(name));
     let mut cache = LayoutCache::new();
-    layout_with(&doc, &fonts, &mut cache);
-    bencher.bench_local(|| layout_with(&doc, &fonts, &mut cache));
+    let view = ReviewView::opening(&doc.settings);
+    layout_with(&doc, &view, &fonts, &mut cache);
+    bencher.bench_local(|| layout_with(&doc, &view, &fonts, &mut cache));
 }
 
 /// The first text in a block (a paragraph or, depth-first, a table cell's).
@@ -46,7 +49,7 @@ fn first_text(b: &mut Block) -> Option<&mut String> {
 #[divan::bench(args = DOCS, sample_size = 1)]
 fn keystroke(bencher: Bencher, name: &str) {
     let (fonts, doc) = (crate::fonts(), RefCell::new(read(name)));
-    let mut dl = DocumentLayout::new();
+    let mut dl = DocumentLayout::new(ReviewView::opening(&doc.borrow().settings));
     let mut rev = 1;
     dl.edit(Revision(rev), None);
     dl.complete(&doc.borrow(), &fonts);
@@ -74,7 +77,7 @@ fn keystroke(bencher: Bencher, name: &str) {
 #[divan::bench(sample_size = 1)]
 fn reflow(bencher: Bencher) {
     let (fonts, doc) = (crate::fonts(), RefCell::new(read(LONG)));
-    let mut dl = DocumentLayout::new();
+    let mut dl = DocumentLayout::new(ReviewView::opening(&doc.borrow().settings));
     let mut rev = 1;
     dl.edit(Revision(rev), None);
     dl.complete(&doc.borrow(), &fonts);
@@ -90,8 +93,7 @@ fn reflow(bencher: Bencher) {
                 dl.complete(&d, &fonts);
             }
             let Block::Para(mut copy) = d.sections[0].blocks[2].clone() else { panic!("a paragraph on page 1") };
-            copy.id = twip::internal::docx::model::next_para_id();
-            copy.src = None;
+            copy.renew_identity();
             d.sections[0].blocks.insert(3, Block::Para(copy));
             rev += 1;
             dl.edit(Revision(rev), Some(Change { section: 0, first: 2, old_end: 3, new_end: 4, row: None }));
@@ -106,7 +108,7 @@ fn first_page(bencher: Bencher, name: &str) {
     let (fonts, bytes) = (crate::fonts(), super::fixture(name));
     bencher.bench_local(|| {
         let doc = twip::internal::docx::read(&bytes).expect("the fixture reads");
-        let mut dl = DocumentLayout::new();
+        let mut dl = DocumentLayout::new(ReviewView::opening(&doc.settings));
         dl.edit(Revision(1), None);
         dl.through(&doc, &fonts, Target::Page(0));
         dl

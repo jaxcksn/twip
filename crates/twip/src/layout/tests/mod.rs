@@ -43,7 +43,42 @@ mod warm;
 use std::path::{Path, PathBuf};
 
 use crate::docx::Document;
+use crate::docx::review::ReviewView;
 use crate::font::Fonts;
+use crate::layout::cache::LayoutCache;
+use crate::layout::{DocumentLayout, Snapshot};
+
+// Layout in the view a document opens in
+
+/// The view `doc` opens in: what it is laid out in without an editor.
+pub fn view(doc: &Document) -> ReviewView {
+    ReviewView::opening(&doc.settings)
+}
+
+/// The view `doc` opens in, with no markup.
+pub fn no_markup(doc: &Document) -> ReviewView {
+    ReviewView { view: crate::docx::review::MarkupView::NoMarkup, ..view(doc) }
+}
+
+/// [`crate::layout::layout`] in the view `doc` opens in.
+pub fn layout(doc: &Document, fonts: &Fonts) -> Snapshot {
+    crate::layout::layout(doc, &view(doc), fonts)
+}
+
+/// [`crate::layout::layout_with`] in the view `doc` opens in.
+pub fn layout_with(doc: &Document, fonts: &Fonts, cache: &mut LayoutCache) -> Snapshot {
+    crate::layout::layout_with(doc, &view(doc), fonts, cache)
+}
+
+/// [`crate::layout::layout_hyphenated`] in the view `doc` opens in.
+pub fn layout_hyphenated(doc: &Document, fonts: &Fonts, hyphenation: Option<&crate::layout::hyphenate::Hyphenation>) -> Snapshot {
+    crate::layout::layout_hyphenated(doc, &view(doc), fonts, hyphenation)
+}
+
+/// A layout of `doc` in the view it opens in, nothing laid out yet.
+pub fn document_layout(doc: &Document) -> DocumentLayout {
+    DocumentLayout::new(view(doc))
+}
 
 pub fn fixtures() -> PathBuf {
     std::env::var_os("TWIP_REFERENCE_FIXTURES").map(std::path::PathBuf::from).unwrap_or_default()
@@ -129,8 +164,7 @@ pub fn plain_doc(texts: &[String]) -> Option<Document> {
         .map(|t| {
             let mut p = template.clone();
             p.inlines = vec![Inline::Text(t.clone(), run.clone())];
-            p.src = None;
-            p.id = crate::docx::model::next_para_id();
+            p.renew_identity();
             Block::Para(p)
         })
         .collect();
@@ -138,7 +172,20 @@ pub fn plain_doc(texts: &[String]) -> Option<Document> {
 }
 
 pub fn page_chars(doc: &Document) -> Vec<Vec<(char, f64, f64)>> {
-    let snap = crate::layout::layout(doc, &fonts());
+    page_chars_with(doc, None)
+}
+
+/// [`page_chars`] with the host's hyphenation patterns.
+pub fn page_chars_with(doc: &Document, hyphenation: Option<&crate::layout::hyphenate::Hyphenation>) -> Vec<Vec<(char, f64, f64)>> {
+    chars_of(&layout_hyphenated(doc, &fonts(), hyphenation))
+}
+
+/// [`page_chars`] in `view`.
+pub fn page_chars_in(doc: &Document, view: &ReviewView) -> Vec<Vec<(char, f64, f64)>> {
+    chars_of(&crate::layout::layout(doc, view, &fonts()))
+}
+
+fn chars_of(snap: &Snapshot) -> Vec<Vec<(char, f64, f64)>> {
     snap.pages()
         .iter()
         .map(|page| {

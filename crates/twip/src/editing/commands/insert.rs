@@ -121,9 +121,11 @@ impl Editor {
             Some(t) => t,
             None => Some(self.selected_text()).filter(|t| !t.is_empty() && !t.contains('\n')).unwrap_or(address),
         };
-        self.pending_props(&|p, w| {
-            p.set("color", format!("<{w}color {w}val=\"0563C1\"/>"));
-            p.set("u", format!("<{w}u {w}val=\"single\"/>"));
+        self.pending_typed(&|e| {
+            e.color = Some(crate::format::Color::Rgb(0x0563C1));
+            e.whole(crate::format::Prop::Color);
+            e.underline = Some(crate::format::UnderlineProps { style: crate::docx::Underline::Single, color: None });
+            e.whole(crate::format::Prop::Underline);
         });
         let code = parts.code();
         let out = self.insert_inlines(|run| crate::docx::fields::field_inlines(&code, &text, &run), "Insert Hyperlink", fonts);

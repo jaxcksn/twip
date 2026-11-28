@@ -61,7 +61,7 @@ fn shapes_without_text_draw_at_their_place_with_their_rotation_and_flips() {
     let star = sp(0, 0, 90, 60, "star5", r#" rot="1800000" flipH="1""#, "FF0000");
     let body = format!("<w:p>{}</w:p>", anchor(100, 200, 90, 60, 1, false, 5, &star));
     let d = doc(&body).expect("the document reads");
-    let snap = crate::layout::layout(&d, &fonts());
+    let snap = crate::layout::tests::layout(&d, &fonts());
     let items = paint_items(&snap.pages()[0]);
     let s = shapes(&items);
     assert_eq!(s.len(), 1);
@@ -94,7 +94,7 @@ fn every_shape_of_a_nested_group_draws_at_its_mapped_place() {
     );
     let body = format!("<w:p>{}</w:p>", anchor(72, 100, 200, 100, 1, false, 5, &group));
     let d = doc(&body).expect("the document reads");
-    let snap = crate::layout::layout(&d, &fonts());
+    let snap = crate::layout::tests::layout(&d, &fonts());
     let items = paint_items(&snap.pages()[0]);
     let s = shapes(&items);
     assert_eq!(s.len(), 2, "both shapes of the group draw");
@@ -111,7 +111,7 @@ fn behind_text_floats_draw_under_the_text_in_relative_height_order() {
     let c = anchor(72, 72, 100, 50, 3, false, 1, &sp(0, 0, 100, 50, "rect", "", "0000AA"));
     let body = format!(r#"<w:p>{a}{b}{c}<w:r><w:t>Text over the shapes</w:t></w:r></w:p>"#);
     let d = doc(&body).expect("the document reads");
-    let snap = crate::layout::layout(&d, &fonts());
+    let snap = crate::layout::tests::layout(&d, &fonts());
     let items = paint_items(&snap.pages()[0]);
     let order: Vec<String> = items
         .iter()
@@ -137,7 +137,7 @@ fn a_hidden_shape_draws_nothing() {
     let star = sp(0, 0, 90, 60, "star5", "", "FF0000");
     let body = format!("<w:p>{}</w:p>", anchor(100, 200, 90, 60, 1, false, 5, &star).replace(r#"name="S1"/>"#, r#"name="S1" hidden="1"/>"#));
     let d = doc(&body).expect("the document reads");
-    let snap = crate::layout::layout(&d, &fonts());
+    let snap = crate::layout::tests::layout(&d, &fonts());
     assert!(shapes(&paint_items(&snap.pages()[0])).is_empty());
 }
 
@@ -238,7 +238,7 @@ fn a_shape_turned_a_quarter_is_placed_as_its_turned_box_except_in_compat_12() {
     let shape = box_wsp(100, 200, r#" rot="5400000""#, "<wps:bodyPr/>", "Turned");
     let body = format!("<w:p>{}</w:p>", anchor(72, 560, 100, 200, 1, false, 1, &shape));
     let d = settings_doc(&body, 15).expect("the document reads");
-    let snap = crate::layout::layout(&d, &fonts());
+    let snap = crate::layout::tests::layout(&d, &fonts());
     assert!(close(float_rect(&snap), [22.0, 610.0, 222.0, 710.0]), "{:?}", float_rect(&snap));
     let items = paint_items(&snap.pages()[0]);
     let s = shapes(&items);
@@ -246,7 +246,7 @@ fn a_shape_turned_a_quarter_is_placed_as_its_turned_box_except_in_compat_12() {
     assert_eq!(s[0].rot, 90.0);
     assert!(items.iter().any(|i| matches!(i, Item::Turned(t) if (t.deg - 90.0).abs() < 1e-9)), "its text is drawn turned");
     let d = settings_doc(&body, 12).expect("the document reads");
-    assert!(close(float_rect(&crate::layout::layout(&d, &fonts())), [72.0, 560.0, 172.0, 760.0]));
+    assert!(close(float_rect(&crate::layout::tests::layout(&d, &fonts())), [72.0, 560.0, 172.0, 760.0]));
 }
 
 #[test]
@@ -254,13 +254,13 @@ fn an_autofit_box_grows_from_its_stored_size_and_a_box_that_does_not_wrap_widens
     let auto = box_wsp(200, 20, "", "<wps:bodyPr><a:spAutoFit/></wps:bodyPr>", "One line");
     let body = format!("<w:p>{}</w:p>", anchor(72, 100, 200, 20, 1, false, 1, &auto));
     let d = settings_doc(&body, 15).expect("the document reads");
-    let r = float_rect(&crate::layout::layout(&d, &fonts()));
+    let r = float_rect(&crate::layout::tests::layout(&d, &fonts()));
     let h = r[3] - r[1];
     assert!(h > 20.0 && h < 40.0, "grows to its one line: {h}");
     let wide = box_wsp(30, 40, "", r#"<wps:bodyPr wrap="none"/>"#, "A line far wider than thirty points");
     let body = format!("<w:p>{}</w:p>", anchor(72, 100, 30, 40, 1, false, 1, &wide));
     let d = settings_doc(&body, 15).expect("the document reads");
-    let r = float_rect(&crate::layout::layout(&d, &fonts()));
+    let r = float_rect(&crate::layout::tests::layout(&d, &fonts()));
     assert!(r[2] - r[0] > 100.0, "{r:?}");
 }
 
@@ -269,7 +269,7 @@ fn vertical_text_is_turned_into_its_frame() {
     let v = box_wsp(90, 72, "", r#"<wps:bodyPr vert="vert270"/>"#, "Upward");
     let body = format!("<w:p>{}</w:p>", anchor(72, 100, 90, 72, 1, false, 1, &v));
     let d = settings_doc(&body, 15).expect("the document reads");
-    let items = paint_items(&crate::layout::layout(&d, &fonts()).pages()[0]);
+    let items = paint_items(&crate::layout::tests::layout(&d, &fonts()).pages()[0]);
     assert!(items.iter().any(|i| matches!(i, Item::Turned(t) if (t.deg - 270.0).abs() < 1e-9)));
 }
 
@@ -305,7 +305,7 @@ fn a_vert_text_box_lays_its_lines_out_like_a_vertical_cell_its_anchor_moving_the
     let v = vertical_box(100, 200, r#"<wps:bodyPr vert="vert" lIns="0" tIns="0" rIns="0" bIns="0" anchor="b"/>"#, &["HHHH x", "second"]);
     let body = format!("<w:p>{}</w:p>", anchor(100, 100, 100, 200, 1, false, 1, &v));
     let d = settings_doc(&body, 15).expect("the document reads");
-    let runs = turned_runs(&crate::layout::layout(&d, &fonts()));
+    let runs = turned_runs(&crate::layout::tests::layout(&d, &fonts()));
     assert!(runs.len() == 2 && runs.iter().all(|r| r.2 == [0.0, 1.0]), "{runs:?}");
     // A vertical line's metrics: the last line its descent in from the left, the lines a vertical pitch apart.
     assert!((runs[1].1[0] - 102.26).abs() < 0.2 && (runs[0].1[0] - 114.26).abs() < 0.2, "{runs:?}");
@@ -317,7 +317,7 @@ fn a_word_art_vertical_text_box_stacks_its_lines_from_the_left() {
     let v = vertical_box(100, 200, r#"<wps:bodyPr vert="wordArtVert" lIns="0" tIns="0" rIns="0" bIns="0"/>"#, &["HHHH x", "second"]);
     let body = format!("<w:p>{}</w:p>", anchor(100, 100, 100, 200, 1, false, 1, &v));
     let d = settings_doc(&body, 15).expect("the document reads");
-    let runs = turned_runs(&crate::layout::layout(&d, &fonts()));
+    let runs = turned_runs(&crate::layout::tests::layout(&d, &fonts()));
     assert!(runs.len() == 2 && runs.iter().all(|r| r.2 == [0.0, 1.0]), "{runs:?}");
     assert!((runs[0].1[0] - 102.50).abs() < 0.25 && (runs[1].1[0] - 114.26).abs() < 0.2, "{runs:?}");
 }
@@ -332,7 +332,7 @@ fn a_vertical_text_box_that_fits_its_text_grows_across() {
     );
     let body = format!("<w:p>{}</w:p>", anchor(100, 100, 20, 200, 1, false, 1, &v));
     let d = settings_doc(&body, 15).expect("the document reads");
-    let r = float_rect(&crate::layout::layout(&d, &fonts()));
+    let r = float_rect(&crate::layout::tests::layout(&d, &fonts()));
     // Two vertical lines and the insets (no pen): 23.6 + 14.4.
     assert!((r[2] - r[0] - 38.0).abs() < 0.2 && (r[3] - r[1] - 200.0).abs() < 1e-6, "{r:?}");
 }
@@ -344,7 +344,7 @@ fn effects_resolve_from_the_effect_list_and_the_style() {
     let styled = r#"<wps:wsp><wps:cNvSpPr/><wps:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1143000" cy="762000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></wps:spPr><wps:style><a:lnRef idx="1"><a:schemeClr val="accent1"/></a:lnRef><a:fillRef idx="1"><a:schemeClr val="accent1"/></a:fillRef><a:effectRef idx="3"><a:schemeClr val="accent1"/></a:effectRef><a:fontRef idx="minor"><a:schemeClr val="lt1"/></a:fontRef></wps:style><wps:bodyPr/></wps:wsp>"#;
     let body = format!("<w:p>{}{}</w:p>", anchor(100, 200, 90, 60, 1, false, 1, &star), anchor(300, 200, 90, 60, 2, false, 2, styled));
     let d = doc(&body).expect("the document reads");
-    let snap = crate::layout::layout(&d, &fonts());
+    let snap = crate::layout::tests::layout(&d, &fonts());
     let items = paint_items(&snap.pages()[0]);
     let s = shapes(&items);
     let e = &s[0].effects;
@@ -369,7 +369,7 @@ fn a_relative_width_and_a_percentage_position_follow_the_page() {
         1,
     );
     let d = settings_doc(&format!("<w:p>{a}</w:p>"), 15).expect("the document reads");
-    let r = float_rect(&crate::layout::layout(&d, &fonts()));
+    let r = float_rect(&crate::layout::tests::layout(&d, &fonts()));
     assert!(close(r, [189.0, 100.0, 495.0, 150.0]), "{r:?}");
 }
 
@@ -483,7 +483,7 @@ fn a_text_box_outline_without_a_width_takes_its_style_lines_width() {
 
 #[test]
 fn compat_15_keeps_a_wrapping_float_with_its_top_effect_extent_below_the_top_margin() {
-    let top = |body: &str| float_rect(&crate::layout::layout(&settings_doc(body, 15).expect("the document reads"), &fonts()))[1];
+    let top = |body: &str| float_rect(&crate::layout::tests::layout(&settings_doc(body, 15).expect("the document reads"), &fonts()))[1];
     let a = anchor(100, 0, 90, 60, 1, false, 1, &sp(0, 0, 90, 60, "rect", "", "FF0000"))
         .replace(
             r#"<wp:positionV relativeFrom="page"><wp:posOffset>0</wp:posOffset>"#,
@@ -530,7 +530,7 @@ fn a_float_in_a_text_box_float_paints_as_its_own() {
     let outer = float_of(&doc.sections[0].blocks).expect("the text box");
     let Some(crate::docx::Block::Table(t)) = outer.text_box.as_ref().expect("its text").blocks.first() else { panic!("a table") };
     let inside = float_of(&t.rows[0].cells[0].blocks).expect("the float in it");
-    let snap = crate::layout::layout(&doc, &crate::layout::tests::fonts());
+    let snap = crate::layout::tests::layout(&doc, &crate::layout::tests::fonts());
     let mut floats = Vec::new();
     crate::layout::traverse::paint(&snap.pages()[0], &mut |p| {
         if let Item::Shape(s) = p.item {

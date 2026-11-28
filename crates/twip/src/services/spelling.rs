@@ -193,7 +193,7 @@ fn continuations(text: &str, n: usize) -> Vec<bool> {
 /// text marked Do not check spelling (`w:noProof`) read as line ends, which part words and aren't spaces.
 pub fn check_text(e: &Editor, para: ParaId) -> Seen {
     let Some(p) = e.index().para(e.document(), para) else { return Seen::default() };
-    let view = e.document().review.view;
+    let view = e.review().view;
     let mut t = Seen::of(p, |r| !(r.hidden || r.rev.del.is_some() || view.hides(&r.rev)), false);
     let mut skip = Vec::with_capacity(t.units.last().map_or(0, |u| *u as usize + 1));
     for i in &p.inlines {
@@ -487,7 +487,7 @@ impl Spellers {
     fn context(&self, e: &Editor, default: &str) -> u64 {
         use std::hash::{Hash, Hasher};
         let mut h = std::hash::DefaultHasher::new();
-        (self.signature(), e.document().review.view, default, e.editing_sub_template()).hash(&mut h);
+        (self.signature(), e.review().view, default, e.editing_sub_template()).hash(&mut h);
         h.finish()
     }
 

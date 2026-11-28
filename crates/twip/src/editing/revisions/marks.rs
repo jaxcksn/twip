@@ -225,7 +225,7 @@ impl Marks {
                 | Step::DataPart { .. }
                 | Step::ImageData { .. }
                 | Step::AddImage { .. }
-                | Step::Resolver { .. }
+                | Step::Definitions { .. }
                 | Step::Fonts { .. }
                 | Step::DefaultTab(_)
                 | Step::Hyphenation(_)

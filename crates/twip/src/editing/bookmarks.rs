@@ -36,10 +36,7 @@ pub fn valid_name(name: &str) -> bool {
 
 /// The marker's bookmark name, and whether it is its end.
 fn marker(i: &Inline) -> Option<(&str, bool)> {
-    match i {
-        Inline::Bookmark(n) => Some(n.strip_prefix('/').map_or((n.as_str(), false), |n| (n, true))),
-        _ => None,
-    }
+    i.bookmark().map(|(n, start)| (n, !start))
 }
 
 /// The paragraph's inlines without `name`'s markers.
@@ -132,7 +129,8 @@ impl Editor {
                 return Outcome::Unchanged("stale bookmark");
             }
         }
-        let (start, end) = (Inline::Bookmark(name.to_string()), Inline::Bookmark(format!("/{name}")));
+        let (start, end) =
+            (Inline::Range(crate::docx::review::RangeMark::bookmark_start(name)), Inline::Range(crate::docx::review::RangeMark::bookmark_end(name)));
         let steps = if pa == pb && oa == ob {
             vec![Step::Text { para: pa, range: oa..oa, with: vec![start, end], edges: Edges::default() }]
         } else {
@@ -250,7 +248,7 @@ mod tests {
         assert_eq!(names(&e), ["_Toc1"]);
         assert!(matches!(e.execute(Command::DeleteBookmark("Gone".into()), fonts()), Outcome::Refused(_)));
         assert!(matches!(e.execute(Command::InsertBookmark("1st".into()), fonts()), Outcome::Refused(_)));
-        let saved = crate::docx::write::save(e.document()).expect("saves");
+        let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
         let e = Editor::open(&saved, fonts()).expect("reopens");
         assert_eq!(names(&e), ["_Toc1"]);
     }

@@ -3,7 +3,7 @@
 use crate::layout::cache::LayoutCache;
 use crate::layout::fragment::{Child, Item, LineFragment, PageChild, PageFragment};
 use crate::layout::ids::{ParaId, Unit};
-use crate::layout::{layout, layout_with};
+use crate::layout::tests::{layout, layout_with};
 
 use super::{fonts, plain_doc, words};
 

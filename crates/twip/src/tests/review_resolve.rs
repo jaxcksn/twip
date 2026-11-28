@@ -85,7 +85,7 @@ fn shapes(blocks: &[Block]) -> Vec<Shape> {
                     let mut s = (**r).clone();
                     s.rev = Default::default();
                     match runs.last_mut() {
-                        Some((prev, ps)) if *ps == s => prev.push_str(&t),
+                        Some((prev, ps)) if ps.layout_eq(&s) => prev.push_str(&t),
                         _ => runs.push((t, s)),
                     }
                 }
@@ -121,8 +121,9 @@ fn accepting_or_rejecting_all_gives_the_twins() {
             for (k, (g, w)) in got.iter().zip(&want).enumerate() {
                 assert_eq!(g, w, "{name} {twin}: block {k}");
             }
-            let page = |d: &Document| d.sections.iter().map(|s| s.page()).collect::<Vec<_>>();
-            assert_eq!(page(e.document()), page(twin_doc.document()), "{name} {twin}: section pages");
+            let (got, want) = (&e.document().sections, &twin_doc.document().sections);
+            let same = got.len() == want.len() && got.iter().zip(want).all(|(a, b)| crate::docx::page_borders::same_page(&a.page(), &b.page()));
+            assert!(same, "{name} {twin}: section pages");
             let left: Vec<_> = revisions(e.document(), e.index()).into_iter().filter(|r| r.story == StoryId::Body).map(|r| r.kind.name()).collect();
             assert!(left.is_empty(), "{name} {twin}: left {left:?}");
             // One undo step puts everything back.
@@ -130,7 +131,11 @@ fn accepting_or_rejecting_all_gives_the_twins() {
             assert_eq!(body(e.document()), before, "{name} {twin}: undo");
             assert!(e.document().sections[0].blocks == blocks, "{name} {twin}: undo restores the blocks exactly");
             let now: Vec<_> = e.document().sections.iter().map(|s| (s.page(), s.change.clone())).collect();
-            assert!(now == pages, "{name} {twin}: undo restores the sections");
+            let same = now.len() == pages.len()
+                && now.iter().zip(&pages).all(|((p, c), (q, d))| {
+                    crate::docx::page_borders::same_page(p, q) && crate::docx::page_borders::same_change(c.as_deref(), d.as_deref())
+                });
+            assert!(same, "{name} {twin}: undo restores the sections");
         }
     }
 }
@@ -221,7 +226,7 @@ fn ours_para(doc: &Document, p: &Paragraph) -> Value {
     }
     let runs = merged(runs);
     let (ins, del, mv) = flags(doc, &p.mark);
-    let pchange = p.style.change.as_ref().filter(|c| c.previous_raw.0.is_some()).map_or(Value::Null, |c| author(doc, c.mark.author));
+    let pchange = p.style.change.as_ref().filter(|c| c.properties).map_or(Value::Null, |c| author(doc, c.mark.author));
     let text: String = runs.iter().filter_map(|r| r["text"].as_str()).collect();
     json!({ "text": text, "runs": runs, "mark": { "ins": ins, "del": del, "move": mv }, "pchange": pchange })
 }
@@ -580,7 +585,7 @@ fn protection_keeps_track_options_on() {
     assert_eq!(e.track_options(), (true, true));
     let mut doc = e.document().clone();
     (doc.settings.do_not_track_moves, doc.settings.do_not_track_formatting) = (true, true);
-    let mut e = Editor::with_document(doc, fonts());
+    let mut e = Editor::with_session(doc, e.docx().clone(), fonts());
     e.execute(Command::SelectAll, fonts());
     e.execute(Command::SetBold(true), fonts());
     let tracked = e.document().sections.iter().flat_map(|s| &s.blocks).any(|b| match b {

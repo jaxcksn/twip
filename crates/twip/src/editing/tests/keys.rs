@@ -7,7 +7,9 @@ use super::super::position::{Position, StoryId};
 use super::super::selection::Selection;
 use super::{blank_body, fonts, texts, texts_ids};
 use crate::api::command::{CaseChange, Command as C, InsertField};
+use crate::document::paragraph::{ListId, ListRef};
 use crate::docx::Inline;
+use crate::docx::para_props::ParaXml;
 use crate::layout::Unit;
 
 const STYLES: &str = concat!(
@@ -135,14 +137,14 @@ fn change_case_at_a_caret_changes_its_word() {
 #[test]
 fn double_and_word_underlines_toggle() {
     let mut e = edit("<w:p><w:r><w:t>one two</w:t></w:r></w:p>");
-    let underline = |e: &Editor| para(e, 0).inlines.iter().find_map(|i| i.run().map(|r| r.underline.clone())).flatten();
+    let underline = |e: &Editor| para(e, 0).inlines.iter().find_map(|i| i.run().map(|r| r.underline)).flatten();
     select(&mut e, 0, 0, 7);
     press(&mut e, "KeyD", CTRL_SHIFT);
-    assert_eq!(underline(&e).as_deref(), Some("double"));
+    assert_eq!(underline(&e), Some(crate::docx::Underline::Double));
     press(&mut e, "KeyD", CTRL_SHIFT);
     assert_eq!(underline(&e), None);
     press(&mut e, "KeyW", CTRL_SHIFT);
-    assert_eq!(underline(&e).as_deref(), Some("words"));
+    assert_eq!(underline(&e), Some(crate::docx::Underline::Words));
     press(&mut e, "KeyQ", CTRL_SHIFT);
     assert!(para(&e, 0).inlines.iter().filter_map(|i| i.run()).all(|r| r.ascii == "Symbol"));
 }
@@ -190,7 +192,7 @@ fn increase_indent_changes_a_list_items_level_or_moves_the_whole_list() {
         Default::default(),
     );
     e.execute(C::SetList(Some(crate::api::command::ListKind::Bullet)), fonts());
-    let level = |e: &Editor, n: usize| para(e, n).style.num.map(|(_, l)| l);
+    let level = |e: &Editor, n: usize| para(e, n).style.num.map(|ListRef { list: ListId(_), level: l }| l);
     caret(&mut e, 1, 0);
     e.execute(C::IncreaseIndent, fonts());
     assert_eq!((level(&e, 0), level(&e, 1)), (Some(0), Some(1)), "a later item goes a level down");
@@ -215,7 +217,7 @@ fn increase_indent_on_list_items_and_plain_paragraphs_together() {
         Default::default(),
     );
     e.execute(C::SetList(Some(crate::api::command::ListKind::Bullet)), fonts());
-    let level = |e: &Editor, n: usize| para(e, n).style.num.map(|(_, l)| l);
+    let level = |e: &Editor, n: usize| para(e, n).style.num.map(|ListRef { list: ListId(_), level: l }| l);
     let item_left = para(&e, 1).style.ind_left;
     e.selection = Selection::range(
         Position::text(StoryId::Body, texts_ids(&e)[1], Unit(0)),
@@ -224,7 +226,8 @@ fn increase_indent_on_list_items_and_plain_paragraphs_together() {
     );
     e.execute(C::IncreaseIndent, fonts());
     assert_eq!(level(&e, 1), Some(1), "the item goes a level down");
-    assert!(para(&e, 1).style.direct.0.as_deref().is_none_or(|x| !x.contains("w:ind ")), "no direct indent on the item");
+    let item = para(&e, 1).style.direct.xml(&Default::default(), &e.cx()).map(std::borrow::Cow::into_owned);
+    assert!(item.is_none_or(|x| !x.contains("w:ind ")), "no direct indent on the item");
     assert_eq!(para(&e, 2).style.ind_left, 36.0, "the plain paragraph steps to the next tab stop");
     e.execute(C::Undo(Default::default()), fonts());
     assert_eq!((level(&e, 1), para(&e, 1).style.ind_left, para(&e, 2).style.ind_left), (Some(0), item_left, 0.0), "one undo step");
@@ -281,11 +284,11 @@ fn list_bullet_comes_with_its_bullet() {
     press(&mut e, "KeyL", CTRL_SHIFT);
     let p = para(&e, 0);
     assert_eq!(p.style.style_id.as_deref(), Some("ListBullet"));
-    assert!(p.style.num.is_some_and(|(id, _)| id != 0), "{:?}", p.style.num);
+    assert!(p.style.num.is_some_and(|ListRef { list: ListId(id), level: _ }| id != 0), "{:?}", p.style.num);
     assert_eq!(p.list.as_ref().map(|l| l.text.as_str()), Some("\u{F0B7}"));
     assert_eq!(p.style.ind_left, 18.0);
     e.execute(C::Undo(Default::default()), fonts());
-    assert!(!e.document().resolver.as_ref().expect("styles").styles.by_id.contains_key("ListBullet"), "one undo step");
+    assert!(!e.document().definitions.as_ref().expect("styles").has_style("ListBullet"), "one undo step");
 }
 
 #[test]
@@ -562,7 +565,7 @@ fn bookmarks_and_comments_into_the_paragraph_passed_keep_their_text_there() {
             .inlines
             .iter()
             .filter_map(|i| match i {
-                Inline::Bookmark(b) => Some(b.clone()),
+                Inline::Range(r) if let Some((b, start)) = r.bookmark() => Some(if start { b.to_string() } else { format!("/{b}") }),
                 Inline::Range(r) => Some(format!("{:?}", r.kind)),
                 _ => None,
             })
@@ -656,7 +659,7 @@ fn border_lines_typed_then_enter_become_a_bottom_border() {
         let p = para(&e, 1);
         assert_eq!(texts(&e), ["above", "", ""], "{typed}");
         let b = p.style.border_bottom.as_ref().unwrap_or_else(|| panic!("{typed}: a border"));
-        let xml = p.style.direct.0.as_deref().unwrap_or_default();
+        let xml = p.style.direct.xml(&Default::default(), &e.cx()).map(std::borrow::Cow::into_owned).unwrap_or_default();
         assert!(xml.contains(&format!(r#"w:val="{line}" w:sz="{size}""#)), "{typed}: {xml}");
         let _ = b;
         assert!(para(&e, 2).style.border_bottom.is_none(), "the new paragraph has none");
@@ -776,7 +779,7 @@ fn autoformat_changes_offer_their_undo_and_stop() {
     let mut e = edit("<w:p><w:r><w:t>above</w:t></w:r></w:p><w:p/>");
     caret(&mut e, 1, 0);
     type_in(&mut e, "---\n");
-    assert!(matches!(e.auto_format_change().map(|c| &c.kind), Some(K::BorderLine { borders: None })));
+    assert!(matches!(e.auto_format_change().map(|c| &c.kind), Some(K::BorderLine { borders }) if borders.borders.is_empty()));
     assert!(e.correction_view(0..1).is_some_and(|v| v.button.is_some()), "its button, the caret in the next paragraph");
     type_in(&mut e, "y");
     e.revert_correction(fonts());
@@ -791,7 +794,7 @@ fn autoformat_changes_offer_their_undo_and_stop() {
     let mut e = edit("<w:p><w:r><w:t>text</w:t></w:r></w:p>");
     caret(&mut e, 0, 0);
     type_in(&mut e, "\t");
-    assert!(matches!(e.auto_format_change().map(|c| &c.kind), Some(K::Indent { ind: None })));
+    assert!(matches!(e.auto_format_change().map(|c| &c.kind), Some(K::Indent { ind }) if ind.indent_left.is_none() && ind.indent_first.is_none()));
     type_in(&mut e, "z");
     e.revert_correction(fonts());
     assert_eq!((texts(&e)[0].as_str(), para(&e, 0).style.ind_first), ("\tztext", 0.0));
@@ -933,9 +936,9 @@ fn link_here_bookmarks_the_text_and_links_to_it() {
     e.right_release();
     e.choose_drop(super::super::move_to::DropChoice::Link, fonts());
     assert_eq!(link_codes(&e, 1), [r#"LINK Word.Document.12 "Report.docx" "OLE_LINK1" \a \r"#]);
-    assert!(para(&e, 0).inlines.iter().any(|i| matches!(i, Inline::Bookmark(n) if n == "OLE_LINK1")));
+    assert!(para(&e, 0).inlines.iter().any(|i| i.bookmark() == Some(("OLE_LINK1", true))));
     e.execute(C::Undo(Default::default()), fonts());
-    assert!(link_codes(&e, 1).is_empty() && !para(&e, 0).inlines.iter().any(|i| matches!(i, Inline::Bookmark(_))), "one undo step");
+    assert!(link_codes(&e, 1).is_empty() && !para(&e, 0).inlines.iter().any(|i| i.bookmark().is_some()), "one undo step");
 }
 
 #[test]
@@ -1153,7 +1156,7 @@ fn ctrl_alt_enter_inserts_a_style_separator() {
     assert!(one_line(&mut e, ids[0], ids[1]), "the two lay out as one");
     assert!(!one_line(&mut e, ids[1], ids[2]));
     // Saved and opened again, it reads as one paragraph with a style separator.
-    let mut again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    let mut again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens");
     again.complete(fonts());
     assert_eq!(texts(&again), ["Head body", "next"]);
     assert_eq!(again.hidden_marks(texts_ids(&again)[0]), [(Unit(4), true)]);
@@ -1182,16 +1185,16 @@ fn a_style_separator_in_a_lists_empty_last_item_splits_it() {
     caret(&mut e, 0, 3);
     e.execute(C::SetList(Some(crate::api::command::ListKind::Numbered)), fonts());
     e.execute(C::InsertParagraph, fonts());
-    assert!(para(&e, 1).style.num.is_some_and(|(id, _)| id != 0), "setup: an empty last item");
+    assert!(para(&e, 1).style.num.is_some_and(|ListRef { list: ListId(id), level: _ }| id != 0), "setup: an empty last item");
     assert!(matches!(e.insert_style_separator(fonts()), crate::editing::commands::Outcome::Changed(_)));
     assert_eq!(texts(&e), ["one", "", ""], "the empty item splits at the caret");
     let ids = texts_ids(&e);
     assert!(e.hidden_marks(ids[0]).is_empty(), "the item before keeps its mark");
     assert_eq!(e.hidden_marks(ids[1]), [(Unit(0), true)], "the first part's mark is the separator");
-    assert!(para(&e, 1).style.num.is_some_and(|(id, _)| id != 0), "the item stays in its list");
+    assert!(para(&e, 1).style.num.is_some_and(|ListRef { list: ListId(id), level: _ }| id != 0), "the item stays in its list");
     e.execute(C::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), ["one", ""], "one undo step");
-    assert!(!para(&e, 1).mark.hidden && para(&e, 1).style.num.is_some_and(|(id, _)| id != 0));
+    assert!(!para(&e, 1).mark.hidden && para(&e, 1).style.num.is_some_and(|ListRef { list: ListId(id), level: _ }| id != 0));
 }
 
 #[test]
@@ -1229,7 +1232,10 @@ fn tab_on_a_lists_first_item_moves_the_list() {
         Default::default(),
     );
     e.execute(C::SetList(Some(crate::api::command::ListKind::Numbered)), fonts());
-    let (left, level) = (|e: &Editor, n: usize| para(e, n).style.ind_left, |e: &Editor, n: usize| para(e, n).style.num.map(|(_, l)| l));
+    let (left, level) = (
+        |e: &Editor, n: usize| para(e, n).style.ind_left,
+        |e: &Editor, n: usize| para(e, n).style.num.map(|ListRef { list: ListId(_), level: l }| l),
+    );
     let a = left(&e, 1);
     caret(&mut e, 1, 0);
     press(&mut e, "Tab", Mods::default());
@@ -1364,7 +1370,7 @@ fn formatting_restrictions_keep_auto_format_unless_it_may_override_them() {
         caret(&mut e, 1, 0);
         type_in(&mut e, "---\n");
         assert_eq!(para(&e, 1).style.border_bottom.is_some(), allow, "override {allow}");
-        let saved = crate::docx::write::save(e.document()).expect("saves");
+        let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
         let again = Editor::open(&saved, fonts()).expect("reopens");
         let s = &again.document().settings;
         assert_eq!((s.auto_format_override, s.style_lock_theme, s.style_lock_style_set), (allow, true, false));
@@ -1410,12 +1416,12 @@ fn track_moves_and_formatting_options() {
             "bold"
         );
     }
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
-    let back = crate::docx::read_editable(&bytes).expect("reads back");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
+    let (back, back_docx) = crate::docx::read_editable(&bytes).expect("reads back");
     assert!(back.settings.do_not_track_moves && back.settings.do_not_track_formatting, "written as the two settings");
-    let mut e = crate::editing::Editor::with_document(back, fonts());
+    let mut e = crate::editing::Editor::with_session(back, back_docx, fonts());
     assert_eq!(e.set_track_options(true, true), crate::editing::commands::Outcome::Moved);
-    let again = crate::docx::read_editable(&crate::docx::write::save(e.document()).expect("saves")).expect("reads back");
+    let (again, _) = crate::docx::read_editable(&crate::docx::write::save(e.document(), e.docx()).expect("saves")).expect("reads back");
     assert!(!again.settings.do_not_track_moves && !again.settings.do_not_track_formatting, "and cleared");
 }
 

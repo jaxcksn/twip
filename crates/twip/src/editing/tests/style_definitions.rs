@@ -6,6 +6,7 @@ use crate::api::command::{Border, BorderEdges, BorderStyle, CellBorders, Command
 use crate::api::services::{StyleVisibility, TableStylePart};
 use crate::api::state::Tri;
 use crate::api::value::{Alignment, AutoOr, Color, HorizontalAlignment, Points, StyleId};
+use crate::document::paragraph::{ListId, ListRef};
 use crate::docx::Block;
 use crate::editing::Editor;
 use crate::editing::commands::Outcome;
@@ -180,11 +181,11 @@ fn a_linked_style_makes_its_character_half_and_shares_its_character_formatting()
     e.execute(Command::Redo(Default::default()), fonts());
     assert_eq!(colors(&e), [red, red], "redone");
     // Linked to nothing: refused, nothing written.
-    let (depth, styles) = (e.history().undo_depth(), e.document().resolver.as_ref().expect("styles").styles.by_id.len());
+    let (depth, styles) = (e.history().undo_depth(), e.document().definitions.as_ref().expect("styles").cascade().styles.styles.len());
     let change = StyleChange { name: Some("Loose".into()), link: Some(None), ..Default::default() };
     let (out, made) = e.create_style(NewStyle { category: StyleCategory::Linked, change, ..Default::default() }, fonts());
     assert!(refused(&out) && made.is_none(), "{out:?}");
-    assert_eq!((e.history().undo_depth(), e.document().resolver.as_ref().expect("styles").styles.by_id.len()), (depth, styles));
+    assert_eq!((e.history().undo_depth(), e.document().definitions.as_ref().expect("styles").cascade().styles.styles.len()), (depth, styles));
 }
 
 #[test]
@@ -192,7 +193,7 @@ fn a_paragraph_style_numbers_with_a_list() {
     let mut e = plain();
     caret_in(&mut e, 0);
     e.execute(Command::SetList(Some(ListKind::Numbered)), fonts());
-    let (list, _) = paras(&e)[0].style.num.expect("a list");
+    let ListRef { list: ListId(list), level: _ } = paras(&e)[0].style.num.expect("a list");
     let o = e.modify_style(&id("Body"), StyleChange { list: Some(Some(StyleList { list, level: 1 })), ..Default::default() }, fonts());
     assert!(!refused(&o), "{o:?}");
     assert!(paras(&e)[1].list.is_some(), "Body's paragraph is numbered");
@@ -217,7 +218,7 @@ fn a_new_base_reformats_the_styles_numbers() {
     let mut e = plain();
     caret_in(&mut e, 0);
     e.execute(Command::SetList(Some(ListKind::Numbered)), fonts());
-    let (list, _) = paras(&e)[0].style.num.expect("a list");
+    let ListRef { list: ListId(list), level: _ } = paras(&e)[0].style.num.expect("a list");
     let own = StyleChange { list: Some(Some(StyleList { list, level: 0 })), ..Default::default() };
     assert!(!refused(&e.modify_style(&id("Body"), own, fonts())));
     let label = |e: &Editor| paras(e)[1].list.as_ref().map(|l| (l.text.clone(), l.run.bold)).expect("a number");
@@ -439,7 +440,7 @@ fn a_table_overrides_its_styles_band_sizes() {
     assert_eq!((b.rows, b.columns, b.own_rows, b.own_columns), (2, 3, Some(2), Some(3)));
     let doc = {
         use std::io::Read;
-        let bytes = crate::docx::write::save(e.document()).expect("saves");
+        let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
         let mut s = String::new();
         zip::ZipArchive::new(std::io::Cursor::new(bytes))
             .expect("a zip")
@@ -489,7 +490,7 @@ fn a_tracked_band_size_change_records_the_tables_previous_properties() {
 
 fn body_xml(e: &Editor) -> String {
     use std::io::Read;
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut s = String::new();
     zip::ZipArchive::new(std::io::Cursor::new(bytes))
         .expect("a zip")
@@ -601,4 +602,18 @@ fn a_document_with_many_latent_exceptions_lists_built_ins_in_one_pass() {
     let e = open_pkg(&pkg(&format!("{latent}{STYLES}"), "<w:p/>"));
     let h5 = e.built_in_styles().into_iter().find(|b| b.id.0 == "Heading5").expect("heading 5");
     assert_eq!((h5.priority, h5.visibility), (4, StyleVisibility::Show), "matched without case");
+}
+
+#[test]
+fn the_defaults_formatted_as_a_style_resolve_alone() {
+    // Defaults that turn a toggle on, which would turn it off again over themselves
+    let styles = STYLES.replace(r#"<w:rPr><w:sz w:val="22"/></w:rPr></w:rPrDefault>"#, r#"<w:rPr><w:b/><w:sz w:val="22"/></w:rPr></w:rPrDefault>"#);
+    let mut e = open_pkg(&pkg(&styles, r#"<w:p><w:r><w:t>one</w:t></w:r></w:p>"#));
+    let stand_in = r#"<w:style w:type="paragraph" w:styleId="DocumentDefaults"><w:name w:val="Document Defaults"/><w:rPr><w:b/><w:sz w:val="22"/></w:rPr></w:style>"#;
+    let (_, over, _) = e.style_formatting(stand_in).expect("resolves");
+    e.defaults_target = true;
+    let alone = e.style_formatting(stand_in).expect("resolves");
+    e.defaults_target = false;
+    assert!(!over.bold, "a style's bold over bold defaults turns it off");
+    assert!(alone.1.bold, "the defaults' own bold, not over themselves");
 }

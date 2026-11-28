@@ -2,13 +2,16 @@
 //! sessions, the commands, state, events, services, errors and warnings.
 
 pub mod api;
+pub(crate) mod base64;
 pub(crate) mod clock;
 pub(crate) mod docx;
+pub(crate) use twip_document as document;
 pub(crate) mod drawing;
 pub(crate) mod editing;
 #[cfg(any(test, not(target_family = "wasm")))]
 pub(crate) mod features;
 pub(crate) mod font;
+pub(crate) mod format;
 pub(crate) mod layout;
 pub mod pdf;
 pub(crate) mod prof;
@@ -23,6 +26,9 @@ mod tests;
 pub mod internal {
     pub mod clock {
         pub use crate::clock::*;
+    }
+    pub mod document {
+        pub use twip_document::*;
     }
     pub mod docx {
         pub use crate::docx::*;
@@ -39,6 +45,9 @@ pub mod internal {
     }
     pub mod font {
         pub use crate::font::*;
+    }
+    pub mod format {
+        pub use crate::format::*;
     }
     pub mod layout {
         pub use crate::layout::*;

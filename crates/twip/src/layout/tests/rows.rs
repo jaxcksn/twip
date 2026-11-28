@@ -2,11 +2,10 @@
 
 use std::collections::HashMap;
 
-use crate::docx::model::next_para_id;
 use crate::docx::{Block, Inline};
 use crate::layout::fragment::{Child, PageChild, PageFragment, RowFragment};
 use crate::layout::ids::{ParaId, TableId};
-use crate::layout::layout;
+use crate::layout::tests::layout;
 use crate::layout::traverse::semantic_chars;
 
 use super::{fixture, fonts};
@@ -54,8 +53,7 @@ fn row_split_three_pages() {
         .map(|i| {
             let mut p = template.clone();
             p.inlines = vec![Inline::Text(format!("Line {i} of the tall cell."), run.clone())];
-            p.id = next_para_id();
-            p.src = None;
+            p.renew_identity();
             tall.push(ParaId(p.id));
             Block::Para(p)
         })
@@ -98,7 +96,7 @@ fn a_cell_float_counts_in_the_centred_content_unless_the_flag_says_not_to_align(
         );
         let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
         if flag {
-            doc.settings.compat.insert("doNotVertAlignCellWithSp".into());
+            doc.settings.policy.do_not_vert_align_cell_with_sp = true;
         }
         let chars = &glyphs(&doc)[0];
         let y = |c: char| chars.iter().find(|x| x.0 == c).map(|x| x.1).expect("drawn");
@@ -166,8 +164,8 @@ fn glyph_x(body: &str, c: char) -> (f64, i64) {
 /// The x of the first `c` glyph, laid out in compat `mode` with the given compat flags.
 fn glyph_x_in(body: &str, mode: i64, flags: &[&str], c: char) -> f64 {
     let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), body)).expect("reads");
-    doc.settings.compat_mode = mode;
-    doc.settings.compat.extend(flags.iter().map(|f| f.to_string()));
+    doc.settings.policy.mode = mode;
+    flags.iter().for_each(|f| crate::docx::set_option(&mut doc.settings.policy, f));
     let mut x = None;
     crate::layout::traverse::paint(&layout(&doc, &fonts()).pages()[0], &mut |p| {
         if let crate::layout::fragment::Item::Glyphs(r) = p.absolute() {
@@ -280,7 +278,7 @@ fn compat_14_a_floating_table_at_vertical_position_0_stands_in_the_flow() {
             dxa_cell(3000, "z")
         );
         let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
-        doc.settings.compat_mode = mode;
+        doc.settings.policy.mode = mode;
         glyphs(&doc)[0].iter().find(|g| g.0 == 'z').map(|g| g.1).expect("drawn")
     };
     assert!((y("margin", 12) - y("text", 12)).abs() < 0.01 && (y("page", 12) - y("text", 12)).abs() < 0.01, "{} {}", y("margin", 12), y("text", 12));
@@ -297,7 +295,7 @@ fn compat_14_a_line_below_a_floating_table_in_a_cell_starts_at_its_bottom() {
     );
     let y = |mode: i64| {
         let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
-        doc.settings.compat_mode = mode;
+        doc.settings.policy.mode = mode;
         let page = &glyphs(&doc)[0];
         let at = |c: char| page.iter().find(|g| g.0 == c).map(|g| g.1).expect("drawn");
         (at('x'), at('H'))
@@ -315,7 +313,7 @@ fn compat_14_a_line_beside_a_too_narrow_strip_of_a_floating_table_steps_down() {
             r#"<w:p><w:r><w:t>Lead</w:t></w:r></w:p><w:tbl><w:tblPr><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="text" w:horzAnchor="margin" w:tblpXSpec="center" w:tblpY="64"/><w:tblW w:w="{fw}" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="{fw}"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="800"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="{fw}" w:type="dxa"/></w:tcPr><w:p/></w:tc></w:tr></w:tbl><w:p><w:r><w:t>Words too long for the strip q</w:t></w:r></w:p>"#
         );
         let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
-        doc.settings.compat_mode = mode;
+        doc.settings.policy.mode = mode;
         glyphs(&doc)[0].iter().find(|g| g.0 == 'q').map(|g| g.1).expect("drawn")
     };
     assert!(y(8000, 12) > y(8000, 15) + 2.0, "strip: compat 12 {} compat 15 {}", y(8000, 12), y(8000, 15));
@@ -334,7 +332,7 @@ fn compat_14_a_line_stepping_beside_a_float_stops_at_the_next_floats_top() {
     let para = "<w:p><w:r><w:t>Wordswordswords q</w:t></w:r></w:p>";
     let y = |body: &str| {
         let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), body)).expect("reads");
-        doc.settings.compat_mode = 12;
+        doc.settings.policy.mode = 12;
         glyphs(&doc)[0].iter().find(|g| g.0 == 'W').map(|g| g.1).expect("drawn")
     };
     let wide = tbl(r#"w:horzAnchor="margin" w:tblpXSpec="center" w:tblpY="1440""#, 8000, 2000);
@@ -356,7 +354,7 @@ fn compat_14_a_never_overlap_table_steps_by_its_height_and_stops_short_of_9_twip
     let y = |start: i32| {
         let body = format!("{}{}<w:p/>", tbl(1440, 9360, 1000, false), tbl(start, 5000, 400, true));
         let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
-        doc.settings.compat_mode = 12;
+        doc.settings.policy.mode = 12;
         glyphs(&doc)[0].iter().filter(|g| g.0 == 'k').map(|g| g.1).fold(f64::NEG_INFINITY, f64::max)
     };
     let (short, level) = (y(1634), y(1639));
@@ -376,7 +374,7 @@ fn compat_14_a_strip_holds_while_its_kept_piece_does_though_a_float_beside_it_en
     let left = tbl(r#"w:horzAnchor="page" w:tblpX="1440" w:tblpY="1940""#, 3000, 1000);
     let body = format!("{wide}{left}<w:p><w:r><w:t>Wordswordswordsw a b c d e f g h i j k l m n o p q r s t u v w x y z</w:t></w:r></w:p>");
     let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
-    doc.settings.compat_mode = 12;
+    doc.settings.policy.mode = 12;
     let between: Vec<f64> = crate::layout::traverse::paint_items(&layout(&doc, &fonts()).pages()[0])
         .into_iter()
         .filter_map(|i| match i {
@@ -422,7 +420,7 @@ fn compat_14_an_empty_paragraph_takes_a_strip_its_indent_leaves_no_room_in() {
             r#"<w:p><w:r><w:t>Lead</w:t></w:r></w:p><w:tbl><w:tblPr><w:tblpPr w:leftFromText="180" w:rightFromText="180" w:vertAnchor="text" w:horzAnchor="margin" w:tblpXSpec="center" w:tblpY="64"/><w:tblW w:w="7600" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="7600"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="800"/></w:trPr><w:tc><w:tcPr><w:tcW w:w="7600" w:type="dxa"/></w:tcPr><w:p/></w:tc></w:tr></w:tbl><w:p><w:pPr>{ind}</w:pPr></w:p><w:p><w:r><w:t>Words too long for the strip q</w:t></w:r></w:p>"#
         );
         let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
-        doc.settings.compat_mode = mode;
+        doc.settings.policy.mode = mode;
         glyphs(&doc)[0].iter().find(|g| g.0 == 'q').map(|g| g.1).expect("drawn")
     };
     let (ind, plain) = (y(r#"<w:ind w:firstLine="720"/>"#, 12), y("", 12));
@@ -497,7 +495,7 @@ fn a_table_in_the_flow_is_placed_again_below_text_a_later_table_pushed() {
     );
     for mode in [12, 15] {
         let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
-        doc.settings.compat_mode = mode;
+        doc.settings.policy.mode = mode;
         let page = &glyphs(&doc)[0];
         let y = |c: char| page.iter().find(|g| g.0 == c).map(|g| g.1).expect("drawn");
         assert!(y('b') < y('q') && y('q') < y('x') && y('z') < y('h'), "compat {mode}: b {} q {} x {} h {}", y('b'), y('q'), y('x'), y('h'));
@@ -581,7 +579,7 @@ fn compat_14_a_default_table_style_without_an_indent_isnt_pulled() {
         let body = r#"<w:tbl><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#;
         let src = replace_in(&with_body(&crate::docx::blank::blank_docx(), body), "word/styles.xml", "</w:styles>", &style);
         let mut doc = crate::docx::read(&src).expect("reads");
-        doc.settings.compat_mode = 12;
+        doc.settings.policy.mode = 12;
         let mut x = None;
         crate::layout::traverse::paint(&layout(&doc, &fonts()).pages()[0], &mut |p| {
             if let crate::layout::fragment::Item::Glyphs(r) = p.absolute() {
@@ -773,7 +771,7 @@ pub(super) fn glyphs(doc: &crate::docx::Document) -> Vec<Vec<(char, f64)>> {
 mod floats {
     use crate::docx::{blank, write};
     use crate::layout::fragment::Item;
-    use crate::layout::layout;
+    use crate::layout::tests::layout;
     use crate::layout::traverse::paint_items;
 
     use super::super::fonts;
@@ -819,8 +817,8 @@ mod floats {
             let mut d = doc(&tb);
             if legacy {
                 // The option has no effect on layout.
-                d.settings.compat_mode = 14;
-                d.settings.compat.insert("doNotVertAlignInTxbx".into());
+                d.settings.policy.mode = 14;
+                crate::docx::set_option(&mut d.settings.policy, "doNotVertAlignInTxbx");
             }
             baseline_of(&d, "Boxed")
         };
@@ -849,7 +847,7 @@ mod floats {
                 .replace("<wp:posOffset>0</wp:posOffset></wp:positionH>", &format!("<wp:posOffset>{x}</wp:posOffset></wp:positionH>"))
                 .replacen("<w:p>", "<w:p><w:r><w:t>Cell</w:t></w:r>", 1);
             let mut d = doc(&in_cell("center", &float));
-            d.settings.compat_mode = 15;
+            d.settings.policy.mode = 15;
             baseline_of(&d, "Cell").expect("the cell text")
         };
         let square = cell(r#"<wp:wrapSquare wrapText="bothSides"/>"#, 1524000);
@@ -930,7 +928,7 @@ mod floats {
         let at = |runs: &[(f64, String)], t: &str| runs.iter().find(|(_, x)| x.contains(t)).map(|(b, _)| *b);
         let doc_compat = |body: &str, mode: i64| {
             let mut d = doc(body);
-            d.settings.compat_mode = mode;
+            d.settings.policy.mode = mode;
             d
         };
         for compat in [12, 15] {
@@ -1023,7 +1021,7 @@ mod floats {
                 r#"<w:tbl><w:tblPr><w:tblW w:w="8000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="8000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="8000" w:type="dxa"/></w:tcPr>{b}</w:tc></w:tr></w:tbl><w:p/>"#
             );
             let mut d = doc(&body);
-            d.settings.compat_mode = 14;
+            d.settings.policy.mode = 14;
             baseline_of(&d, "First").expect("the row")
         };
         let (tight, none) = (first(r#"<wp:wrapTight wrapText="bothSides"/>"#), first("<wp:wrapNone/>"));
@@ -1041,7 +1039,7 @@ mod floats {
                 r#"<w:tbl><w:tblPr><w:tblW w:w="8000" w:type="dxa"/></w:tblPr><w:tblGrid><w:gridCol w:w="8000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="8000" w:type="dxa"/></w:tcPr>{b}</w:tc></w:tr></w:tbl><w:p/>"#
             );
             let mut d = doc(&body);
-            d.settings.compat_mode = 14;
+            d.settings.policy.mode = 14;
             start_of(&d, "First")
         };
         let point = r#"<wp:wrapTight wrapText="bothSides"><wp:wrapPolygon edited="0"><wp:start x="0" y="0"/><wp:lineTo x="0" y="0"/><wp:lineTo x="0" y="0"/></wp:wrapPolygon></wp:wrapTight>"#;
@@ -1069,9 +1067,9 @@ mod floats {
             text_box(wrap, 100.0, "Boxed")
         );
         let mut d = doc(&body);
-        d.settings.compat_mode = compat;
+        d.settings.policy.mode = compat;
         for o in options {
-            d.settings.compat.insert((*o).into());
+            crate::docx::set_option(&mut d.settings.policy, o);
         }
         start_of(&d, &text[..4])
     }
@@ -1100,7 +1098,7 @@ mod floats {
         );
         for compat in [14, 15] {
             let mut d = doc(&body);
-            d.settings.compat_mode = compat;
+            d.settings.policy.mode = compat;
             let s = layout(&d, &fonts());
             let x = |page: usize| {
                 paint_items(&s.pages()[page])
@@ -1173,7 +1171,7 @@ fn compat_12_a_cell_float_laid_out_outside_the_cell_counts_from_the_row_top() {
             r#"<w:tbl><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="6000" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="{first}" w:lineRule="exact"/></w:pPr><w:r><w:t>a</w:t></w:r></w:p><w:p><w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr>{boxed}<w:r><w:t>b</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#
         );
         let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
-        doc.settings.compat_mode = 12;
+        doc.settings.policy.mode = 12;
         let page = &glyphs(&doc)[0];
         let at = |ch: char| page.iter().find(|c| c.0 == ch).map(|c| c.1).expect("drawn");
         (at('b'), at('Z'))
@@ -1201,7 +1199,7 @@ fn a_nested_autofit_table_takes_its_cells_content_width_in_compat_12() {
     );
     let col = |mode: i64| {
         let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
-        doc.settings.compat_mode = mode;
+        doc.settings.policy.mode = mode;
         let mut x = HashMap::new();
         crate::layout::traverse::paint(&layout(&doc, &fonts()).pages()[0], &mut |p| {
             if let crate::layout::fragment::Item::Glyphs(r) = p.absolute() {
@@ -1327,9 +1325,9 @@ fn compat_12_single_borders_give_a_shared_edge_to_the_right_cell() {
     let body = r#"<w:tbl><w:tblGrid><w:gridCol w:w="3000"/><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/><w:tcBorders><w:right w:val="single" w:sz="36" w:space="0" w:color="FF0000"/></w:tcBorders></w:tcPr><w:p/></w:tc><w:tc><w:tcPr><w:tcW w:w="3000" w:type="dxa"/><w:tcBorders><w:left w:val="double" w:sz="4" w:space="0" w:color="0000FF"/></w:tcBorders></w:tcPr><w:p/></w:tc></w:tr></w:tbl><w:p/>"#;
     let colours = |mode: i64, single: bool| {
         let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), body)).expect("reads");
-        doc.settings.compat_mode = mode;
+        doc.settings.policy.mode = mode;
         if single {
-            doc.settings.compat.insert("useSingleBorderforContiguousCells".into());
+            crate::docx::set_option(&mut doc.settings.policy, "useSingleBorderforContiguousCells");
         }
         let snap = layout(&doc, &fonts());
         let mut c: Vec<u32> = crate::layout::traverse::paint_items(&snap.pages()[0])
@@ -1491,7 +1489,7 @@ fn grid_lines_no_cell_ends_on_join_the_column_to_their_left() {
         row(&[(1, 645, ""), (3, 2235, "Judge Name"), (3, 1680, "Docket"), (7, 6345, "Clerk Signature")]),
     );
     let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
-    doc.settings.compat_mode = 15;
+    doc.settings.policy.mode = 15;
     let mut runs: Vec<(String, f64)> = Vec::new();
     crate::layout::traverse::paint(&layout(&doc, &fonts()).pages()[0], &mut |p| {
         if let crate::layout::fragment::Item::Glyphs(r) = p.absolute()
@@ -1560,7 +1558,7 @@ fn a_merged_region_in_a_spaced_table_ends_with_its_rows_bottom_gap() {
     };
     let baseline = |body: &str, text: &str| {
         let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), body)).expect("reads");
-        doc.settings.compat_mode = 15;
+        doc.settings.policy.mode = 15;
         let mut y = None;
         crate::layout::traverse::paint(&layout(&doc, &fonts()).pages()[0], &mut |p| {
             if let crate::layout::fragment::Item::Glyphs(r) = p.absolute()
@@ -1717,7 +1715,7 @@ fn a_table_style_named_table_normal_is_the_built_in_default() {
         )
         .expect("repackages");
         let mut doc = crate::docx::read(&bytes).expect("reads");
-        doc.settings.compat_mode = 15;
+        doc.settings.policy.mode = 15;
         super::page_chars(&doc)[0].iter().find(|c| c.0 == 'Q').map(|c| c.1).expect("drawn")
     };
     // Its 1000 left margin isn't used: the built-in's 108 is, as for the other name; an ordinary name keeps it.
@@ -1730,7 +1728,7 @@ fn border_doc(borders: &str, rows: &str, mode: i64) -> crate::docx::Document {
         r#"<w:tbl><w:tblPr><w:tblW w:w="3000" w:type="dxa"/><w:tblBorders>{borders}</w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid>{rows}</w:tbl><w:p/>"#
     );
     let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
-    doc.settings.compat_mode = mode;
+    doc.settings.policy.mode = mode;
     doc
 }
 
@@ -1779,7 +1777,7 @@ fn compat_14_reserves_the_edge_under_a_repeated_header_row() {
 
 fn doc_in(body: &str, mode: i64) -> crate::docx::Document {
     let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), body)).expect("reads");
-    doc.settings.compat_mode = mode;
+    doc.settings.policy.mode = mode;
     doc
 }
 
@@ -1798,7 +1796,7 @@ fn one_cell(paras: &str, compat: i64) -> crate::docx::Document {
         r#"<w:tbl><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="6000" w:type="dxa"/></w:tcPr>{paras}</w:tc></w:tr></w:tbl><w:p><w:r><w:t>q</w:t></w:r></w:p>"#
     );
     let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
-    doc.settings.compat_mode = compat;
+    doc.settings.policy.mode = compat;
     doc
 }
 
@@ -1965,7 +1963,7 @@ fn a_table_row_that_meets_a_page_float_lower_down_goes_below_it() {
     let ys = |compat: i64| {
         let body = format!(r#"<w:p>{float}</w:p><w:tbl><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid>{rows}</w:tbl><w:p/>"#);
         let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
-        doc.settings.compat_mode = compat;
+        doc.settings.policy.mode = compat;
         let page = &glyphs(&doc)[0];
         page.iter().filter(|c| c.0.is_ascii_uppercase()).map(|c| c.1).collect::<Vec<f64>>()
     };
@@ -1987,7 +1985,7 @@ fn compat_12_a_float_laid_out_outside_its_cell_is_wrapped_by_the_text_before_the
             r#"<w:p><w:r><w:t>a</w:t></w:r></w:p><w:p><w:r><w:t>b</w:t></w:r></w:p><w:tbl><w:tblGrid><w:gridCol w:w="6000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="6000" w:type="dxa"/></w:tcPr><w:p>{float}<w:r><w:t>c</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#
         );
         let mut doc = crate::docx::read(&with_body(&crate::docx::blank::blank_docx(), &body)).expect("reads");
-        doc.settings.compat_mode = 12;
+        doc.settings.policy.mode = 12;
         let page = &super::page_chars(&doc)[0];
         page.iter().find(|c| c.0 == 'b').map(|c| c.1).expect("drawn")
     };

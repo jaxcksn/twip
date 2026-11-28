@@ -60,12 +60,12 @@ pub(super) fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &P
     // The deepest descent an at-least line keeps below its baseline (a turned ruby annotation's lower half).
     let mut at_least_desc = 0.0f64;
     // `auto` centres the runs in flows that keep East Asian text upright, else aligns them to the baseline.
-    line.align = match style.text_alignment.as_str() {
-        "top" => Align::Top,
-        "center" => Align::Center,
-        "bottom" => Align::Bottom,
-        "auto" | "" if frame.vertical && frame.centred => Align::Center,
-        _ => Align::Baseline,
+    line.align = match style.text_alignment {
+        TextAlignment::Top => Align::Top,
+        TextAlignment::Center => Align::Center,
+        TextAlignment::Bottom => Align::Bottom,
+        TextAlignment::Auto if frame.vertical && frame.centred => Align::Center,
+        TextAlignment::Auto | TextAlignment::Baseline => Align::Baseline,
     };
     line.vertical = frame.vertical;
     for p in &pieces[line.start..line.end.min(pieces.len())] {
@@ -99,8 +99,8 @@ pub(super) fn size(line: &mut Line, sp: &ShapedPara, pieces: &[Piece], style: &P
                 let r = if sp.rules.no_raise_lower { 0.0 } else { st.run.position };
                 let (a0, d0) = ((pa - r).max(0.0), (pd + r).max(0.0));
                 if p.kind == Kind::Text {
-                    match st.run.em.as_deref() {
-                        Some("underDot") => em_below = true,
+                    match st.run.em {
+                        Some(crate::docx::props::Emphasis::UnderDot) => em_below = true,
                         Some(_) => em_above = true,
                         None => {}
                     }

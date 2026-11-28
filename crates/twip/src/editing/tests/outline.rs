@@ -96,10 +96,10 @@ fn heading_9_stays_and_missing_heading_styles_join_the_document() {
     caret(&mut e, "C");
     assert!(changed(&e.change_outline(OutlineChange::Demote, false, fonts())));
     assert_eq!(style(&e, "C").as_deref(), Some("Heading4"), "the built-in style is added");
-    assert!(e.document().resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key("Heading4")));
+    assert!(e.document().definitions.as_ref().is_some_and(|r| r.has_style("Heading4")));
     e.execute(C::Undo(Default::default()), fonts());
     assert_eq!(style(&e, "C").as_deref(), Some("Heading3"));
-    assert!(!e.document().resolver.as_ref().is_some_and(|r| r.styles.by_id.contains_key("Heading4")), "the style with it, one step");
+    assert!(!e.document().definitions.as_ref().is_some_and(|r| r.has_style("Heading4")), "the style with it, one step");
     for _ in 0..10 {
         e.change_outline(OutlineChange::Demote, false, fonts());
     }
@@ -180,6 +180,22 @@ fn a_direct_outline_level_is_a_heading_level() {
     e.change_outline(OutlineChange::Promote, false, fonts());
     assert_eq!(level(&e, "heading as body"), Some(1), "body text by its direct level takes the heading's level there");
     assert!(!changed(&e.execute(C::SetOutline(crate::api::command::Outline { level: Some(10), collapsed: None }), fonts())), "levels end at 9");
+}
+
+/// Body Text on a paragraph whose style is the default one by omission names the style: the step is recorded though
+/// nothing shows differently, and the saved paragraph names it.
+#[test]
+fn body_text_on_a_default_paragraph_names_its_style() {
+    let mut e = doc(&[("Heading1", "A"), ("", "a1")]);
+    let was = e.index().para(e.document(), id(&e, "a1")).expect("a1").style.clone();
+    caret(&mut e, "a1");
+    assert!(changed(&e.change_outline(OutlineChange::BodyText, false, fonts())), "a step is recorded");
+    let p = e.index().para(e.document(), id(&e, "a1")).expect("a1");
+    assert!(p.style.layout_eq(&was), "nothing shows differently");
+    assert_eq!(p.style.direct.get().style.as_deref(), Some("Normal"), "the style is named");
+    let reopened = reopened(&e);
+    let q = reopened.index().para(reopened.document(), id(&reopened, "a1")).expect("a1");
+    assert_eq!(q.style.direct.get().style.as_deref(), Some("Normal"), "the saved file names it");
 }
 
 #[test]
@@ -629,7 +645,7 @@ fn headings_in_a_text_box_move_delete_and_change_level_in_their_story() {
 #[test]
 fn a_style_being_edited_keeps_the_pane_s_outline_off_the_document() {
     let mut e = outline();
-    e.style_target = Some(String::new());
+    e.style_target = Some(crate::editing::styles::StyleTarget::of(Default::default()));
     let b = id(&e, "B");
     assert!(matches!(e.change_heading_outline(b, OutlineChange::Promote, true, fonts()), Outcome::Refused(_)));
     e.style_target = None;

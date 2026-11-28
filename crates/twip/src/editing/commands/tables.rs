@@ -56,12 +56,7 @@ impl Editor {
     }
 
     pub(in crate::editing) fn set_cell_alignment(&mut self, a: CellAlignment, fonts: &Fonts) -> Outcome {
-        let v = match a {
-            CellAlignment::Top => "top",
-            CellAlignment::Center => "center",
-            CellAlignment::Bottom => "bottom",
-        };
-        self.table_format(&TableFormat::CellAlign(v.into()), fonts)
+        self.table_format(&TableFormat::CellAlign(super::super::table_format::cell_alignment(a)), fonts)
     }
 
     pub(in crate::editing) fn set_cell_borders(&mut self, b: CellBorders, fonts: &Fonts) -> Outcome {
@@ -92,7 +87,7 @@ impl Editor {
         if let Some(l) = line {
             let colour = crate::editing::readback::checked(self, l)?;
             border = Border {
-                style: l.style.val().into(),
+                style: crate::editing::readback::border_style(l.style),
                 width: l.width.0,
                 space: l.space.0,
                 shadow: l.shadow,
@@ -196,7 +191,7 @@ pub(in crate::editing) fn cell_borders(edges: BorderEdges) -> (Edges, Border) {
         BorderEdges::DiagonalUp => Edges::DiagonalUp,
         BorderEdges::None => Edges::None,
     };
-    (edges, Border { style: "single".into(), width: 0.5, space: 0.0, shadow: false, color: None, color_theme: None })
+    (edges, Border { style: crate::docx::props::BorderStyle::Single, width: 0.5, space: 0.0, shadow: false, color: None, color_theme: None })
 }
 
 impl Editor {
@@ -229,7 +224,13 @@ impl Editor {
     pub(in crate::editing) fn set_row_height(&mut self, h: AutoOr<RowHeight>, fonts: &Fonts) -> Outcome {
         let h = match h {
             AutoOr::Auto => None,
-            AutoOr::Value(h) => Some((h.height.0, if h.rule == HeightRule::Exact { "exact" } else { "atLeast" }.to_string())),
+            AutoOr::Value(h) => Some((
+                h.height.0,
+                match h.rule {
+                    HeightRule::Exact => crate::docx::HeightRule::Exact,
+                    HeightRule::AtLeast => crate::docx::HeightRule::AtLeast,
+                },
+            )),
         };
         self.table_format(&TableFormat::RowHeight(h), fonts)
     }
@@ -253,9 +254,9 @@ impl Editor {
     }
 
     pub(in crate::editing) fn set_table_style(&mut self, id: StyleId, fonts: &Fonts) -> Outcome {
-        match self.doc.resolver.as_ref().and_then(|r| r.styles.by_id.get(&id.0)) {
+        match self.doc.definitions.as_ref().and_then(|r| r.style_kind(&id.0)) {
             None => return Outcome::invalid("no such style"),
-            Some(s) if s.kind != crate::docx::styles::StyleKind::Table => return Outcome::invalid("not a table style"),
+            Some(k) if k != crate::format::StyleKind::Table => return Outcome::invalid("not a table style"),
             Some(_) => {}
         }
         self.table_format(&TableFormat::TableStyle(id.0), fonts)

@@ -7,34 +7,34 @@ use crate::api::services::{
 };
 use crate::services::lists;
 
-use super::Editor;
+use super::{Editor, list_defs};
+use crate::document::paragraph::{ListId, ListRef};
+use crate::docx::list_xml::ListDefDirect;
 
 impl Editor {
     /// The selection's list: its `numId`, the level, the nine levels, its name, and the paragraph's number.
     fn list_here(&mut self) -> Option<(i64, usize, Vec<ListLevel>, String, u32)> {
         let (para, num, ilvl) = self.selection_list()?;
         let levels = self.list_levels(num)?;
-        let res = self.doc.resolver.as_ref()?;
-        let name = res
-            .numbering
-            .abstract_of(num, &res.styles)
-            .and_then(|a| res.numbering.abstracts.get(&a))
-            .and_then(|a| a.name.clone())
-            .unwrap_or_default();
+        let c = self.doc.definitions.as_ref()?.cascade();
+        let name =
+            c.abstract_of(ListId(num)).and_then(|a| c.lists.defs.get(&a)).and_then(|a| a.name.as_deref().map(str::to_string)).unwrap_or_default();
         let value = self.list_value(para).unwrap_or(1);
         Some((num, ilvl.clamp(0, 8) as usize, levels, name, value))
     }
 
     /// The number of a list paragraph, counted as the labels are.
     fn list_value(&self, para: crate::layout::ParaId) -> Option<u32> {
-        let res = self.doc.resolver.as_ref()?;
+        let res = self.doc.definitions.as_ref()?;
         let cx = self.cx();
-        let mut counters = crate::docx::numbering::Counters::default();
+        let c = res.cascade();
+        let mut counters = crate::format::counters::Counters::default();
         for (p, uncounted) in super::lists::numbered_paras(&self.doc, &self.index) {
             let Some((num, ilvl)) = super::lists::counted(res, p, uncounted, &cx) else { continue };
-            counters.next(&res.numbering, &res.styles, num, ilvl);
+            let list = crate::document::paragraph::ListId(num);
+            counters.next(&c, list, ilvl);
             if p.id == para.0 {
-                return counters.value(&res.numbering, &res.styles, num, ilvl).map(|v| v.max(0) as u32);
+                return counters.value(&c, list, ilvl).map(|v| v.max(0) as u32);
             }
         }
         None
@@ -44,7 +44,7 @@ impl Editor {
     pub fn list_dialog_values(&mut self, kind: DialogKind, style: Option<&str>) -> Option<DialogValues> {
         if kind == DialogKind::BulletsNumbering {
             let (para, _, _) = self.style_formatting(style?)?;
-            let num = para.style.num.filter(|(n, _)| *n != 0).map(|(n, _)| n);
+            let num = para.style.num.filter(|ListRef { list: ListId(n), level: _ }| *n != 0).map(|ListRef { list: ListId(n), level: _ }| n);
             let gallery = num.and_then(|n| self.list_levels(n)).map_or(ListGalleryKind::Bullet, |l| super::list_gallery::gallery_of(&l, false));
             return Some(DialogValues::BulletsNumbering(BulletsNumberingDialog {
                 gallery,
@@ -161,18 +161,15 @@ impl Editor {
 
     /// Makes a list of `levels` (one undo step), for a style to number with; its `numId`.
     pub fn add_list(&mut self, levels: &[ListLevel], fonts: &crate::font::Fonts) -> (super::commands::Outcome, i64) {
-        let Some(res) = self.doc.resolver.clone() else { return (super::commands::Outcome::Unchanged("no styles"), 0) };
-        let (abstract_id, num_id) = res.numbering.free_ids();
-        let levels = super::list_defs::complete(levels);
+        let Some(res) = self.doc.definitions.clone() else { return (super::commands::Outcome::Unchanged("no styles"), 0) };
+        let (abstract_id, num_id) = res.cascade().lists.free_ids();
+        let (abstract_id, num_id) = (abstract_id.0, num_id.0);
+        let levels = list_defs::complete(levels);
         let out = self.edit_numbering(
             "Define List",
-            |n, cx, colours| {
-                n.set_abstract_xml(
-                    super::list_defs::abstract_xml(abstract_id, None, super::list_defs::Levels::Shown(&levels), None, &[], &[], cx, colours),
-                    colours,
-                )?;
-                let w = &cx.w;
-                n.set_num_xml(format!("<{w}num {w}numId=\"{num_id}\"><{w}abstractNumId {w}val=\"{abstract_id}\"/></{w}num>"), colours)?;
+            |n, _, colours| {
+                n.set_list_def(list_defs::definition(abstract_id, None, list_defs::Levels::Shown(&levels), None, &[], &[], colours));
+                n.set_list(list_defs::new_list(num_id, abstract_id, &[]));
                 Some(())
             },
             &[],
@@ -182,36 +179,31 @@ impl Editor {
         (out, num_id)
     }
 
-    /// A list style's own list: its definition (`w:styleLink` the style) set to `levels`, made with a `w:num` the
-    /// style's `w:numPr` names when it has none.
+    /// A list style's own list: its definition (linked to the style) set to `levels`, made with a list the style
+    /// numbers with when it has none.
     pub(super) fn define_style_list(&mut self, id: &str, levels: &[ListLevel], fonts: &crate::font::Fonts) -> super::commands::Outcome {
         use super::commands::Outcome;
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
-        let cx = res.numbering.cx();
-        let w = cx.w.clone();
-        let num = res.styles.chain_ppr(Some(id)).num_id.filter(|n| *n != 0 && res.numbering.nums.contains_key(n));
-        let levels = super::list_defs::complete(levels);
-        let esc = crate::docx::write::props::esc;
-        match num.and_then(|n| res.numbering.abstract_of(n, &res.styles).map(|a| (n, a))) {
-            Some((_, abstract_id)) => {
-                let old = res.numbering.abstracts.get(&abstract_id).map(|a| a.raw.clone());
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
+        let typed = res.typed();
+        let c = &*typed.cascade;
+        let num = crate::docx::para_props::num_id(c.chain_para(Some(id)).list).filter(|n| *n != 0 && c.lists.lists.contains_key(&ListId(*n)));
+        let levels = list_defs::complete(levels);
+        match num.and_then(|n| c.abstract_of(ListId(n))) {
+            Some(abstract_id) => {
+                let old = list_defs::def_holder(&typed, abstract_id);
                 self.edit_numbering(
                     "Modify Style",
-                    |n, cx, colours| {
-                        n.set_abstract_xml(
-                            super::list_defs::abstract_xml(
-                                abstract_id,
-                                old.as_deref(),
-                                super::list_defs::Levels::Shown(&levels),
-                                None,
-                                &[],
-                                &[],
-                                cx,
-                                colours,
-                            ),
+                    |n, _, colours| {
+                        n.set_list_def(list_defs::definition(
+                            abstract_id.0,
+                            old.as_ref(),
+                            list_defs::Levels::Shown(&levels),
+                            None,
+                            &[],
+                            &[],
                             colours,
-                        )
-                        .map(|_| ())
+                        ));
+                        Some(())
                     },
                     &[],
                     false,
@@ -219,20 +211,13 @@ impl Editor {
                 )
             }
             None => {
-                let (abstract_id, num_id) = res.numbering.free_ids();
-                let style_id = id.to_string();
+                let (abstract_id, num_id) = c.lists.free_ids();
+                let (abstract_id, num_id) = (abstract_id.0, num_id.0);
                 let out = self.edit_numbering(
                     "New Style",
-                    |n, cx, colours| {
-                        let mut a =
-                            super::list_defs::abstract_xml(abstract_id, None, super::list_defs::Levels::Shown(&levels), None, &[], &[], cx, colours);
-                        // The definition is the style's: a w:styleLink after its multiLevelType.
-                        let link = format!("<{w}styleLink {w}val=\"{}\"/>", esc(&style_id));
-                        if let Some(at) = a.find(&format!("<{w}lvl ")) {
-                            a.insert_str(at, &link);
-                        }
-                        n.set_abstract_xml(a, colours)?;
-                        n.set_num_xml(format!("<{w}num {w}numId=\"{num_id}\"><{w}abstractNumId {w}val=\"{abstract_id}\"/></{w}num>"), colours)?;
+                    |n, _, colours| {
+                        n.set_list_def(style_definition(abstract_id, &levels, id, colours));
+                        n.set_list(list_defs::new_list(num_id, abstract_id, &[]));
                         Some(())
                     },
                     &[],
@@ -242,13 +227,9 @@ impl Editor {
                 if matches!(out, Outcome::Refused(_) | Outcome::Unchanged(_)) {
                     return out;
                 }
-                let Some(style) = self.doc.resolver.as_ref().and_then(|r| r.styles.get(id)).map(|s| s.raw.clone()) else { return out };
-                let scx = self.doc.resolver.as_ref().map(|r| r.styles.cx()).unwrap_or(cx);
-                let sw = scx.w.clone();
-                let raw = super::styles::edit_child(&style, "pPr", &scx, |p| {
-                    p.set("numPr", format!("<{sw}numPr><{sw}numId {sw}val=\"{num_id}\"/></{sw}numPr>"))
-                });
-                self.edit_styles("New Style", |s| s.set_xml(raw), fonts)
+                let typed = self.doc.definitions.as_ref().map(|r| r.typed());
+                let Some(style) = typed.as_ref().and_then(|t| list_defs::style_holder(t, id)) else { return out };
+                self.edit_styles("New Style", |s| s.set(list_defs::style_numbered(&style, Some((num_id, 0)))), fonts)
             }
         }
     }
@@ -257,4 +238,12 @@ impl Editor {
     pub fn list_entry_definition(&self, id: &ListEntryId) -> Option<(Vec<ListLevel>, Option<i64>)> {
         self.list_entry(id).map(|(_, l, n)| (l, n))
     }
+}
+
+/// A list style's new definition `abstract_id` of `levels`: the style `style`'s own.
+pub(super) fn style_definition(abstract_id: i64, levels: &[ListLevel], style: &str, colours: &crate::docx::props::ThemeColours) -> ListDefDirect {
+    let d = list_defs::definition(abstract_id, None, list_defs::Levels::Shown(levels), None, &[], &[], colours);
+    let mut v = (**d.get()).clone();
+    v.style_link = Some(style.into());
+    ListDefDirect::typed(std::rc::Rc::new(v))
 }

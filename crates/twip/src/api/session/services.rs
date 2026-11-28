@@ -12,6 +12,7 @@ use crate::api::services::{
 };
 use crate::api::state::State;
 use crate::api::value::{HeadingId, MatchId, Order};
+use crate::docx::definitions::TypedDefsXml;
 use crate::editing::commands::{Dir, Outcome, deleting};
 use crate::layout::Unit;
 use crate::services::{dialogs, find, menu};
@@ -284,9 +285,12 @@ impl Session {
             }
         }
         v.styles = styles;
-        let res = self.editor.document().resolver.clone();
+        let res = self.editor.document().definitions.clone();
         v.description = match (&res, &v.selected) {
-            (Some(r), Some(id)) => r.styles.get(&id.0).map(|s| crate::services::styles::describe::describe(s, &r.styles)).unwrap_or_default(),
+            (Some(r), Some(id)) => {
+                let c = r.cascade();
+                c.styles.styles.get(&*id.0).map(|e| crate::services::styles::describe::describe(e, &c)).unwrap_or_default()
+            }
             _ => String::new(),
         };
         v
@@ -296,11 +300,13 @@ impl Session {
     fn defaults_dialog_values(&self) -> crate::api::command::DocumentDefaults {
         use crate::api::command::{DocumentDefaults, Indents, ParagraphSpacing};
         use crate::api::value::{AutoOr, Color, LineSpacing, Points};
-        let Some(r) = self.editor.document().resolver.as_ref() else { return DocumentDefaults::default() };
-        let (rpr, ppr) = (&r.styles.doc_rpr, &r.styles.doc_ppr);
+        let Some(r) = self.editor.document().definitions.as_ref() else { return DocumentDefaults::default() };
+        let c = r.cascade();
+        let (rpr, ppr) =
+            (&crate::docx::char_props::to_run_props(c.doc_char(), &c.colours), &crate::docx::para_props::to_para_props(c.doc_para(), &c.colours));
         let font = rpr.ascii.as_ref().map(|f| match f {
             crate::docx::props::FontRef::Name(n) => n.clone(),
-            crate::docx::props::FontRef::Theme(t) => r.theme.resolve(t),
+            crate::docx::props::FontRef::Theme(t) => c.theme.resolve(t),
         });
         DocumentDefaults {
             font: font.map(crate::api::command::FontChoice::Name),
@@ -401,8 +407,15 @@ impl Session {
         }
         let fonts = self.fonts.fonts();
         let width = size.width * 72.0 / 96.0;
-        let (height, children) =
-            crate::layout::expansion::lay(self.editor.document(), &blocks, if fit { f64::MAX / 4.0 } else { width }, &fonts, None);
+        let (height, children) = crate::layout::expansion::lay(
+            self.editor.document(),
+            self.editor.review(),
+            &blocks,
+            if fit { f64::MAX / 4.0 } else { width },
+            &fonts,
+            None,
+            self.editor.hyphenation(),
+        );
         let items = crate::layout::traverse::items_of(&children);
         let appearance = self.presentation.appearance();
         let (png, w, h) = crate::render::preview::png(
@@ -427,10 +440,9 @@ impl Session {
         let raw = self
             .editor
             .document()
-            .resolver
+            .definitions
             .as_ref()
-            .and_then(|r| r.styles.get(&id.0))
-            .map(|s| s.raw.clone())
+            .and_then(|r| r.typed().style_xml(&id.0).map(std::borrow::Cow::into_owned))
             .ok_or_else(|| Error::unavailable("no such style"))?;
         let blocks = self.editor.style_preview(&raw, true).ok_or_else(|| Error::invalid("not a style"))?;
         self.picture(blocks, size, true)
@@ -1268,7 +1280,7 @@ impl Session {
         list.into_iter()
             .map(|r| crate::api::services::EditableRangeInfo {
                 ids: r.ids,
-                editors: r.editors.into_iter().map(crate::editing::protection::RangeEditor::to_api).collect(),
+                editors: r.editors.into_iter().map(Into::into).collect(),
                 page: self.editor.page_showing(r.start).map(|p| p as u32 + 1),
             })
             .collect()
@@ -1390,9 +1402,7 @@ mod tests {
         s.spelling()
             .add_dictionary(Dictionary { language: "en-US".into(), aff: Bytes(Vec::new()), dic: Bytes(Vec::new()), hyphenation: Some(patterns) })
             .expect("loads");
-        let has = |s: &mut crate::api::session::Session| {
-            s.with_editor(|e| e.document().hyphenation.as_ref().is_some_and(|h| h.for_language("en-US").is_some()))
-        };
+        let has = |s: &mut crate::api::session::Session| s.with_editor(|e| e.hyphenation().is_some_and(|h| h.for_language("en-US").is_some()));
         assert!(has(s));
         s.new_document();
         assert!(has(s), "a new document keeps them");

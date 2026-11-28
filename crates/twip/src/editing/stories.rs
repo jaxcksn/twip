@@ -1,6 +1,6 @@
 //! Header, footer and note stories
 
-use crate::docx::{Block, Inline, NoteKind, Paragraph};
+use crate::docx::{Block, HeaderFooterId, Inline, NoteKind, Paragraph};
 use crate::font::Fonts;
 use crate::layout::{ParaId, Unit};
 
@@ -9,6 +9,7 @@ use super::commands::Outcome;
 use super::geometry::PageGeometry;
 use super::position::{Position, StoryId};
 use super::selection::{ObjectRef, Selection};
+use crate::docx::run_xml;
 
 pub(super) fn reachable(ctx: StoryId, s: StoryId) -> bool {
     matches!(ctx, StoryId::HeaderFooter(_)) == matches!(s, StoryId::HeaderFooter(_))
@@ -161,67 +162,29 @@ impl Editor {
 
     /// An empty header's or footer's paragraph, in the Header or Footer style when the document has it.
     pub(super) fn empty_story_para(&self, footer: bool) -> Option<crate::docx::Paragraph> {
-        let res = self.doc.resolver.clone()?;
-        let cx = self.cx();
-        let w = cx.w.clone();
+        let res = self.doc.definitions.clone()?;
         let style = if footer { "Footer" } else { "Header" };
-        let mut pp = crate::docx::write::props::Props::parse(None, "pPr", &cx);
-        if res.styles.by_id.contains_key(style) {
-            pp.set("pStyle", format!("<{w}pStyle {w}val=\"{style}\"/>"));
-        }
-        let r = res.para_from_xml(pp.xml().as_deref(), None, &cx);
-        let run = res.run_from_xml(&r.base, None, &cx);
+        let props = crate::format::ParaProps { style: res.has_style(style).then(|| style.into()), ..Default::default() };
+        let r = crate::docx::para_xml::with(&res, crate::docx::para_props::ParaDirect::typed(std::rc::Rc::new(props)), None, None);
+        let run = run_xml::plain(&res, &r.base);
         Some(crate::docx::Paragraph {
             style: std::rc::Rc::new(r.style),
             mark: run,
             list: None,
             inlines: Vec::new(),
-            src: None,
+            origin: crate::docx::Origin::NONE,
             id: crate::docx::next_para_id(),
             div: None,
             controls: Vec::new(),
         })
     }
 
-    /// A part name for a new header or footer, beside the main part: one no story has, had when read, a section
-    /// refers to (a part that didn't load), or the package holds (a removed part's name names that part's
-    /// relationship).
-    pub(super) fn new_story_name(&self, footer: bool) -> String {
-        self.new_story_names(std::iter::once(footer)).pop().unwrap_or_default()
-    }
-
-    /// [`Editor::new_story_name`] for several new parts at once, each a header or a footer (`true`), all different.
-    pub(super) fn new_story_names(&self, footers: impl IntoIterator<Item = bool>) -> Vec<String> {
-        let src = self.doc.source.as_ref();
-        let dir = src.and_then(|s| s.main.rsplit_once('/')).map_or(String::new(), |(d, _)| format!("{d}/"));
-        let package = src.and_then(|s| zip::ZipArchive::new(std::io::Cursor::new(&s.package[..])).ok());
-        let referred: std::collections::HashSet<&str> =
-            self.doc.sections.iter().flat_map(|s| s.headers.iter().chain(s.footers.iter())).flatten().map(String::as_str).collect();
-        let taken = |name: &str| {
-            self.doc.stories.contains_key(name)
-                || src.is_some_and(|s| s.stories.contains_key(name))
-                || referred.contains(name)
-                || package.as_ref().is_some_and(|z| z.index_for_name(name).is_some())
-        };
-        let mut from = 1usize;
-        footers
-            .into_iter()
-            .map(|footer| {
-                let kind = if footer { "footer" } else { "header" };
-                let n = (from..).find(|n| !taken(&format!("{dir}header{n}.xml")) && !taken(&format!("{dir}footer{n}.xml"))).unwrap_or(from);
-                from = n + 1;
-                format!("{dir}{kind}{n}.xml")
-            })
-            .collect()
-    }
-
-    /// The step that takes section `section`'s own header or footer `name` away: the part goes with it, unless another
-    /// section or slot shows it too (generated documents share one part), or the part never loaded, when only this
-    /// reference goes.
-    fn drop_story_ref(&self, name: String, section: usize, footer: bool, slot: usize) -> Option<super::step::Step> {
-        let refs = self.doc.sections.iter().flat_map(|s| s.headers.iter().chain(s.footers.iter())).flatten().filter(|n| **n == name).count();
-        if refs <= 1 && self.doc.stories.contains_key(&name) {
-            return Some(super::step::Step::HeaderPart { name, section, footer, slot, blocks: None });
+    /// The step that takes section `section`'s own header or footer `id` away: the story goes with it, unless another
+    /// section or slot shows it too (generated documents share one), or it never loaded, when only this reference goes.
+    fn drop_story_ref(&self, id: HeaderFooterId, section: usize, footer: bool, slot: usize) -> Option<super::step::Step> {
+        let refs = self.doc.sections.iter().flat_map(|s| s.headers.iter().chain(s.footers.iter())).filter(|n| **n == Some(id)).count();
+        if refs <= 1 && self.doc.stories.contains_key(&id) {
+            return Some(super::step::Step::HeaderPart { id, section, footer, slot, blocks: None });
         }
         let s = self.doc.sections.get(section)?;
         let mut page = s.page();
@@ -240,12 +203,12 @@ impl Editor {
         if section == 0 {
             return Outcome::unavailable("the first section has no section before it");
         }
-        let refs = |e: &Self, k: usize| e.doc.sections.get(k).map(|s| if footer { s.footers.clone() } else { s.headers.clone() });
-        let Some(own) = refs(self, section).map(|r| r[slot].clone()) else { return Outcome::Unchanged("no section") };
+        let refs = |e: &Self, k: usize| e.doc.sections.get(k).map(|s| if footer { s.footers } else { s.headers });
+        let Some(own) = refs(self, section).map(|r| r[slot]) else { return Outcome::Unchanged("no section") };
         let here = self.in_shown_part(section, footer, slot);
         let mut tx = self.begin("Link to Previous");
         let step = match (l.linked, own) {
-            (true, Some(name)) => match self.drop_story_ref(name, section, footer, slot) {
+            (true, Some(id)) => match self.drop_story_ref(id, section, footer, slot) {
                 Some(step) => step,
                 None => {
                     self.abort(tx);
@@ -254,15 +217,15 @@ impl Editor {
             },
             (false, None) => {
                 // A copy of what it shows now: the nearest section before's.
-                let inherited = (0..section).rev().find_map(|k| refs(self, k).and_then(|r| r[slot].clone()));
+                let inherited = (0..section).rev().find_map(|k| refs(self, k).and_then(|r| r[slot]));
                 let blocks = match inherited.and_then(|n| self.doc.stories.get(&n)) {
-                    Some(b) => b.iter().map(super::clipboard::fresh).collect(),
+                    Some(b) => b.iter().map(crate::docx::Block::fresh_identity).collect(),
                     None => match self.empty_story_para(footer) {
                         Some(p) => vec![crate::docx::Block::Para(p)],
                         None => return Outcome::Unchanged("no styles"),
                     },
                 };
-                super::step::Step::HeaderPart { name: self.new_story_name(footer), section, footer, slot, blocks: Some(blocks) }
+                super::step::Step::HeaderPart { id: HeaderFooterId::next(), section, footer, slot, blocks: Some(blocks) }
             }
             _ => {
                 self.abort(tx);
@@ -283,25 +246,25 @@ impl Editor {
     pub(super) fn remove_header_footer(&mut self, h: crate::api::command::HeaderFooterSlot, fonts: &Fonts) -> Outcome {
         let (section, footer, slot) = (self.focus_section(), h.kind == crate::api::state::HeaderFooterKind::Footer, hf_slot(h.pages));
         let Some(s) = self.doc.sections.get(section) else { return Outcome::Unchanged("no section") };
-        let own = if footer { s.footers[slot].clone() } else { s.headers[slot].clone() };
+        let own = if footer { s.footers[slot] } else { s.headers[slot] };
         let Some(para) = self.empty_story_para(footer) else { return Outcome::Unchanged("no styles") };
         let here = self.in_shown_part(section, footer, slot);
         let mut tx = self.begin(if footer { "Remove Footer" } else { "Remove Header" });
-        let name = match own {
-            Some(name) => {
-                let step = self.drop_story_ref(name.clone(), section, footer, slot);
+        let id = match own {
+            Some(id) => {
+                let step = self.drop_story_ref(id, section, footer, slot);
                 let shared = !matches!(step, Some(super::step::Step::HeaderPart { .. }));
                 if !step.is_some_and(|step| self.step(&mut tx, step).is_ok()) {
                     self.abort(tx);
                     return Outcome::Unchanged("the header can't change");
                 }
-                // A shared part stays the others'; this section gets an empty one of its own.
-                if shared { self.new_story_name(footer) } else { name }
+                // A shared one stays the others'; this section gets an empty one of its own.
+                if shared { HeaderFooterId::next() } else { id }
             }
-            None => self.new_story_name(footer),
+            None => HeaderFooterId::next(),
         };
         let blocks = Some(vec![crate::docx::Block::Para(para)]);
-        if self.step(&mut tx, super::step::Step::HeaderPart { name, section, footer, slot, blocks }).is_err() {
+        if self.step(&mut tx, super::step::Step::HeaderPart { id, section, footer, slot, blocks }).is_err() {
             self.abort(tx);
             return Outcome::Unchanged("the header can't change");
         }
@@ -317,21 +280,21 @@ impl Editor {
         let Some(info) = self.snapshot().info().get(page).cloned() else { return Outcome::Unchanged("no page") };
         let (slot, part) =
             crate::layout::page::story_ref(&self.doc.sections, self.doc.settings.even_and_odd, info.section, info.section_page, info.number, footer);
-        let part = part.filter(|p| self.doc.stories.contains_key(*p)).cloned();
+        let part = part.filter(|p| self.doc.stories.contains_key(p));
         if !matches!(self.editing(), StoryId::HeaderFooter(_)) {
             self.body_return = Some(self.selection);
         }
         let mut tx = None;
-        let name = match part {
+        let id = match part {
             Some(n) => n,
             None => {
                 let Some(para) = self.empty_story_para(footer) else { return Outcome::Unchanged("no styles") };
-                let name = self.new_story_name(footer);
+                let id = HeaderFooterId::next();
                 let mut t = self.begin(if footer { "Footer" } else { "Header" });
                 // A reference to a part that never loaded
                 let dangling = (0..=info.section).rev().find_map(|k| {
                     let s = self.doc.sections.get(k)?;
-                    Some((k, (if footer { &s.footers } else { &s.headers })[slot].clone()?))
+                    Some((k, (if footer { &s.footers } else { &s.headers })[slot]?))
                 });
                 let section = dangling.as_ref().map_or(0, |(k, _)| *k);
                 let cleared = match dangling {
@@ -339,15 +302,15 @@ impl Editor {
                     None => true,
                 };
                 let blocks = Some(vec![crate::docx::Block::Para(para)]);
-                if !cleared || self.step(&mut t, super::step::Step::HeaderPart { name: name.clone(), section, footer, slot, blocks }).is_err() {
+                if !cleared || self.step(&mut t, super::step::Step::HeaderPart { id, section, footer, slot, blocks }).is_err() {
                     self.abort(t);
                     return Outcome::Unchanged("header failed");
                 }
                 tx = Some(t);
-                name
+                id
             }
         };
-        let story = self.index.header_footer(&name);
+        let story = self.index.header_footer(id);
         let first = story
             .and_then(|s| self.index.blocks(&self.doc, super::index::Container::Story(s)))
             .and_then(|b| b.iter().find_map(|b| if let crate::docx::Block::Para(p) = b { Some(p.id) } else { None }));
@@ -409,18 +372,19 @@ impl Editor {
         }
     }
 
-    /// The header or footer part section `section` shows in `slot`: its own, or the nearest section before's.
-    fn shown_part(&self, section: usize, footer: bool, slot: usize) -> Option<&String> {
-        self.doc.sections.get(..=section)?.iter().rev().find_map(|s| (if footer { &s.footers } else { &s.headers }).get(slot)?.as_ref())
+    /// The header or footer section `section` shows in `slot`: its own, or the nearest section before's.
+    fn shown_part(&self, section: usize, footer: bool, slot: usize) -> Option<HeaderFooterId> {
+        self.doc.sections.get(..=section)?.iter().rev().find_map(|s| *(if footer { &s.footers } else { &s.headers }).get(slot)?)
     }
 
-    /// Whether the selection is in the part section `section` shows in `slot`.
+    /// Whether the selection is in the header or footer section `section` shows in `slot`.
     fn in_shown_part(&self, section: usize, footer: bool, slot: usize) -> bool {
         let StoryId::HeaderFooter(k) = self.editing() else { return false };
-        self.index.part_name(k).is_some_and(|n| self.shown_part(section, footer, slot).is_some_and(|s| s == n))
+        self.index.part(k).is_some_and(|n| self.shown_part(section, footer, slot) == Some(n))
     }
 
-    /// A caret at the start of the part section `section` now shows in `slot`, or back in the body when it shows none.
+    /// A caret at the start of the header or footer section `section` now shows in `slot`, or back in the body when it
+    /// shows none.
     fn enter_shown_part(&mut self, section: usize, footer: bool, slot: usize) {
         let at = self.shown_part(section, footer, slot).and_then(|n| self.index.header_footer(n)).and_then(|story| {
             let blocks = self.index.blocks(&self.doc, super::index::Container::Story(story))?;

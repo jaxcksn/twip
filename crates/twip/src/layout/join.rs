@@ -4,6 +4,7 @@ use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use crate::docx::char_props::RunXml;
 use crate::docx::model::{Block, Inline, NoteKind, Paragraph, Table};
 use crate::docx::review::ReviewView;
 
@@ -48,7 +49,7 @@ fn hides_mark(b: &Block, review: &ReviewView) -> bool {
 
 /// Whether mark `r` is a style separator (`w:specVanish`).
 fn spec_vanish(r: &crate::docx::Run) -> bool {
-    r.direct.0.as_deref().is_some_and(|x| crate::docx::write::props::flag_of(x, "specVanish"))
+    r.direct.spec_vanish()
 }
 
 /// The last paragraph of the chain from `blocks[i]`; a fold's chain runs on past the tables inside it
@@ -150,7 +151,7 @@ pub struct Joined {
 
 impl Joined {
     /// `paras` as one paragraph. A deleted mark's paragraph takes the next one's properties; a vanished mark's joins
-    /// the next as reading joins them ([`crate::docx::resolve::joined_style`]; `legacy`: compat ≤ 14).
+    /// the next as reading joins them ([`crate::format::resolve::joined_style`]; `legacy`: compat ≤ 14).
     fn new(paras: &[&Paragraph], legacy: bool) -> Option<Joined> {
         let (&last, before) = paras.split_last()?;
         let &first = before.first()?;
@@ -173,7 +174,7 @@ impl Joined {
                     spec = spec.or_else(|| Some(p.style.clone()));
                 }
                 let from = if shown == 0 { 0 } else { at };
-                style = Rc::new(crate::docx::resolve::joined_style(&style, &next.style, from, spec.take().as_deref(), legacy));
+                style = Rc::new(crate::format::resolve::joined_style(&style, &next.style, from, spec.take().as_deref(), legacy));
                 list = list.or_else(|| next.list.clone());
             } else {
                 (style, list) = (next.style.clone(), next.list.clone());
@@ -185,7 +186,7 @@ impl Joined {
             mark: last.mark.clone(),
             list,
             inlines,
-            src: None,
+            origin: crate::docx::Origin::NONE,
             id: last.id,
             div: last.div.clone(),
             controls: last.controls.clone(),

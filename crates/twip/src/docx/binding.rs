@@ -6,7 +6,7 @@ use std::ops::Range;
 
 use roxmltree::Node;
 
-use super::model::{BreakKind, Control, ControlId, ControlKind, ControlProps, DataPart, Inline, Paragraph, Run};
+use super::model::{BreakKind, Control, ControlBinding, ControlId, ControlKind, ControlProps, DataPart, DateStorage, Inline, Paragraph, Run};
 use super::write::props::esc;
 
 /// Steps an XPath may have; longer ones aren't evaluated.
@@ -90,13 +90,6 @@ pub(crate) fn unescape(s: &str) -> String {
     out
 }
 
-fn attr_of<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
-    let at = tag.find(&format!(":{name}=")).or_else(|| tag.find(&format!(" {name}=")))? + name.len() + 2;
-    let quote = tag[at..].chars().next()?;
-    let rest = &tag[at + quote.len_utf8()..];
-    Some(&rest[..rest.find(quote)?])
-}
-
 /// `xmlns:p='uri'` pairs.
 fn prefixes(mappings: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();
@@ -115,17 +108,15 @@ fn prefixes(mappings: &str) -> Vec<(String, String)> {
 }
 
 impl Binding {
-    /// From `w:dataBinding` as read; `None` for an XPath outside the subset.
-    pub fn parse(xml: &str) -> Option<Binding> {
-        let xpath = unescape(attr_of(xml, "xpath")?);
-        let maps = attr_of(xml, "prefixMappings").map(|m| prefixes(&unescape(m))).unwrap_or_default();
-        let store = attr_of(xml, "storeItemID").map(|s| s.to_string());
-        Some(Binding { path: Path::parse(&xpath, &maps)?, store })
+    /// From a control's `w:dataBinding`; `None` without an XPath, or for one outside the subset.
+    pub fn new(b: &ControlBinding) -> Option<Binding> {
+        let maps = b.prefix_mappings.as_deref().map(prefixes).unwrap_or_default();
+        Some(Binding { path: Path::parse(b.xpath.as_deref()?, &maps)?, store: b.store_item_id.clone() })
     }
 
     /// The control's binding (`None`: none, or one this doesn't evaluate).
     pub fn of(props: &ControlProps) -> Option<Binding> {
-        Binding::parse(props.binding.as_deref()?)
+        Binding::new(props.binding.as_ref()?)
     }
 
     /// The index of the data part it reads: the one its store item id names (compared without case), else the first
@@ -266,16 +257,7 @@ pub fn write(xml: &str, path: &Path, value: &str) -> Option<String> {
 
 /// A drop-down's or combo box's items (`w:listItem`): their text and value.
 fn items(props: &ControlProps) -> Vec<(String, String)> {
-    let Some(x) = props.kind_xml.as_deref() else { return Vec::new() };
-    x.split("listItem")
-        .skip(1)
-        .filter_map(|tag| {
-            let tag = &tag[..tag.find('>').unwrap_or(tag.len())];
-            let value = attr_of(tag, "value").map(unescape);
-            let text = attr_of(tag, "displayText").map(unescape);
-            Some((text.clone().or_else(|| value.clone())?, value.or(text)?))
-        })
-        .collect()
+    props.items.iter().filter_map(|i| Some((i.text.clone().or_else(|| i.value.clone())?, i.value.clone().or_else(|| i.text.clone())?))).collect()
 }
 
 /// What a control bound to `value` shows: a drop-down's item for it, a date in the control's format.
@@ -295,14 +277,11 @@ pub fn shown(props: &ControlProps, value: &str) -> String {
 pub fn stored(props: &ControlProps, text: &str) -> String {
     match &props.kind {
         ControlKind::DropDown => items(props).into_iter().find(|(t, _)| t == text).map_or_else(|| text.to_string(), |(_, v)| v),
-        ControlKind::Date { .. } => {
-            let mapped = props.kind_xml.as_deref().and_then(|x| attr_of(&x[x.find("storeMappedDataAs")?..], "val")).unwrap_or("dateTime");
-            match (mapped, full_date(props, text)) {
-                ("text", _) | (_, None) => text.to_string(),
-                ("date", Some(full)) => full.get(..10).unwrap_or(&full).to_string(),
-                (_, Some(full)) => full,
-            }
-        }
+        ControlKind::Date { storage, .. } => match (storage, full_date(props, text)) {
+            (Some(DateStorage::Text), _) | (_, None) => text.to_string(),
+            (Some(DateStorage::Date), Some(full)) => full.get(..10).unwrap_or(&full).to_string(),
+            (_, Some(full)) => full,
+        },
         _ => text.to_string(),
     }
 }
@@ -324,50 +303,35 @@ pub fn text_inlines(text: &str, run: &Run) -> Vec<Inline> {
 /// The full date (`w:fullDate`, `YYYY-MM-DDTHH:MM:SSZ`) of a date control showing `text`: its own when it shows it,
 /// else the date `text` is in the control's format; `None` for none.
 pub fn full_date(props: &ControlProps, text: &str) -> Option<String> {
-    let ControlKind::Date { format, .. } = &props.kind else { return None };
+    let ControlKind::Date { format, full_date: own, .. } = &props.kind else { return None };
     if text.is_empty() {
         return None;
     }
-    let own = props.kind_xml.as_deref().and_then(|x| own_attr(x, "fullDate"));
-    if let Some(own) = own.filter(|f| shown(props, f) == text) {
-        return Some(own);
+    if let Some(own) = own.as_ref().filter(|f| shown(props, f) == text) {
+        return Some(own.clone());
     }
     let secs = super::fields::parse_date_text(if format.is_empty() { "M/d/yyyy" } else { format }, text)?;
     Some(super::review::Timestamp::from_utc(secs).raw.to_string())
 }
 
-/// A date control's `w:date` with the full date `text` shows ([`full_date`]), or without one; `w` its prefix (for
-/// one not read). `None` when it already is so.
-pub fn with_full_date(props: &ControlProps, text: &str, w: &str) -> Option<String> {
-    with_full_date_value(props, full_date(props, text), w)
+/// Date control `props`' kind with the full date `text` shows ([`full_date`]), or without one. `None` when it already
+/// is so.
+pub fn with_full_date(props: &ControlProps, text: &str) -> Option<ControlKind> {
+    with_full_date_value(props, full_date(props, text))
 }
 
-/// A date control's `w:date` with the full date `want` (`YYYY-MM-DDTHH:MM:SSZ`), or without one; `w` its prefix
-/// (for one not read). `None` when it already is so.
-pub fn with_full_date_value(props: &ControlProps, want: Option<String>, w: &str) -> Option<String> {
-    let ControlKind::Date { format, lid } = &props.kind else { return None };
-    let xml = props.kind_xml.clone().unwrap_or_else(|| {
-        format!(
-            "<{w}date><{w}dateFormat {w}val=\"{}\"/>{}<{w}storeMappedDataAs {w}val=\"dateTime\"/><{w}calendar {w}val=\"gregorian\"/></{w}date>",
-            esc(format),
-            lid.as_ref().map_or(String::new(), |l| format!("<{w}lid {w}val=\"{}\"/>", esc(l)))
-        )
-    });
-    let have = own_attr(&xml, "fullDate");
-    if have == want {
+/// Date control `props`' kind with the full date `want` (`YYYY-MM-DDTHH:MM:SSZ`), or without one. `None` when it
+/// already is so.
+pub fn with_full_date_value(props: &ControlProps, want: Option<String>) -> Option<ControlKind> {
+    let ControlKind::Date { full_date, .. } = &props.kind else { return None };
+    if *full_date == want {
         return None;
     }
-    let end = tag_end(&xml)?;
-    let mut head = xml[..end].to_string();
-    if let Some(r) = attr_range(&head, "fullDate") {
-        head.replace_range(head[..r.start].trim_end().len()..r.end, "");
+    let mut kind = props.kind.clone();
+    if let ControlKind::Date { full_date, .. } = &mut kind {
+        *full_date = want;
     }
-    let name_end = head.find(|c: char| c.is_whitespace() || c == '/').unwrap_or(head.len());
-    let prefix = head.get(1..name_end).and_then(|n| n.split_once(':')).map_or(String::new(), |(p, _)| format!("{p}:"));
-    if let Some(f) = want {
-        head.insert_str(name_end, &format!(" {prefix}fullDate=\"{}\"", esc(&f)));
-    }
-    Some(head + &xml[end..])
+    Some(kind)
 }
 
 /// Where element `x`'s start tag ends (its `>`): quoted attribute values may hold one.
@@ -415,26 +379,14 @@ pub(crate) fn tag_attrs(head: &str) -> impl Iterator<Item = (&str, &str, Range<u
     })
 }
 
-/// Where attribute `local` (any prefix, either quote) is in start tag `head` (up to its `>`).
-fn attr_range(head: &str, local: &str) -> Option<Range<usize>> {
-    tag_attrs(head).find(|(name, ..)| name.rsplit(':').next() == Some(local)).map(|(.., r)| r)
-}
-
-/// Attribute `local`'s value (any prefix, either quote) on element `xml`'s start tag, unescaped.
-fn own_attr(xml: &str, local: &str) -> Option<String> {
-    let head = &xml[..tag_end(xml)?];
-    tag_attrs(head).find(|(name, ..)| name.rsplit(':').next() == Some(local)).map(|(_, v, _)| unescape(v))
-}
-
 /// The run a control's content takes once it stops showing its placeholder (whose run is the placeholder's style):
 /// its own (`w:sdtPr/w:rPr`, which `resolve` resolves in its paragraph), else that of the text before its start
 /// marker (inline `start`), else its paragraph mark's.
-pub fn own_run(props: &ControlProps, inlines: &[Inline], start: usize, mark: &Run, resolve: impl FnOnce(&str) -> Option<Run>) -> Run {
+pub fn own_run(props: &ControlProps, inlines: &[Inline], start: usize, mark: &Run, resolve: impl FnOnce(&super::ControlRun) -> Option<Run>) -> Run {
     props
-        .rest
-        .iter()
-        .find(|(n, _)| n == "rPr")
-        .and_then(|(_, x)| resolve(x))
+        .run
+        .as_ref()
+        .and_then(resolve)
         .or_else(|| inlines[..start.min(inlines.len())].iter().rev().find_map(|i| i.run().cloned()))
         .unwrap_or_else(|| mark.clone())
 }
@@ -551,30 +503,6 @@ mod tests {
     }
 
     #[test]
-    fn a_dates_full_date_is_replaced_whatever_its_quotes() {
-        let props = |x: &str| ControlProps {
-            kind: ControlKind::Date { format: "M/d/yyyy".into(), lid: None },
-            kind_xml: Some(x.into()),
-            ..ControlProps::default()
-        };
-        for x in [
-            r#"<w:date w:fullDate='2026-01-01T00:00:00Z'><w:dateFormat w:val="M/d/yyyy"/></w:date>"#,
-            r#"<w:date w:x="a>b" w:fullDate="2026-01-01T00:00:00Z"><w:dateFormat w:val="M/d/yyyy"/></w:date>"#,
-        ] {
-            let out = with_full_date(&props(x), "2/3/2027", "w:").expect("a new date");
-            let xml = out.replacen("<w:date", "<w:date xmlns:w=\"urn:w\"", 1);
-            let doc = roxmltree::Document::parse(&xml).unwrap_or_else(|e| panic!("well formed: {out}: {e}"));
-            let dates: Vec<_> = doc.root_element().attributes().filter(|a| a.name() == "fullDate").map(|a| a.value()).collect();
-            assert_eq!(dates, ["2027-02-03T00:00:00Z"], "{out}");
-        }
-        // Spaces around `=`: a text that isn't a date drops it; one showing it keeps it.
-        let spaced = r#"<w:date w:fullDate = "2026-01-01T00:00:00Z"><w:dateFormat w:val="M/d/yyyy"/></w:date>"#;
-        let out = with_full_date(&props(spaced), "soon", "w:").expect("the date goes");
-        assert!(!out.contains("fullDate"), "{out}");
-        assert_eq!(with_full_date(&props(spaced), "1/1/2026", "w:"), None);
-    }
-
-    #[test]
     fn item_ids_are_guids_compared_without_case_or_braces() {
         assert!(same_item("{8A2D6C3E-1F4B-4C5D-9E6F-0A1B2C3D4E5F}", "8a2d6c3e-1f4b-4c5d-9e6f-0a1b2c3d4e5f"));
         assert!(!same_item("{8A2D6C3E-1F4B-4C5D-9E6F-0A1B2C3D4E5F}", "{8A2D6C3E-1F4B-4C5D-9E6F-0A1B2C3D4E50}"));
@@ -588,10 +516,12 @@ mod tests {
     fn bindings_read_and_write_their_node() {
         let xml =
             r#"<c:case xmlns:c="urn:case"><c:party role="plaintiff">Acme &amp; Co</c:party><c:party role="defendant"/><c:no>42</c:no></c:case>"#;
-        let b = |xpath: &str| {
-            Binding::parse(&format!(r#"<w:dataBinding w:prefixMappings="xmlns:ns0='urn:case'" w:xpath="{xpath}" w:storeItemID="{{A}}"/>"#))
-                .expect("in the subset")
+        let binding = |xpath: &str, store: Option<&str>| ControlBinding {
+            xpath: Some(xpath.into()),
+            prefix_mappings: Some("xmlns:ns0='urn:case'".into()),
+            store_item_id: store.map(str::to_string),
         };
+        let b = |xpath: &str| Binding::new(&binding(xpath, Some("{A}"))).expect("in the subset");
         assert_eq!(read(xml, &b("/ns0:case[1]/ns0:party[1]").path).as_deref(), Some("Acme & Co"));
         assert_eq!(read(xml, &b("/ns0:case[1]/ns0:party[2]/@role").path).as_deref(), Some("defendant"));
         assert_eq!(read(xml, &b("/ns0:case/ns0:no/text()").path).as_deref(), Some("42"));
@@ -602,7 +532,7 @@ mod tests {
         assert_eq!(read(&w, &b("/ns0:case[1]/ns0:party[1]/@role").path).as_deref(), Some("claimant"));
         assert_eq!(write(xml, &b("/ns0:case[1]").path, "x"), None, "an element holding elements");
         for bad in ["ns0:case", "/ns0:case[last()]", "//ns0:no", "/ns9:case"] {
-            assert!(Binding::parse(&format!(r#"<w:dataBinding w:prefixMappings="xmlns:ns0='urn:case'" w:xpath="{bad}"/>"#)).is_none(), "{bad}");
+            assert!(Binding::new(&binding(bad, None)).is_none(), "{bad}");
         }
         let deep = format!("/{}", vec!["a"; 65].join("/"));
         assert!(Path::parse(&deep, &[]).is_none());

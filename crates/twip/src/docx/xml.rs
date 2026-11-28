@@ -217,6 +217,7 @@ fn checked_tag(x: &str) -> Option<(std::ops::Range<usize>, usize, Option<std::op
 }
 
 /// Whether a checkbox's XML shows it checked (`<w14:checked/>` is); `None` without the element.
+#[cfg(test)]
 pub fn checkbox_checked(x: &str) -> Option<bool> {
     let (_, _, val) = checked_tag(x)?;
     Some(val.is_none_or(|r| !matches!(&x[r], "0" | "false" | "off")))

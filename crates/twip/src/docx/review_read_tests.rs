@@ -1,13 +1,16 @@
 //! Reading tracked revisions and comments: the generated review fixtures (`FX-REVIEW-*`) hold in the model what
 //! their builder wrote.
 
+use crate::docx::table_props::PreviousXml;
 use std::path::Path;
 
 use super::diagnostics::WarningCode;
 use super::review::{CellMarkKind, CommentId, MarkKind, ProtectionKind, RangeKind, RevisionMark};
 use super::*;
+use crate::docx::char_props::RunXml;
+use crate::docx::para_props::ParaXml;
 
-fn read(name: &str) -> Document {
+fn read(name: &str) -> (Document, Session) {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/review").join(format!("{name}.docx"));
     let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     read_editable(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"))
@@ -68,7 +71,7 @@ const C: &str = "Author C";
 
 #[test]
 fn runs_carry_insertions_deletions_and_format_changes() {
-    let doc = read("FX-REVIEW-RUNS");
+    let (doc, docx) = read("FX-REVIEW-RUNS");
     let ps = body(&doc);
     assert_eq!(ps.len(), 6);
     let (ins, del) = (Some((MarkKind::Insert, A.to_string())), Some((MarkKind::Delete, B.to_string())));
@@ -96,8 +99,8 @@ fn runs_carry_insertions_deletions_and_format_changes() {
     // One wrapper, one shared mark; every mark dated.
     let fmt = runs[5].rev.fmt.as_ref().expect("a format change");
     assert!(runs[5].bold && !fmt.previous.bold);
-    assert!(fmt.previous_raw.0.as_deref().is_some_and(|x| x.starts_with("<w:rPr")));
-    assert!(!runs[5].direct.0.as_deref().unwrap_or("").contains("rPrChange"), "direct formatting keeps no revision");
+    assert!(fmt.previous.direct.as_read().map(|x| &**x).is_some_and(|x| x.starts_with("<w:rPr")));
+    assert!(!runs[5].direct.as_read().map(|x| &**x).unwrap_or("").contains("rPrChange"), "direct formatting keeps no revision");
     let marks = [&runs[1].rev.ins, &runs[3].rev.del, &runs[4].rev.ins, &runs[4].rev.del];
     for m in marks.iter().copied().flatten() {
         assert!(m.date.as_ref().and_then(|d| d.utc).is_some(), "{m:?}");
@@ -107,13 +110,13 @@ fn runs_carry_insertions_deletions_and_format_changes() {
     ids.dedup();
     assert_eq!(ids.len(), 5, "distinct revision ids");
     assert_eq!(doc.people.persons.iter().map(|p| &*p.name).collect::<Vec<_>>(), [A, B, C]);
-    assert!(doc.diagnostics.warnings.is_empty(), "{:?}", doc.diagnostics);
+    assert!(docx.diagnostics.warnings.is_empty(), "{:?}", docx.diagnostics);
     integrity("FX-REVIEW-RUNS");
 }
 
 #[test]
 fn paragraph_marks_and_property_changes() {
-    let doc = read("FX-REVIEW-MARKS");
+    let (doc, docx) = read("FX-REVIEW-MARKS");
     let ps = body(&doc);
     // Deleted and inserted marks don't join paragraphs.
     assert_eq!(ps.len(), 9);
@@ -127,17 +130,17 @@ fn paragraph_marks_and_property_changes() {
     assert_eq!(who(&doc, &right.mark), C);
     let after = ps[7].style.change.as_ref().expect("a paragraph property change");
     assert_eq!((ps[7].style.space_after, after.previous.space_after), (24.0, 0.0));
-    assert!(after.previous_raw.0.as_deref().is_some_and(|x| x.contains("w:after=\"0\"")));
-    assert!(doc.diagnostics.warnings.is_empty(), "{:?}", doc.diagnostics);
+    assert!(after.properties && after.previous.direct.as_read().is_some_and(|x| x.contains("w:after=\"0\"")));
+    assert!(docx.diagnostics.warnings.is_empty(), "{:?}", docx.diagnostics);
     integrity("FX-REVIEW-MARKS");
 }
 
 #[test]
 fn table_rows_and_grid_changes() {
-    let doc = read("FX-REVIEW-TABLES");
+    let (doc, docx) = read("FX-REVIEW-TABLES");
     let t = tables(&doc)[0];
     assert_eq!(t.change.as_ref().map(|c| who(&doc, &c.mark)), Some(C.into()));
-    assert!(t.change.as_ref().and_then(|c| c.previous_raw.0.as_deref()).is_some_and(|x| x.starts_with("<w:tblPr")));
+    assert!(t.change.as_ref().and_then(|c| c.previous_direct.as_read()).is_some_and(|x| x.starts_with("<w:tblPr")));
     let grid = t.grid_change.as_ref().expect("a grid change");
     assert_eq!(grid.previous, t.grid.iter().rev().copied().collect::<Vec<_>>());
     assert_eq!(t.rows.len(), 5);
@@ -146,18 +149,18 @@ fn table_rows_and_grid_changes() {
     assert_eq!(row(1), (Some((MarkKind::Insert, A.into())), None));
     assert_eq!(row(3), (None, Some((MarkKind::Delete, B.into()))));
     let change = t.rows[2].rev.change.as_ref().expect("a row property change");
-    assert!(change.previous_raw.0.as_deref().is_some_and(|x| x.contains("w:val=\"360\"")));
+    assert!(change.previous_direct.as_read().is_some_and(|x| x.contains("w:val=\"360\"")));
     assert_eq!(t.rows[2].height.as_ref().map(|h| h.0), Some(36.0));
     let cell = t.rows[4].cells[0].rev.change.as_ref().expect("a cell property change");
-    assert!(cell.previous_raw.0.as_deref().is_some_and(|x| x.starts_with("<w:tcPr")));
+    assert!(cell.previous_direct.as_read().is_some_and(|x| x.starts_with("<w:tcPr")));
     assert_eq!(t.rows[4].cells[0].shading, Some(0xD9E2F3));
-    assert!(doc.diagnostics.warnings.is_empty(), "{:?}", doc.diagnostics);
+    assert!(docx.diagnostics.warnings.is_empty(), "{:?}", docx.diagnostics);
     integrity("FX-REVIEW-TABLES");
 }
 
 #[test]
 fn cell_marks_and_row_exceptions() {
-    let doc = read("FX-REVIEW-CELLS");
+    let (doc, docx) = read("FX-REVIEW-CELLS");
     let t = tables(&doc)[0];
     let cell = |r: usize, c: usize| t.rows[r].cells[c].rev.structural.as_ref().map(|(m, k)| (m.kind, who(&doc, m), k.clone()));
     assert_eq!(cell(0, 1), Some((MarkKind::Insert, A.into(), CellMarkKind::Insert)));
@@ -167,13 +170,13 @@ fn cell_marks_and_row_exceptions() {
     assert_eq!(cell(0, 0), None);
     assert_eq!(t.rows[3].rev.ex_change.as_ref().map(|c| who(&doc, &c.mark)), Some(C.into()));
     assert!(t.rows[..3].iter().all(|r| r.rev.ex_change.is_none()));
-    assert!(doc.diagnostics.warnings.is_empty(), "{:?}", doc.diagnostics);
+    assert!(docx.diagnostics.warnings.is_empty(), "{:?}", docx.diagnostics);
     integrity("FX-REVIEW-CELLS");
 }
 
 #[test]
 fn section_changes_keep_the_previous_page() {
-    let doc = read("FX-REVIEW-SECTIONS");
+    let (doc, _) = read("FX-REVIEW-SECTIONS");
     let s = doc.sections.last().expect("a section");
     let c = s.change.as_ref().expect("a section change");
     assert_eq!((s.page_w, s.page_h, s.top), (792.0, 612.0, 54.0));
@@ -181,13 +184,13 @@ fn section_changes_keep_the_previous_page() {
     assert_eq!(who(&doc, &c.mark), C);
     assert!(c.previous_raw.0.as_deref().is_some_and(|x| x.starts_with("<w:sectPr")));
     // The twins have none.
-    assert!(read("FX-REVIEW-SECTIONS-ACCEPTED").sections.iter().all(|s| s.change.is_none()));
+    assert!(read("FX-REVIEW-SECTIONS-ACCEPTED").0.sections.iter().all(|s| s.change.is_none()));
     integrity("FX-REVIEW-SECTIONS");
 }
 
 #[test]
 fn moves_pair_by_name() {
-    let doc = read("FX-REVIEW-MOVES");
+    let (doc, docx) = read("FX-REVIEW-MOVES");
     let ps = body(&doc);
     use RangeKind::*;
     // Range markers between paragraphs start the next paragraph.
@@ -222,15 +225,15 @@ fn moves_pair_by_name() {
     // A numbering change alone.
     let n = ps[5].style.change.as_ref().expect("a numbering change");
     assert!(n.numbering_change.0.as_deref().is_some_and(|x| x.contains("w:original=\"%1.\"")));
-    assert!(n.previous_raw.0.is_none());
+    assert!(!n.properties);
     assert_eq!(who(&doc, &n.mark), C);
-    assert!(doc.diagnostics.warnings.is_empty(), "{:?}", doc.diagnostics);
+    assert!(docx.diagnostics.warnings.is_empty(), "{:?}", docx.diagnostics);
     integrity("FX-REVIEW-MOVES");
 }
 
 #[test]
 fn comments_threads_bodies_and_people() {
-    let doc = read("FX-REVIEW-COMMENTS");
+    let (doc, docx) = read("FX-REVIEW-COMMENTS");
     let cs = &doc.comments.by_id;
     assert_eq!(cs.keys().map(|c| c.0).collect::<Vec<_>>(), [0, 1, 2, 3, 4, 5]);
     let c0 = &cs[&CommentId(0)];
@@ -261,7 +264,7 @@ fn comments_threads_bodies_and_people() {
     assert_eq!(ranges(ps[2]), [(CommentStart, 4), (CommentEnd, 4)]);
     let cell = &tables(&doc)[0].rows[0].cells[0];
     assert_eq!(ranges(paras(&cell.blocks)[0]), [(CommentStart, 5), (CommentEnd, 5)]);
-    assert!(doc.diagnostics.warnings.is_empty(), "{:?}", doc.diagnostics);
+    assert!(docx.diagnostics.warnings.is_empty(), "{:?}", docx.diagnostics);
     // New ids go past those read.
     let mut ids = doc.review_ids.clone();
     assert!(ids.next_para_id() > 0x1A00_0006 && ids.next_revision_id() > 5);
@@ -274,7 +277,7 @@ fn who_comment(doc: &Document, c: &review::Comment) -> String {
 
 #[test]
 fn stories_carry_revisions_and_comments() {
-    let doc = read("FX-REVIEW-STORIES");
+    let (doc, docx) = read("FX-REVIEW-STORIES");
     let kinds = |blocks: &[Block]| {
         paras(blocks)
             .iter()
@@ -284,7 +287,8 @@ fn stories_carry_revisions_and_comments() {
             .map(|m| m.kind)
             .collect::<Vec<_>>()
     };
-    let story = |part: &str| doc.stories.iter().find(|(k, _)| k.contains(part)).map(|(_, b)| b.as_slice()).expect("a story");
+    let names = crate::docx::write::story_parts(&doc, &docx);
+    let story = |part: &str| doc.stories.iter().find(|(k, _)| names[*k].contains(part)).map(|(_, b)| b.as_slice()).expect("a story");
     assert_eq!(kinds(story("header")), [MarkKind::Insert]);
     assert_eq!(kinds(story("footer")), [MarkKind::Delete]);
     let note = doc.footnotes.values().find(|b| !kinds(b).is_empty()).expect("a footnote with a revision");
@@ -298,25 +302,25 @@ fn stories_carry_revisions_and_comments() {
         .expect("a text box");
     assert_eq!(kinds(&text_box.blocks), [MarkKind::Insert]);
     assert_eq!(doc.comments.by_id.len(), 3);
-    assert!(doc.diagnostics.warnings.is_empty(), "{:?}", doc.diagnostics);
+    assert!(docx.diagnostics.warnings.is_empty(), "{:?}", docx.diagnostics);
     integrity("FX-REVIEW-STORIES");
 }
 
 #[test]
 fn protection_and_tracking_settings() {
-    let doc = read("FX-REVIEW-PROTECTED");
+    let (doc, _) = read("FX-REVIEW-PROTECTED");
     assert!(doc.settings.track_revisions);
     let p = doc.settings.protection.as_ref().expect("protection");
     assert_eq!((p.edit, p.enforced), (ProtectionKind::TrackedChanges, true));
     assert!(p.forces_tracking() && p.raw.0.as_deref().is_some_and(|x| x.starts_with("<w:documentProtection")));
-    let plain = read("FX-REVIEW-RUNS");
+    let (plain, _) = read("FX-REVIEW-RUNS");
     assert!(!plain.settings.track_revisions && plain.settings.protection.is_none());
 }
 
 #[test]
 fn malformed_review_data_is_reported_once_each() {
-    let doc = read("FX-REVIEW-MALFORMED");
-    let d = &doc.diagnostics;
+    let (doc, docx) = read("FX-REVIEW-MALFORMED");
+    let d = &docx.diagnostics;
     for code in [
         WarningCode::RevisionIdMissing,
         WarningCode::RangeUnpaired,
@@ -344,10 +348,10 @@ fn every_review_fixture_reads() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/review");
     for e in std::fs::read_dir(&dir).expect("the review fixtures").flatten() {
         let bytes = std::fs::read(e.path()).expect("readable");
-        let doc = read_editable(&bytes).unwrap_or_else(|err| panic!("{}: {err}", e.path().display()));
+        let (doc, docx) = read_editable(&bytes).unwrap_or_else(|err| panic!("{}: {err}", e.path().display()));
         let name = e.file_name().to_string_lossy().to_string();
         if !name.contains("MALFORMED") {
-            assert!(doc.diagnostics.warnings.is_empty(), "{name}: {:?}", doc.diagnostics);
+            assert!(docx.diagnostics.warnings.is_empty(), "{name}: {:?}", docx.diagnostics);
         }
         // The accepted and rejected twins have no revisions.
         if name.contains("-ACCEPTED") || name.contains("-REJECTED") {

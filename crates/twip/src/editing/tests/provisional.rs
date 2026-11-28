@@ -14,7 +14,7 @@ fn fixture() -> Editor {
 }
 
 fn parts(e: &Editor) -> Vec<String> {
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).expect("a package");
     let mut names: Vec<String> = z.file_names().filter_map(|n| n.ok().map(|n| n.to_string())).collect();
     names.sort();
@@ -26,7 +26,7 @@ fn state(e: &Editor) -> (Vec<String>, bool, usize, usize) {
 }
 
 fn headers_and_footers(e: &Editor) -> usize {
-    e.document().stories.keys().filter(|k| k.contains("header") || k.contains("footer")).count()
+    super::parts_named(e, "header").len() + super::parts_named(e, "footer").len()
 }
 
 fn editing_header_footer(e: &Editor) -> bool {

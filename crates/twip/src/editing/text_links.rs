@@ -1,5 +1,6 @@
 //! Linked text boxes
 
+use crate::docx::origin::FloatOrigin;
 use crate::docx::{Block, Inline};
 use crate::drawing::ShapeText;
 use crate::font::Fonts;
@@ -8,6 +9,7 @@ use crate::layout::FloatId;
 use super::Editor;
 use super::commands::Outcome;
 use super::selection::{ObjectRef, Selection};
+use crate::docx::run_xml;
 
 /// The most boxes a chain takes.
 pub const MAX_CHAIN: usize = 1024;
@@ -222,16 +224,15 @@ impl Editor {
 
     /// A paragraph a new empty text box story holds.
     fn empty_story(&self) -> Option<crate::docx::Paragraph> {
-        let res = self.doc.resolver.clone()?;
-        let cx = self.cx();
-        let r = res.para_from_xml(None, None, &cx);
-        let mark = res.run_from_xml(&r.base, None, &cx);
+        let res = self.doc.definitions.clone()?;
+        let r = crate::docx::para_xml::with(&res, Default::default(), None, None);
+        let mark = std::rc::Rc::new(run_xml::resolve(&res, &r.base, Default::default(), false));
         Some(crate::docx::Paragraph {
             style: std::rc::Rc::new(r.style),
             mark,
             list: None,
             inlines: Vec::new(),
-            src: None,
+            origin: crate::docx::Origin::NONE,
             id: crate::docx::next_para_id(),
             div: None,
             controls: Vec::new(),

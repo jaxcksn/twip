@@ -5,7 +5,7 @@ use std::rc::Rc;
 use crate::docx::model::BreakKind;
 use crate::docx::{Block, Document, Inline};
 use crate::layout::fragment::{Child, PageChild};
-use crate::layout::layout as layout_doc;
+use crate::layout::tests::layout as layout_doc;
 
 use super::{fonts, page_chars, plain_doc, words};
 
@@ -65,7 +65,7 @@ fn para_2_compat_14_a_page_break_before_paragraph_keeps_its_space_after_a_page_b
         let mut doc = broken(8.0, 24.0)?;
         let brk = para_mut(&mut doc, 1).inlines.remove(0);
         para_mut(&mut doc, 0).inlines.push(brk);
-        doc.settings.compat_mode = mode;
+        doc.settings.policy.mode = mode;
         Rc::make_mut(&mut para_mut(&mut doc, 1).style).page_break_before = pbb;
         Some(page_2_top(&doc))
     };
@@ -81,9 +81,9 @@ fn an_at_least_line_at_the_page_top_rises_with_the_top_spacing_options() {
         let mut doc = broken(0.0, 12.0)?;
         let brk = para_mut(&mut doc, 1).inlines.remove(0);
         para_mut(&mut doc, 0).inlines.push(brk);
-        doc.settings.compat_mode = mode;
+        doc.settings.policy.mode = mode;
         if !option.is_empty() {
-            doc.settings.compat.insert(option.to_string());
+            crate::docx::set_option(&mut doc.settings.policy, option);
         }
         let s = Rc::make_mut(&mut para_mut(&mut doc, 1).style);
         (s.line_rule, s.line) = (crate::docx::props::LineRule::AtLeast, 40.0);
@@ -108,9 +108,9 @@ fn a_page_top_line_that_keeps_its_space_before_rises_too() {
     let top = |option: &str, page: usize| {
         // Paragraph 2 starts with a page break: its text line keeps its 12pt space-before on page 2. Compat 12.
         let mut doc = broken(0.0, 12.0)?;
-        doc.settings.compat_mode = 12;
+        doc.settings.policy.mode = 12;
         if !option.is_empty() {
-            doc.settings.compat.insert(option.to_string());
+            crate::docx::set_option(&mut doc.settings.policy, option);
         }
         for i in 0..2 {
             let s = Rc::make_mut(&mut para_mut(&mut doc, i).style);
@@ -178,7 +178,7 @@ fn para_4_contextual_spacing_across_cells_rows_and_table_edges() {
 fn tab_7_a_default_stop_past_the_right_edge_starts_a_line() {
     let lines = |compat: i64| {
         let mut doc = plain_doc(&[words(3)])?;
-        doc.settings.compat_mode = compat;
+        doc.settings.policy.mode = compat;
         let p = para_mut(&mut doc, 0);
         Rc::make_mut(&mut p.style).tabs.clear();
         let Inline::Text(_, run) = p.inlines[0].clone() else { unreachable!() };
@@ -192,7 +192,7 @@ fn tab_7_a_default_stop_past_the_right_edge_starts_a_line() {
 fn custom_past_edge(compat: i64, kinds: &[crate::docx::props::TabKind]) -> Option<usize> {
     use crate::docx::props::{Leader, Tab};
     let mut doc = plain_doc(&["A".to_string()])?;
-    doc.settings.compat_mode = compat;
+    doc.settings.policy.mode = compat;
     let p = para_mut(&mut doc, 0);
     Rc::make_mut(&mut p.style).tabs = kinds.iter().map(|&kind| Tab { pos: 1000.0, kind, leader: Leader::None }).collect();
     let Inline::Text(_, run) = p.inlines[0].clone() else { unreachable!() };
@@ -227,7 +227,7 @@ fn tab_6_text_after_a_centre_stop_near_the_edge_ends_at_it_on_the_line() {
     use crate::docx::props::{Leader, Tab, TabKind};
     let lines = |compat: i64| {
         let mut doc = plain_doc(&["A".to_string()])?;
-        doc.settings.compat_mode = compat;
+        doc.settings.policy.mode = compat;
         let p = para_mut(&mut doc, 0);
         Rc::make_mut(&mut p.style).tabs = vec![Tab { pos: 450.0, kind: TabKind::Center, leader: Leader::None }];
         let Inline::Text(_, run) = p.inlines[0].clone() else { unreachable!() };

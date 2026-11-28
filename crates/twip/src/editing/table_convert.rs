@@ -1,6 +1,7 @@
 //! Text to table and table to text
 
 use crate::api::command::{TableToText, TextSeparator, TextToTable};
+use crate::docx::para_props::ParaXml;
 use crate::docx::{Block, Control, ControlId, Inline, ParaStyle, Paragraph, Run, VMerge};
 use crate::font::Fonts;
 use crate::layout::Unit;
@@ -11,6 +12,7 @@ use super::position::Position;
 use super::selection::Selection;
 use super::step::Step;
 use super::tables::{MAX_COLUMNS, MAX_ROWS, blank_para, tidy_merges};
+use crate::document::paragraph::{ListId, ListRef};
 
 /// Where text splits into cells, or what joins cells into text.
 #[derive(Clone, Copy, PartialEq)]
@@ -171,7 +173,7 @@ fn flatten(
                             _ => {
                                 let mut nested = nested.clone();
                                 nested.controls = inside.iter().chain(&nested.controls).copied().collect();
-                                out.push(super::clipboard::fresh(&Block::Table(nested)));
+                                out.push(Block::Table(nested.fresh_identity()));
                             }
                         }
                     }
@@ -213,19 +215,20 @@ fn row_and_cell_controls(t: &crate::docx::Table, rows: std::ops::RangeInclusive<
 impl Editor {
     /// `p`'s formatting without its numbering, re-resolved: the cells after a numbered paragraph's first.
     fn unnumbered(&self, p: &Paragraph) -> Option<std::rc::Rc<ParaStyle>> {
-        use crate::docx::write::props::Props;
-        p.style.num.filter(|&(id, _)| id != 0)?;
-        let res = self.doc.resolver.clone()?;
+        p.style.num.filter(|&ListRef { list: ListId(id), level: _ }| id != 0)?;
+        let res = self.doc.definitions.clone()?;
         let cx = self.cx();
-        let w = &cx.w;
-        let mut pr = Props::parse(p.style.direct.0.as_deref(), "pPr", &cx);
-        let styled = res.styles.chain_ppr(res.styles.paragraph_style(p.style.style_id.as_deref())).num_id.is_some_and(|n| n != 0);
+        let c = res.cascade();
+        let styled = matches!(c.chain_para(c.paragraph_style(p.style.style_id.as_deref())).list, Some(crate::format::ListChoice::In(n)) if n.0 != 0);
+        let mut e = crate::format::ParaEdit::new((**p.style.direct.get()).clone());
         if styled {
-            pr.set("numPr", format!("<{w}numPr><{w}ilvl {w}val=\"0\"/><{w}numId {w}val=\"0\"/></{w}numPr>"));
+            super::lists::in_list(&mut e, 0, 0);
         } else {
-            pr.remove("numPr");
+            (e.list, e.list_level) = (None, None);
+            e.whole(crate::format::ParaProp::List);
         }
-        let again = self.para_again(crate::layout::ParaId(p.id), Some(pr.xml().as_deref()), &res, &cx)?;
+        let direct = p.style.direct.edit(e);
+        let again = self.para_again(crate::layout::ParaId(p.id), Some(direct), &res, &cx)?;
         Some(std::rc::Rc::new(again.style))
     }
 
@@ -349,9 +352,8 @@ impl Editor {
             ConvertFit::Window => self.fit_to_window(&mut table),
             ConvertFit::Contents => table.width = crate::docx::props::Width::Auto,
             ConvertFit::Fixed(Some(_)) => {
-                let cx = self.cx();
                 let mut props = super::step::TableProps::of(&table);
-                super::table_format::set_own(&mut props, "tblLayout", format!("<{w}tblLayout {w}type=\"fixed\"/>", w = cx.w), &cx);
+                super::table_format::set_layout(&mut props, true);
                 (table.fixed, table.direct) = (true, props.direct);
             }
             ConvertFit::Fixed(None) => {}
@@ -386,9 +388,8 @@ impl Editor {
 
     /// A new table as AutoFit to Window makes it: 100% of the width it is in, its columns fitted.
     fn fit_to_window(&self, t: &mut crate::docx::Table) {
-        let cx = self.cx();
         let mut props = super::step::TableProps::of(t);
-        super::table_format::set_width(&mut props, crate::docx::props::Width::Pct(1.0), &cx);
+        super::table_format::set_width(&mut props, crate::docx::props::Width::Pct(1.0));
         (t.width, t.direct) = (props.width, props.direct);
     }
 
@@ -423,7 +424,7 @@ impl Editor {
         moved.dedup();
         let moved: Vec<(ControlId, Control)> = moved
             .into_iter()
-            .filter_map(|id| self.doc.controls.get(&id).filter(|c| !c.open.is_empty()).map(|c| (id, Control::new(c.props.clone()))))
+            .filter_map(|id| self.doc.controls.get(&id).filter(|c| c.origin.is_some()).map(|c| (id, Control::new(c.props.clone()))))
             .collect();
         let mut out: Vec<Block> = Vec::new();
         flatten(t, r0..=r1, &[], sep, depth, &mut out);
@@ -432,13 +433,13 @@ impl Editor {
             let mut x = t.clone();
             x.rows.truncate(r0);
             tidy_merges(&mut x.rows);
-            super::clipboard::fresh(&Block::Table(x))
+            Block::Table(x.fresh_identity())
         });
         let after = (r1 + 1 < t.rows.len()).then(|| {
             let mut x = t.clone();
             x.rows.drain(..=r1);
             tidy_merges(&mut x.rows);
-            super::clipboard::fresh(&Block::Table(x))
+            Block::Table(x.fresh_identity())
         });
         let mut with: Vec<Block> = before.into_iter().chain(out).chain(after).collect();
         let Some(blocks) = self.index.blocks(&self.doc, slot.container) else { return Outcome::unavailable("not in a table") };

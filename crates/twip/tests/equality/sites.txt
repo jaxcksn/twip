@@ -1,0 +1,126 @@
+# relation	file	function	type	line (see audit.py for the relations)
+none	crates/twip/src/docx/merge_tests.rs	controls_read_with_their_properties	Inline	assert!(p.iter().any(|p| p.inlines.contains(&Inline::ControlStart(name)) && p.inlines.contains(&Inline::ControlEnd(name))));
+derive	crates/twip-document/src/model.rs	-	Edge	#[derive(PartialEq)]
+derive	crates/twip-document/src/model.rs	-	SectionPage	#[derive(PartialEq)]
+A	crates/twip-document/src/model.rs	authored_eq	&Section	self == o
+A	crates/twip-document/src/model.rs	authored_eq	&SectionPage	self == o && self.page_borders_direct.authored_eq(&o.page_borders_direct)
+A	crates/twip-document/src/model.rs	authored_eq	(&Option<Rc<TableChange>>, &Option<Rc<GridChange>>)	&& (&self.change, &self.grid_change) == (&o.change, &o.grid_change)
+A	crates/twip-document/src/model.rs	authored_eq	CellRevisions	&& self.rev == o.rev
+A	crates/twip-document/src/model.rs	authored_eq	RowRevisions	&& self.rev == o.rev
+L	crates/twip-document/src/model.rs	layout_eq	Option<Rc<ParaChange>>	&& *change == o.change
+L	crates/twip-document/src/model.rs	layout_eq	RunRevisions	&& *rev == o.rev
+L	crates/twip/src/docx/origin.rs	same_but_story	Vec<GroupPart>	&& *parts == o.parts
+L	crates/twip/src/docx/resolve.rs	check	ParaStyle	assert_eq!(*p.style, r.style, "{what}: paragraph {:?}", p.id);
+L	crates/twip/src/docx/resolve.rs	check	RunStyle	assert_eq!(**run, *res.rerun(&r.base, run, cx), "{what}: run {t:?} of {:?}", p.id);
+L	crates/twip/src/docx/resolve.rs	check	RunStyle	assert_eq!(*p.mark, mark, "{what}: the mark of {:?}", p.id);
+L	crates/twip/src/docx/resolve.rs	para_again	ParaStyle	if previous == *c.previous { c.clone() } else { Rc::new(ParaChange { previous: Rc::new(previous), ..(**c).clone() }) }
+L	crates/twip/src/docx/resolve.rs	rerun_xml	Rc<RunStyle>	if previous == f.previous { f.clone() } else { Rc::new(FormatChange { previous, ..(**f).clone() }) }
+L	crates/twip/src/docx/write/generate.rs	same_tables	Table	bare(x) == bare(y)
+derive	crates/twip/src/docx/write/mod.rs	-	Marker	#[derive(PartialEq)]
+A	crates/twip/src/docx/write/mod.rs	group_as	Marker	a.eq(b) && now_ids.iter().all(|id| s.controls.get(id).is_some_and(|k| k.as_read() || sdt_of(id).is_some()))
+A	crates/twip/src/docx/write/mod.rs	headers	CellRevisions	if a.rev != b.rev {
+A	crates/twip/src/docx/write/mod.rs	row_fixes	Option<Rc<TableChange>>	let change = if was.rev.ex_change != now.rev.ex_change {
+A	crates/twip/src/docx/write/mod.rs	row_fixes	RowRevisions	if was.rev != now.rev {
+A	crates/twip/src/docx/write/mod.rs	row_props	RowRevisions	let same = was.is_some_and(|k| k.rev == row.rev);
+A	crates/twip/src/docx/write/mod.rs	separator_edits	Option<&Vec<Block>>	(now != src.separators.get(&key)).then(|| (t, now.map(Vec::as_slice)))
+A	crates/twip/src/docx/write/mod.rs	table_xml	Option<Rc<TableChange>>	if a.change != t.change {
+none	crates/twip/src/editing/elements.rs	para	Inline	let end = p.inlines[k..].iter().position(|x| *x == Inline::ControlEnd(*c)).map_or(p.inlines.len(), |e| k + e);
+L	crates/twip/src/editing/format.rs	reresolve_stale	TableProps	if props != TableProps::of(t) {
+L	crates/twip/src/editing/format.rs	table_again	Vec<Row>	let rows = (rows != t.rows).then_some(rows);
+A	crates/twip/src/editing/interaction.rs	still_carried	Vec<Block>	f.blocks == blocks
+L	crates/twip/src/editing/lists.rs	labels_changed	Option<&ListLabel>	if p.list.as_ref() == Some(&label) {
+L	crates/twip/src/editing/mod.rs	set_table_preview	Vec<Provisional>	if self.table_preview == tables {
+A	crates/twip/src/editing/notes.rs	set_note_separator	&Block	_ => x == y,
+A	crates/twip/src/editing/notes.rs	set_note_separator	Paragraph	(Block::Para(p), Block::Para(q)) => bare(p) == bare(q),
+A	crates/twip/src/editing/objects.rs	set_float	Float	if n == **fl {
+A	crates/twip/src/editing/pictures.rs	edit_inline	Picture	if !edit(pic) || *pic == before {
+derive	crates/twip/src/editing/resize.rs	-	Provisional	#[derive(PartialEq)]
+A	crates/twip/src/editing/revisions/record.rs	formatted_run	RunRevisions	let n = if new.rev == rev { new.clone() } else { with_rev(new, rev) };
+A	crates/twip/src/editing/revisions/record.rs	note_steps	Vec<Block>	if marked != *blocks {
+A	crates/twip/src/editing/revisions/record.rs	para_change	Option<Rc<ParaChange>>	if new.change == change { new } else { Rc::new(ParaStyle { change, ..(*new).clone() }) }
+A	crates/twip/src/editing/revisions/record.rs	restyle	&Inline	if kept.len() < p.inlines.len() && kept.len() == inlines.len() && kept.iter().zip(&inlines).all(|(a, b)| *a == b) {
+none	crates/twip/src/editing/revisions/record.rs	restyle	Inline	let kept: Vec<&Inline> = p.inlines.iter().filter(|i| !control(i) || inlines.contains(i)).collect();
+A	crates/twip/src/editing/revisions/record.rs	split	RunRevisions	if second.mark.rev != p.mark.rev {
+A	crates/twip/src/editing/revisions/record.rs	text	Inline	Some(m) if m != mid => {
+A	crates/twip/src/editing/revisions/record.rs	undo_and_redo_restore_a_tracked_edit_whatever_tracking_is_now	Vec<Block>	assert_eq!(body(&e), after);
+A	crates/twip/src/editing/revisions/record.rs	undo_and_redo_restore_a_tracked_edit_whatever_tracking_is_now	Vec<Block>	assert_eq!(body(&e), before);
+A	crates/twip/src/editing/revisions/resolve.rs	apply_pick	Vec<Inline>	if inlines != p.inlines {
+A	crates/twip/src/editing/revisions/resolve.rs	table_plan	Vec<Row>	let changed = rows != t.rows;
+A	crates/twip/src/editing/shapes.rs	dragged_inline	Option<&Picture>	if d.picture.as_deref() != Some(p) {
+A	crates/twip/src/editing/shapes.rs	edit_floats	Float	if n == **fl {
+A	crates/twip/src/editing/shapes.rs	shape_release	Picture	Some(p) => self.edit_inline(label, |q| std::mem::replace(q, p) != *q, fonts),
+none	crates/twip/src/editing/state.rs	element_context_of	Inline	let end = p.inlines[k..].iter().position(|i| *i == crate::docx::Inline::ControlEnd(c)).map_or(p.inlines.len(), |e| k + e);
+none	crates/twip/src/editing/state.rs	element_context_of	Inline	let k = p.inlines.iter().position(|i| *i == crate::docx::Inline::ControlStart(c))?;
+derive	crates/twip/src/editing/step.rs	-	TableProps	#[derive(PartialEq)]
+A	crates/twip/src/editing/step.rs	apply	Inline	let keep = p.inlines.iter().rposition(|i| i.units() > 0 || !second.inlines.contains(i)).map_or(0, |k| k + 1);
+L	crates/twip/src/editing/table_format.rs	table_format_blocks	TableProps	let props_changed = props != TableProps::of(t) || !props.direct.authored_eq(&t.direct);
+A	crates/twip/src/editing/table_format.rs	table_format_blocks	Vec<Row>	let rows_changed = rows != t.rows || !same_authored || grid.is_some();
+none	crates/twip/src/editing/tables.rs	unmarked	RunRevisions	if r.rev == RunRevisions::default() { r.clone() } else { Rc::new(RunStyle { rev: RunRevisions::default(), ..(**r).clone() }) }
+L	crates/twip/src/editing/tests/authored.rs	a_built_table_and_page_setup_generate_a_package_that_reads_back_the_same	Table	assert_eq!(bare(first_table(back)), bare(first_table(e.document())), "the table reads back");
+A	crates/twip/src/editing/tests/basics.rs	escape_from_select_objects_ends_an_object_drag	Vec<Float>	assert_eq!(body_floats(&r.e), was, "the release moves nothing");
+A	crates/twip/src/editing/tests/basics.rs	live_layout_lays_the_dragged_float_out_where_the_pointer_is	Vec<Float>	assert_eq!(body_floats(&r.e), was);
+A	crates/twip/src/editing/tests/basics.rs	live_layout_lays_the_dragged_float_out_where_the_pointer_is	Vec<Float>	assert_eq!(body_floats(&r.e), was, "one undo step");
+A	crates/twip/src/editing/tests/basics.rs	live_layout_lays_the_dragged_float_out_where_the_pointer_is	Vec<Float>	assert_eq!(body_floats(&r.e), was, "the document is unchanged until the release");
+A	crates/twip/src/editing/tests/basics.rs	live_layout_lays_the_dragged_float_out_where_the_pointer_is	Vec<Float>	assert_ne!(body_floats(&r.e), was);
+A	crates/twip/src/editing/tests/field_control_edits.rs	an_argument_holding_a_nested_field_is_not_rewritten	Vec<Inline>	assert_eq!(inlines(&e, 0), before);
+none	crates/twip/src/editing/tests/fields.rs	spanning_fields_ending_in_one_run_keep_each_its_own_end	FieldEdge	Inline::FieldEdge { edge, .. } if edge.kind == crate::docx::FieldEdge::End => {
+A	crates/twip/src/editing/tests/objects.rs	object_property_setters_respect_protection	Option<&Picture>	assert_eq!(selected_picture(&e), Some(&was));
+A	crates/twip/src/editing/tests/objects.rs	object_property_setters_respect_protection	Option<Float>	assert_eq!(e.float_of(FloatId(f)).cloned(), was);
+A	crates/twip/src/editing/tests/readback.rs	a_page_number_in_the_first_pages_own_header_can_t_be_left_off_the_first_page	(usize, &Vec<Block>)	assert_eq!((e.history().undo_depth(), &e.document().stories[&first]), (depth, &kept), "nothing changed");
+A	crates/twip/src/editing/tests/shapes.rs	releasing_an_inline_drag_after_its_picture_changed_changes_nothing_more	Vec<Block>	assert_eq!(e.document().sections[0].blocks, before, "the changed picture doesn't turn");
+A	crates/twip/src/editing/tests/shapes.rs	releasing_an_inline_drag_after_the_selection_moved_changes_nothing	Vec<Block>	assert_eq!(e.document().sections[0].blocks, before, "neither shape turns");
+A	crates/twip/src/editing/tests/stories_and_steps.rs	undoing_a_join_into_an_empty_paragraph_restores_its_empty_run	Vec<Inline>	assert_eq!(now.inlines, was.inlines);
+A	crates/twip/src/editing/tests/stories_and_steps.rs	undoing_typing_into_an_empty_paragraph_restores_its_empty_run	Vec<Inline>	assert_eq!(idx.para(&doc, id).expect("para").inlines, original);
+A	crates/twip/src/editing/tests/sub_templates.rs	a_click_on_a_shown_body_selects_its_reference_and_typing_is_refused	Block	assert_eq!(e.document().sections[0].blocks[1], before, "nothing changed");
+A	crates/twip/src/editing/tests/sub_templates.rs	a_range_on_a_shown_body_keeps_every_range_from_formatting	Block	assert_eq!(e.document().sections[0].blocks[1], before[1], "the reference is kept");
+A	crates/twip/src/editing/tests/sub_templates.rs	a_range_on_a_shown_body_keeps_every_range_from_formatting	Vec<Block>	assert_eq!(e.document().sections[0].blocks, before, "neither range formatted");
+A	crates/twip/src/editing/tests/sub_templates.rs	a_shown_body_is_checked_when_a_cell_block_is_the_selection	Vec<Block>	assert_eq!(e.document().sections[0].blocks, before, "the reference's range is checked whichever range is the selection");
+A	crates/twip/src/editing/tests/sub_templates.rs	typing_over_paragraphs_around_a_shown_body_is_refused	Vec<Block>	assert_eq!(e.document().sections[0].blocks, blocks, "nothing changed");
+A	crates/twip/src/editing/tests/table_handles.rs	a_nested_tables_live_drag_widens_the_cell_holding_it	&Table	assert_eq!(first_table(&e), &model, "the model waits for the release");
+A	crates/twip/src/editing/tests/table_handles.rs	a_tracked_nested_tables_drag_keeps_its_revisions	&Table	assert_eq!(first_table(&e), &model, "undo restores both tables");
+none	crates/twip/src/editing/tests/toc.rs	a_copy_of_a_table_showing_its_code_holds_its_result	Option<FieldEdge>	assert_eq!(
+none	crates/twip/src/editing/tests/toc.rs	a_frame_adds_a_title_and_a_control	Vec<FieldEdge>	assert_eq!(edges(&e)[5], [FieldEdge::End]);
+none	crates/twip/src/editing/tests/toc.rs	a_read_table_keeps_its_field_across_paragraphs	Vec<FieldEdge>	assert_eq!(ed[0], [FieldEdge::Start { code: r#" TOC \o "1-3" \h "#.into(), lock: false, dirty: false, view: crate::docx::FieldView::Result }]);
+none	crates/twip/src/editing/tests/toc.rs	a_read_table_keeps_its_field_across_paragraphs	Vec<FieldEdge>	assert_eq!(ed[2], [FieldEdge::End]);
+none	crates/twip/src/editing/tests/toc.rs	a_shown_code_is_edited_as_text_and_saved_as_the_fields_code	Vec<FieldEdge>	assert_eq!(
+none	crates/twip/src/editing/tests/toc.rs	alt_f9_shows_a_tables_code_on_one_line_with_its_result_folded	Vec<FieldEdge>	assert_eq!(
+derive	crates/twip/src/editing/toc.rs	-	TocEntry	#[derive(PartialEq)]
+none	crates/twip/src/features.rs	blocks	CellRevisions	let row_revised = |r: &crate::docx::Row| r.rev != Default::default() || r.cells.iter().any(|c| c.rev != Default::default());
+none	crates/twip/src/features.rs	blocks	RowRevisions	let row_revised = |r: &crate::docx::Row| r.rev != Default::default() || r.cells.iter().any(|c| c.rev != Default::default());
+derive	crates/twip/src/layout/env.rs	-	Chain	#[derive(PartialEq)]
+derive	crates/twip/src/layout/env.rs	-	LayoutEnv	#[derive(PartialEq)]
+derive	crates/twip/src/layout/float/mod.rs	-	Placed	#[derive(PartialEq)]
+L	crates/twip/src/layout/incremental.rs	changed_parts	&Vec<Block>	if was != now {
+L	crates/twip/src/layout/incremental.rs	changed_parts	HashMap<String, Vec<Block>>	&& self.separators == doc.separators
+L	crates/twip/src/layout/incremental.rs	changed_parts	HashMap<i64, Vec<Block>>	&& self.endnotes == doc.endnotes
+L	crates/twip/src/layout/incremental.rs	changed_parts	HashMap<i64, Vec<Block>>	&& self.footnotes == doc.footnotes
+L	crates/twip/src/layout/incremental.rs	changed_parts	LayoutEnv	&& self.env == *env
+L	crates/twip/src/layout/incremental.rs	preview	Option<&Preview>	if self.preview.as_deref() == preview.as_ref() {
+L	crates/twip/src/layout/incremental.rs	reuse_page	BodySpace	if space != body.space {
+derive	crates/twip/src/layout/mod.rs	-	Preview	#[derive(PartialEq)]
+derive	crates/twip/src/layout/record.rs	-	PageEffects	#[derive(PartialEq)]
+derive	crates/twip/src/layout/space.rs	-	BodySpace	#[derive(PartialEq)]
+derive	crates/twip/src/layout/space.rs	-	ShapeSpace	#[derive(PartialEq)]
+L	crates/twip/src/layout/story/mod.rs	eq	Vec<Placed>	&& *tables == o.tables
+L	crates/twip/src/layout/table/key.rs	matches	&Block	self.blocks.iter().eq(loose_blocks(t)) && self.closings.iter().copied().eq(closings(t)) && self.rows.iter().copied().eq(row_flags(t, text))
+L	crates/twip/src/layout/table/key.rs	same_shell	CellRevisions	&& *rev == d.rev
+L	crates/twip/src/layout/table/key.rs	same_shell	Option<Rc<TableChange>>	&& *change == t.change
+L	crates/twip/src/layout/table/key.rs	same_shell	RowRevisions	&& *rev == q.rev
+L	crates/twip/src/layout/tests/cache_keys.rs	a_preview_is_in_the_keys_of_its_paragraphs_only	ShapeSpace	assert_eq!(space(other, Some(&here)), space(other, None));
+L	crates/twip/src/layout/tests/cache_keys.rs	a_preview_is_in_the_keys_of_its_paragraphs_only	ShapeSpace	assert_ne!(space(home, Some(&here)), space(home, None));
+L	crates/twip/src/layout/tests/cache_keys.rs	markup_view_is_in_the_keys	ShapeSpace	assert_ne!(shape_space(&p, &FieldValues::default(), &notes, &all, None), shape_space(&p, &FieldValues::default(), &notes, &none, None));
+derive	crates/twip/src/layout/text.rs	-	Object	#[derive(PartialEq)]
+derive	crates/twip/src/layout/text.rs	-	Part	#[derive(PartialEq)]
+derive	crates/twip/src/layout/text.rs	-	RubyShape	#[derive(PartialEq)]
+derive	crates/twip/src/layout/text.rs	-	ShapedPara	#[derive(PartialEq)]
+L	crates/twip/src/layout/text.rs	matches	ShapeSpace	self.fonts == p.fonts && self.space == *p.space && same_shaping(&self.para, p.para)
+L	crates/twip/src/layout/text.rs	same_para	Vec<Inline>	same_props(a, b) && a.inlines == b.inlines
+L	crates/twip/src/layout/text.rs	same_shaping	&Inline	_ => x == y,
+L	crates/twip/src/layout/text.rs	shape	ShapedPara	cached_refreshed(memos, |c| &mut c.shaped, probe, bytes, refresh, |m| shape_uncached(para, space, fonts, m))
+L	crates/twip/src/layout/text.rs	with_stories_of	Option<&TextBox>	Some((_, tb, Inline::Float(g, _))) if f.text_box.as_ref() != Some(tb) => Some(Object::Float(Rc::new((**g).clone()))),
+L	crates/twip/src/layout/text.rs	with_stories_of	TextBox	Some((id, tb, _)) if t.text_box != *tb => {
+L	crates/twip/src/tests/review_equivalence.rs	differs	Shape	if let Some(k) = (0..got.len().min(want.len())).find(|&k| got[k] != want[k]) {
+derive	crates/twip/src/tests/review_resolve.rs	-	Shape	#[derive(PartialEq)]
+L	crates/twip/src/tests/review_resolve.rs	accepting_or_rejecting_all_gives_the_twins	&Shape	assert_eq!(g, w, "{name} {twin}: block {k}");
+A	crates/twip/src/tests/review_resolve.rs	accepting_or_rejecting_all_gives_the_twins	Vec<Block>	assert!(e.document().sections[0].blocks == blocks, "{name} {twin}: undo restores the blocks exactly");
+A	crates/twip/src/tests/review_resolve.rs	accepting_or_rejecting_all_gives_the_twins	Vec<Shape>	assert_eq!(body(e.document()), before, "{name} {twin}: undo");

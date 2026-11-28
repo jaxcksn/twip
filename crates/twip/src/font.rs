@@ -1405,7 +1405,7 @@ mod tests {
             let doc = crate::docx::read_at(bytes, 0).expect("fixtures read");
             // Ids come from process-wide counters, so integers are masked; every position and size is a float and
             // is compared as written.
-            let dump = format!("{:?}", crate::layout::layout(&doc, fonts).pages());
+            let dump = format!("{:?}", crate::layout::tests::layout(&doc, fonts).pages());
             let bytes = dump.as_bytes();
             let mut out = Vec::with_capacity(bytes.len());
             let mut k = 0;

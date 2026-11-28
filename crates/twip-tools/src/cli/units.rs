@@ -37,7 +37,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
         let Ok(bytes) = std::fs::read(path) else { continue };
         let Ok(doc) = twip::internal::docx::read(&bytes) else { continue };
         twip::internal::layout::job::take_over_limit();
-        twip::internal::layout::layout(&doc, &fonts);
+        twip::internal::layout::layout(&doc, &twip::internal::docx::review::ReviewView::opening(&doc.settings), &fonts);
         laid += 1;
         for (class, ms) in twip::internal::layout::job::take_over_limit() {
             over += 1;

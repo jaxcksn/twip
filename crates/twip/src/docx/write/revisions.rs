@@ -3,8 +3,11 @@
 //! before the change as they were read.
 
 use super::props::{Cx, Props, esc};
+use crate::docx::char_props::RunXml;
 use crate::docx::model::{Raw, RunStyle, VMerge};
-use crate::docx::review::{CellMarkKind, CellRevisions, GridChange, MarkKind, People, RevisionMark, RowRevisions, TableChange};
+use crate::docx::props::ThemeColours;
+use crate::docx::review::{CellMarkKind, CellRevisions, FormatChange, GridChange, MarkKind, People, RevisionMark, RowRevisions, TableChange};
+use crate::docx::table_props::PreviousXml;
 
 /// ` w:id=".." w:author=".." w:date=".."`: a mark's attributes, its date as it was read.
 pub(super) fn attrs(w: &str, m: &RevisionMark, people: &People) -> String {
@@ -62,18 +65,23 @@ fn is_element(xml: &str, local: &str) -> bool {
 }
 
 /// A run's `w:rPr` as written for it: its direct properties, with its formatting change last (CT_RPr order).
-pub(super) fn run_rpr(run: &RunStyle, cx: &Cx, people: &People) -> String {
-    let direct = run.direct.0.as_deref();
-    let Some(f) = &run.rev.fmt else { return direct.unwrap_or("").to_string() };
-    let mut p = Props::parse(direct, "rPr", cx);
-    p.set("rPrChange", change(&cx.w, "rPrChange", "rPr", &f.mark, &f.previous_raw, people));
+pub(super) fn run_rpr(run: &RunStyle, colours: &ThemeColours, cx: &Cx, people: &People) -> String {
+    let direct = run.direct.xml(colours, cx);
+    let Some(f) = &run.rev.fmt else { return direct.unwrap_or_default().into_owned() };
+    let mut p = Props::parse(direct.as_deref(), "rPr", cx);
+    p.set("rPrChange", change(&cx.w, "rPrChange", "rPr", &f.mark, &previous(f, colours, cx), people));
     p.xml().unwrap_or_default()
+}
+
+/// A formatting change's earlier `w:rPr` as written.
+fn previous(f: &FormatChange, colours: &ThemeColours, cx: &Cx) -> Raw {
+    Raw(f.previous.direct.xml(colours, cx).map(|x| x.into()))
 }
 
 /// A paragraph mark's `w:rPr`: its direct properties, its insertion or deletion first and its formatting change last
 /// (CT_ParaRPr order); `None` when it has nothing.
-pub(super) fn mark_rpr(mark: &RunStyle, cx: &Cx, people: &People) -> Option<String> {
-    let mut p = Props::parse(mark.direct.0.as_deref(), "rPr", cx);
+pub(super) fn mark_rpr(mark: &RunStyle, colours: &ThemeColours, cx: &Cx, people: &People) -> Option<String> {
+    let mut p = Props::parse(mark.direct.xml(colours, cx).as_deref(), "rPr", cx);
     for name in ["ins", "del", "moveFrom", "moveTo", "rPrChange"] {
         p.remove(name);
     }
@@ -81,7 +89,7 @@ pub(super) fn mark_rpr(mark: &RunStyle, cx: &Cx, people: &People) -> Option<Stri
         p.set(tag(m), mark_element(&cx.w, m, people));
     }
     if let Some(f) = &mark.rev.fmt {
-        p.set("rPrChange", change(&cx.w, "rPrChange", "rPr", &f.mark, &f.previous_raw, people));
+        p.set("rPrChange", change(&cx.w, "rPrChange", "rPr", &f.mark, &previous(f, colours, cx), people));
     }
     p.xml()
 }
@@ -93,8 +101,8 @@ pub(super) fn grid_change(w: &str, g: &GridChange, people: &People) -> String {
 }
 
 /// A table-level change element (`w:tblPrChange`, `w:trPrChange`, `w:tcPrChange`, `w:tblPrExChange`).
-pub(super) fn table_change(w: &str, name: &str, inner: &str, c: &TableChange, people: &People) -> String {
-    change(w, name, inner, &c.mark, &c.previous_raw, people)
+pub(super) fn table_change(w: &str, name: &str, inner: &str, c: &TableChange, colours: &ThemeColours, cx: &Cx, people: &People) -> String {
+    change(w, name, inner, &c.mark, &Raw(c.previous_direct.xml(colours, cx).map(|x| x.into())), people)
 }
 
 /// CT_TrPr's children in schema order (the base properties are a choice group: any order before the marks).
@@ -148,23 +156,23 @@ pub(super) fn before<'o>(order: &'o [&'o str], name: &str) -> &'o [&'o str] {
 }
 
 /// A row's revision children (`w:ins`, `w:del`, `w:trPrChange`) by name, as written from the model (empty: none).
-pub(super) fn row_marks(w: &str, r: &RowRevisions, people: &People) -> [(&'static str, String); 3] {
+pub(super) fn row_marks(w: &str, r: &RowRevisions, people: &People, colours: &ThemeColours, cx: &Cx) -> [(&'static str, String); 3] {
     let el = |m: &Option<std::rc::Rc<RevisionMark>>, name: &str| m.as_ref().map_or(String::new(), |m| format!("<{w}{name}{}/>", attrs(w, m, people)));
     [
         ("ins", el(&r.ins, "ins")),
         ("del", el(&r.del, "del")),
-        ("trPrChange", r.change.as_ref().map_or(String::new(), |c| table_change(w, "trPrChange", "trPr", c, people))),
+        ("trPrChange", r.change.as_ref().map_or(String::new(), |c| table_change(w, "trPrChange", "trPr", c, colours, cx, people))),
     ]
 }
 
 /// A row's `w:tblPrExChange`, as written from the model (empty: none).
-pub(super) fn ex_change(w: &str, r: &RowRevisions, people: &People) -> String {
-    r.ex_change.as_ref().map_or(String::new(), |c| table_change(w, "tblPrExChange", "tblPrEx", c, people))
+pub(super) fn ex_change(w: &str, r: &RowRevisions, people: &People, colours: &ThemeColours, cx: &Cx) -> String {
+    r.ex_change.as_ref().map_or(String::new(), |c| table_change(w, "tblPrExChange", "tblPrEx", c, colours, cx, people))
 }
 
 /// A cell's revision children (`w:cellIns`, `w:cellDel`, `w:cellMerge`, `w:tcPrChange`) by name, as written from the
 /// model (empty: none).
-pub(super) fn cell_marks(w: &str, c: &CellRevisions, people: &People) -> [(&'static str, String); 4] {
+pub(super) fn cell_marks(w: &str, c: &CellRevisions, people: &People, colours: &ThemeColours, cx: &Cx) -> [(&'static str, String); 4] {
     let mut out = [("cellIns", String::new()), ("cellDel", String::new()), ("cellMerge", String::new()), ("tcPrChange", String::new())];
     if let Some((m, kind)) = &c.structural {
         let a = attrs(w, m, people);
@@ -182,7 +190,7 @@ pub(super) fn cell_marks(w: &str, c: &CellRevisions, people: &People) -> [(&'sta
         }
     }
     if let Some(ch) = &c.change {
-        out[3].1 = table_change(w, "tcPrChange", "tcPr", ch, people);
+        out[3].1 = table_change(w, "tcPrChange", "tcPr", ch, colours, cx, people);
     }
     out
 }
@@ -228,25 +236,24 @@ mod tests {
     #[test]
     fn format_changes_go_last_in_the_run_properties() {
         let cx = Cx::of_xml(r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>"#);
-        let doc = crate::docx::read_editable(&crate::docx::blank::blank_docx()).expect("a blank document");
+        let (doc, _) = crate::docx::read_editable(&crate::docx::blank::blank_docx()).expect("a blank document");
         let mut run = match doc.sections.first().and_then(|s| s.blocks.first()) {
             Some(crate::docx::model::Block::Para(p)) => (*p.mark).clone(),
             _ => panic!("a blank document starts with a paragraph"),
         };
-        run.direct = Raw(Some("<w:rPr><w:b/><w:lang w:val=\"en-US\"/></w:rPr>".into()));
-        assert_eq!(run_rpr(&run, &cx, &people()), "<w:rPr><w:b/><w:lang w:val=\"en-US\"/></w:rPr>");
+        run.direct = crate::docx::char_props::RunDirect::in_w("<w:rPr><w:b/><w:lang w:val=\"en-US\"/></w:rPr>");
+        assert_eq!(run_rpr(&run, &Default::default(), &cx, &people()), "<w:rPr><w:b/><w:lang w:val=\"en-US\"/></w:rPr>");
         run.rev.fmt = Some(Rc::new(FormatChange {
             mark: mark(7, 0, MarkKind::Insert),
-            previous: Rc::new(run.clone()),
-            previous_raw: Raw(Some("<w:rPr><w:i/></w:rPr>".into())),
+            previous: Rc::new(RunStyle { direct: crate::docx::char_props::RunDirect::in_w("<w:rPr><w:i/></w:rPr>"), ..run.clone() }),
         }));
         assert_eq!(
-            run_rpr(&run, &cx, &people()),
+            run_rpr(&run, &Default::default(), &cx, &people()),
             r#"<w:rPr><w:b/><w:lang w:val="en-US"/><w:rPrChange w:id="7" w:author="Author A" w:date="2026-01-02T10:00:00Z"><w:rPr><w:i/></w:rPr></w:rPrChange></w:rPr>"#
         );
         // A mark's insertion comes first, its formatting change last.
         run.rev.ins = Some(mark(8, 1, MarkKind::Insert));
-        let m = mark_rpr(&run, &cx, &people()).expect("properties");
+        let m = mark_rpr(&run, &Default::default(), &cx, &people()).expect("properties");
         assert!(m.starts_with(r#"<w:rPr><w:ins w:id="8" w:author="B &amp; C""#), "{m}");
         assert!(m.ends_with("</w:rPrChange></w:rPr>"), "{m}");
         // Children of the earlier properties as read are wrapped in their element.
@@ -268,7 +275,7 @@ mod tests {
             )),
             change: None,
         };
-        let m = cell_marks("w:", &c, &people());
+        let m = cell_marks("w:", &c, &people(), &ThemeColours::default(), &Cx::of_xml(&format!("<w:document xmlns:w=\"{}\">", crate::docx::xml::W)));
         assert_eq!(m[2].1, r#"<w:cellMerge w:id="4" w:author="Author A" w:date="2026-01-02T10:00:00Z" w:vMerge="cont" w:vMergeOrig="rest"/>"#);
         assert!(m[0].1.is_empty() && m[1].1.is_empty() && m[3].1.is_empty());
         let g = grid_change("w:", &GridChange { mark: mark(9, 0, MarkKind::Insert), previous: vec![72.0, 144.0] }, &people());

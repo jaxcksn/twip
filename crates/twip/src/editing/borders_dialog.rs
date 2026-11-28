@@ -5,12 +5,13 @@ use super::Editor;
 use crate::api::command::{Border, BorderStyle, ShadingPattern, ShadingTarget};
 use crate::api::services::{BorderSetting, BordersShadingDialog, BordersTab};
 use crate::api::value::{AutoOr, Color, NoneOr, Points};
+use crate::docx::definitions::DefinitionsXml;
 
 /// An edge's line, or none.
 pub(super) fn line(b: &Option<crate::docx::props::Border>) -> Option<Border> {
     let b = b.as_ref().filter(|b| b.visible())?;
     Some(Border {
-        style: BorderStyle::of_val(&b.style),
+        style: super::readback::api_border_style(b.style),
         width: Points(b.width),
         color: b.color.map_or(AutoOr::Auto, |c| AutoOr::Value(crate::api::drawing::ColourValue::rgb(Color(c)))),
         space: None,
@@ -22,22 +23,22 @@ impl Editor {
     /// Borders and Shading's values for a table style's part (`region`, none for the whole table): its cells' edges,
     /// inside lines and shading.
     pub fn table_part_borders(&self, raw: &str, region: Option<&str>) -> Option<BordersShadingDialog> {
-        let res = self.doc.resolver.as_ref()?;
-        let mut next = (**res).clone();
-        next.styles.set_xml(raw.to_string()).ok()?;
-        let id = next.styles.by_id.values().find(|s| s.raw == raw)?.id.clone();
-        let r = next.styles.table_region(Some(&id), &region.into_iter().collect::<Vec<_>>());
+        use crate::docx::table_props::{tbl_props, tc_props};
+        let (next, id) = self.doc.definitions.as_ref()?.with_style_xml(raw)?;
+        let c = next.cascade();
+        let f = c.table_region(Some(&id), &crate::docx::style_xml::region_kinds(region)).format;
+        let (tbl, tc) = (tbl_props(&f.table, &c.colours), tc_props(&f.cell, &c.colours));
         // The whole table's edges are the table's; a part's, its cells'.
-        let b = if region.is_none() { &r.tbl.borders } else { &r.tc.borders };
-        let shd = r.tc.shd.clone();
+        let b = if region.is_none() { &tbl.borders } else { &tc.borders };
+        let shd = tc.shd.clone();
         let mut v = self.borders_shading_values(None, false)?;
         (v.top, v.bottom, v.left, v.right) = (line(&b.top), line(&b.bottom), line(&b.left), line(&b.right));
         (v.between, v.inside_vertical) = (line(&b.inside_h), line(&b.inside_v));
-        (v.diagonal_down, v.diagonal_up) = (line(&r.tc.borders.tl2br), line(&r.tc.borders.tr2bl));
+        (v.diagonal_down, v.diagonal_up) = (line(&tc.borders.tl2br), line(&tc.borders.tr2bl));
         v.apply_to = ShadingTarget::Cell;
-        let shd = shd.filter(|s| s.pattern != "nil");
-        v.fill = shd.as_ref().map_or(r.tc.shading.flatten(), |s| s.fill).map_or(NoneOr::None, |c| NoneOr::Value(Color(c)));
-        v.pattern = shd.as_ref().map_or(ShadingPattern::Clear, |s| ShadingPattern::of_val(&s.pattern));
+        let shd = shd.filter(|s| s.pattern != crate::docx::props::ShadingPattern::Nil);
+        v.fill = shd.as_ref().map_or(tc.shading.flatten(), |s| s.fill).map_or(NoneOr::None, |c| NoneOr::Value(Color(c)));
+        v.pattern = shd.as_ref().map_or(ShadingPattern::Clear, |s| ShadingPattern::of_val(&crate::docx::line_style::shading_val(s.pattern)));
         v.pattern_color = shd.as_ref().and_then(|s| s.color).map_or(AutoOr::Auto, |c| AutoOr::Value(Color(c)));
         v.setting = crate::services::dialogs::border_setting(&v, false);
         if let Some(l) =
@@ -92,10 +93,10 @@ impl Editor {
         };
         (v.top, v.left, v.bottom, v.right, v.between, v.inside_vertical) =
             (line(&edges[0]), line(&edges[1]), line(&edges[2]), line(&edges[3]), line(&edges[4]), line(&edges[5]));
-        let shd = shd.filter(|s| s.pattern != "nil");
+        let shd = shd.filter(|s| s.pattern != crate::docx::props::ShadingPattern::Nil);
         v.apply_to = target;
         v.fill = shd.as_ref().and_then(|s| s.fill).map_or(NoneOr::None, |c| NoneOr::Value(Color(c)));
-        v.pattern = shd.as_ref().map_or(ShadingPattern::Clear, |s| ShadingPattern::of_val(&s.pattern));
+        v.pattern = shd.as_ref().map_or(ShadingPattern::Clear, |s| ShadingPattern::of_val(&crate::docx::line_style::shading_val(s.pattern)));
         v.pattern_color = shd.as_ref().and_then(|s| s.color).map_or(AutoOr::Auto, |c| AutoOr::Value(Color(c)));
         v.setting = crate::services::dialogs::border_setting(&v, false);
         // The line new edges take: the first edge's, else the default pen.
@@ -111,9 +112,15 @@ impl Editor {
 
     /// A cell's shading as written: its table style's for the cell's region, under its own.
     pub(super) fn cell_shd(&self, t: &crate::docx::Table, (r, k): (usize, usize), cell: &crate::docx::Cell) -> Option<crate::docx::props::Shd> {
-        let res = self.doc.resolver.as_ref();
+        let res = self.doc.definitions.as_ref();
         let flat = || {
-            cell.shading.map(|f| crate::docx::props::Shd { pattern: "clear".into(), color: None, fill: Some(f), color_theme: None, fill_theme: None })
+            cell.shading.map(|f| crate::docx::props::Shd {
+                pattern: crate::docx::props::ShadingPattern::Clear,
+                color: None,
+                fill: Some(f),
+                color_theme: None,
+                fill_theme: None,
+            })
         };
         let Some(res) = res else { return flat() };
         let look = t.look.unwrap_or(crate::docx::props::Look {
@@ -126,10 +133,9 @@ impl Editor {
         });
         let headers = t.rows.iter().enumerate().take_while(|(i, r)| r.header || *i == 0 && look.first_row).count();
         let ncols = t.rows.get(r).map_or(0, |row| row.cells.len());
-        let mut tcp = res.cell_region(t.style_id.as_deref(), look, t.bands, (r, k), (t.rows.len(), ncols), headers).tc.clone();
-        if let Some(raw) = cell.direct.0.as_deref() {
-            tcp.merge(&self.cx().parse(raw, |_, n| crate::docx::props::TcProps::parse(Some(n), &res.styles.colours)).unwrap_or_default());
-        }
+        let c = res.cascade();
+        let region = c.cell_region(t.style_id.as_deref(), look, t.bands, (r, k), (t.rows.len(), ncols), headers);
+        let tcp = crate::docx::table_props::cell_on(&region.format.cell, cell.direct.get(), &c.colours);
         tcp.shd.or_else(flat)
     }
 
@@ -172,9 +178,9 @@ impl Editor {
             }
         };
         // The shading as written: its pattern and colors; else the resolved fill.
-        let shd = if text { run.shd.clone() } else { p.shd.clone() }.filter(|s| s.pattern != "nil");
+        let shd = if text { run.shd.clone() } else { p.shd.clone() }.filter(|s| s.pattern != crate::docx::props::ShadingPattern::Nil);
         let fill = shd.as_ref().map_or(if text { run.shading } else { p.shading }, |s| s.fill);
-        let pattern = shd.as_ref().map_or(ShadingPattern::Clear, |s| ShadingPattern::of_val(&s.pattern));
+        let pattern = shd.as_ref().map_or(ShadingPattern::Clear, |s| ShadingPattern::of_val(&crate::docx::line_style::shading_val(s.pattern)));
         let pattern_color = shd.as_ref().and_then(|s| s.color).map_or(AutoOr::Auto, |c| AutoOr::Value(Color(c)));
         // Text has one border, a box: every edge is its line.
         let boxed = text.then(|| line(&run.border));
@@ -213,10 +219,10 @@ impl Editor {
             (v.page_top, v.page_bottom, v.page_left, v.page_right) = (line(&b.top), line(&b.bottom), line(&b.left), line(&b.right));
             v.page_offset_from =
                 if b.offset_from_page { crate::api::command::PageBorderOffset::Page } else { crate::api::command::PageBorderOffset::Text };
-            v.page_display = match b.display.as_str() {
-                "firstPage" => crate::api::command::PageBorderDisplay::FirstPage,
-                "notFirstPage" => crate::api::command::PageBorderDisplay::NotFirstPage,
-                _ => crate::api::command::PageBorderDisplay::AllPages,
+            v.page_display = match b.display {
+                crate::docx::PageBorderDisplay::FirstPage => crate::api::command::PageBorderDisplay::FirstPage,
+                crate::docx::PageBorderDisplay::NotFirstPage => crate::api::command::PageBorderDisplay::NotFirstPage,
+                crate::docx::PageBorderDisplay::AllPages => crate::api::command::PageBorderDisplay::AllPages,
             };
             v.page_setting = crate::services::dialogs::page_border_setting(&v, b.bottom.as_ref().is_some_and(|x| x.shadow));
         }

@@ -168,7 +168,7 @@ pub(super) fn shown_place(doc: &Document, idx: &DocIndex, pos: Position) -> Opti
     }
     let blocks = idx.blocks(doc, slot.container)?;
     let p = para_of(blocks, slot.block)?;
-    if !p.inlines.iter().any(|i| matches!(i, Inline::Opaque(o) if o.field.is_some())) {
+    if !p.inlines.iter().any(|i| matches!(i, Inline::FieldEdge { .. })) {
         return None;
     }
     let mut braced = false;
@@ -215,7 +215,7 @@ pub(super) fn fold_step(doc: &Document, idx: &DocIndex, pos: Position, forward: 
     let slot = idx.para_slot(para)?;
     let blocks = idx.blocks(doc, slot.container)?;
     let p = para_of(blocks, slot.block)?;
-    if !p.inlines.iter().any(|i| matches!(i, Inline::Opaque(o) if o.field.is_some())) {
+    if !p.inlines.iter().any(|i| matches!(i, Inline::FieldEdge { .. })) {
         return None;
     }
     if forward {
@@ -637,14 +637,14 @@ impl Editor {
     /// paragraph before its end's.
     fn show_code(&mut self, tx: &mut super::Tx, f: &SpanField) -> bool {
         let Some(p) = self.span_para(f, f.start.0) else { return false };
-        let Some(Inline::Opaque(o)) = p.inlines.get(f.start.1) else { return false };
-        let Some(FieldEdge::Start { code, .. }) = &o.field else { return false };
-        let run = o.run.clone().unwrap_or_else(|| p.mark.clone());
-        let mut with = vec![start_in_view(o, code.clone(), FieldView::Code)];
+        let Some(Inline::FieldEdge { edge, run }) = p.inlines.get(f.start.1) else { return false };
+        let FieldEdge::Start { code, .. } = &edge.kind else { return false };
+        let run = run.clone();
+        let mut with = vec![start_in_view(edge, &run, code.clone(), FieldView::Code)];
         if !code.is_empty() {
             with.push(Inline::Text(code.clone(), run.clone()));
         }
-        with.push(FieldEdge::Code.inline("", run));
+        with.push(FieldEdge::Code.inline(run));
         let step = swap(p, f.start.1, with);
         if self.apply_step(tx, step).is_err() {
             return false;
@@ -653,7 +653,7 @@ impl Editor {
             let Some(q) = self.span_para(f, b) else { continue };
             let len = para_len(q);
             let mark = q.mark.clone();
-            let step = Step::Text { para: ParaId(q.id), range: len..len, with: vec![FieldEdge::Fold.inline("", mark)], edges: Edges::default() };
+            let step = Step::Text { para: ParaId(q.id), range: len..len, with: vec![FieldEdge::Fold.inline(mark)], edges: Edges::default() };
             if self.apply_step(tx, step).is_err() {
                 return false;
             }
@@ -666,7 +666,7 @@ impl Editor {
     fn show_result(&mut self, tx: &mut super::Tx, f: &SpanField) -> bool {
         let Some(blocks) = self.index.blocks(&self.doc, f.container) else { return false };
         let Some(p) = para_of(blocks, f.start.0) else { return false };
-        let Some(Inline::Opaque(o)) = p.inlines.get(f.start.1) else { return false };
+        let Some(Inline::FieldEdge { edge, run }) = p.inlines.get(f.start.1) else { return false };
         let k = f.start.1;
         let close = close_after(blocks, f.start);
         let s = units_before(&p.inlines, k);
@@ -675,7 +675,7 @@ impl Editor {
             Some((cb, ck)) if cb == f.start.0 => (Unit(units_before(&p.inlines, ck) + 1), ck + 1),
             _ => (para_len(p), p.inlines.iter().rposition(|i| i.units() > 0).map_or(k + 1, |j| j + 1)),
         };
-        let mut with = vec![start_in_view(o, span_code_text(&p.inlines, k), FieldView::Result)];
+        let mut with = vec![start_in_view(edge, run, span_code_text(&p.inlines, k), FieldView::Result)];
         with.extend(p.inlines[k + 1..upto.max(k + 1)].iter().filter(|i| i.units() == 0 && !matches!(i, Inline::Text(..))).cloned());
         let split = close.filter(|c| c.0 != f.start.0);
         let step = Step::Text { para: ParaId(p.id), range: Unit(s)..to, with, edges: Edges::default() };

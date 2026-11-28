@@ -373,7 +373,7 @@ pub enum FillValue {
 impl FillValue {
     /// The fill in the model (`None` for `fromStyle`); `image` adds a picture's bytes to the document, giving its
     /// index.
-    pub(crate) fn to_model(&self, image: &mut dyn FnMut(&[u8]) -> Option<usize>) -> Result<Option<Fill>, String> {
+    pub(crate) fn to_model(&self, image: &mut dyn FnMut(&[u8]) -> Option<crate::docx::ResourceId>) -> Result<Option<Fill>, String> {
         let pct = |v: f64| Pct((v * 100000.0).round() as i32);
         Ok(Some(match self {
             FillValue::None => Fill::None,
@@ -400,7 +400,7 @@ impl FillValue {
                 bg: background.to_model()?,
             },
             FillValue::Picture { image: bytes, stretch, tile, rotate_with_shape } => {
-                let index = image(&bytes.0).ok_or("the picture isn't an image the engine reads")?;
+                let id = image(&bytes.0).ok_or("the picture isn't an image the engine reads")?;
                 let mode = match tile {
                     Some(t) => {
                         for v in [t.scale_x, t.scale_y] {
@@ -433,14 +433,14 @@ impl FillValue {
                     }
                 };
                 let rot_with_shape = rotate_with_shape.unwrap_or(true);
-                Fill::Blip(paint::BlipFill { image: Some(index), src: [Pct(0); 4], mode, adjust: Vec::new(), rot_with_shape })
+                Fill::Blip(paint::BlipFill { image: Some(id), src: [Pct(0); 4], mode, adjust: Vec::new(), rot_with_shape })
             }
             FillValue::FromStyle => return Ok(None),
         }))
     }
 
     /// A model fill as written; `placeholder` stands in for `phClr`; `images` are the document's.
-    pub(crate) fn of(f: &Fill, placeholder: Option<&Colour>, images: &[Vec<u8>]) -> FillValue {
+    pub(crate) fn of(f: &Fill, placeholder: Option<&Colour>, images: &crate::docx::Resources) -> FillValue {
         let c = |c: &Colour| ColourValue::of(c, placeholder);
         match f {
             Fill::None => FillValue::None,
@@ -486,7 +486,7 @@ impl FillValue {
                     }
                 };
                 FillValue::Picture {
-                    image: Bytes(b.image.and_then(|i| images.get(i)).cloned().unwrap_or_default()),
+                    image: Bytes(b.image.and_then(|i| images.get(i)).map(<[u8]>::to_vec).unwrap_or_default()),
                     stretch,
                     tile,
                     rotate_with_shape: Some(b.rot_with_shape),
@@ -765,7 +765,7 @@ pub struct LineChange {
 
 impl LineValue {
     /// A model line as written.
-    pub(crate) fn of(l: &paint::Line, placeholder: Option<&Colour>, images: &[Vec<u8>]) -> LineValue {
+    pub(crate) fn of(l: &paint::Line, placeholder: Option<&Colour>, images: &crate::docx::Resources) -> LineValue {
         let end = |e: &Option<paint::LineEnd>| {
             e.map(|e| Arrowhead {
                 kind: match e.kind {
@@ -827,7 +827,11 @@ fn size_to(s: ArrowSize) -> paint::EndSize {
 
 impl LineChange {
     /// `line` with the change applied (`None`: the style's line again). Errors name a bad value.
-    pub(crate) fn apply(&self, line: Option<&paint::Line>, image: &mut dyn FnMut(&[u8]) -> Option<usize>) -> Result<Option<paint::Line>, String> {
+    pub(crate) fn apply(
+        &self,
+        line: Option<&paint::Line>,
+        image: &mut dyn FnMut(&[u8]) -> Option<crate::docx::ResourceId>,
+    ) -> Result<Option<paint::Line>, String> {
         if self.fill == Some(FillValue::FromStyle) {
             return Ok(None);
         }
@@ -1768,7 +1772,7 @@ impl TextOutline {
     }
 
     fn of(l: &paint::Line) -> TextOutline {
-        let v = LineValue::of(l, None, &[]);
+        let v = LineValue::of(l, None, &Default::default());
         let fill = if v.fill == FillValue::FromStyle { FillValue::None } else { v.fill };
         TextOutline { width: v.width, fill, dash: v.dash, compound: v.compound, cap: v.cap, join: v.join }
     }
@@ -1843,7 +1847,7 @@ impl TextEffects {
     /// A run's effects as written.
     pub(crate) fn of(e: &crate::docx::model::TextEffects) -> TextEffects {
         TextEffects {
-            fill: e.fill.as_ref().map(|f| FillValue::of(f, None, &[])),
+            fill: e.fill.as_ref().map(|f| FillValue::of(f, None, &Default::default())),
             outline: e.outline.as_ref().map(TextOutline::of),
             shadow: e.shadow.as_ref().map(TextShadow::of),
             glow: e.glow.as_ref().map(|g| Glow { colour: ColourValue::of(&g.colour, None), radius: points(g.radius) }),

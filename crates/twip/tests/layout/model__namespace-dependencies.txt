@@ -1,0 +1,12 @@
+page 0 12240 15840
+  1440 2088 Main namespace bound to x on the document root
+  4197 2486 Bold and centred under the x prefix
+  3947 2883 Default namespace on this paragraph, italic and right aligned
+  1440 3281 Main namespace bound to w on this paragraph, underlined
+  1440 3726 Ligatures and a red text outline, w14 bound on the paragraph
+  1440 4168 Check box with w14 bound on the content control ☐
+  1440 896 Header under w: on the root
+  1440 1293 Header ligatures and outline, w14 bound on the run
+  1440 1691 Header heading level 1 collapsed, w15 bound on the paragraph
+  1440 14501 Footer in the default namespace, bold
+  1440 14899 Footer italic, no attributes anywhere

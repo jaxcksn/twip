@@ -3,7 +3,7 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
-use crate::docx::{Block, Document, ElementId, Inline, Paragraph, Table, TextBox};
+use crate::docx::{Block, Document, ElementId, HeaderFooterId, Inline, Paragraph, Table, TextBox};
 use crate::layout::{FloatId, ParaId, TableId};
 
 use super::position::{Place, Position, StoryId};
@@ -44,7 +44,7 @@ pub struct DocIndex {
     floats: HashMap<FloatId, ParaId>,
     links: HashMap<FloatId, (u32, bool)>,
     elements: HashMap<ElementId, HashSet<Loc>>,
-    parts: Vec<String>,
+    parts: Vec<HeaderFooterId>,
     pub flow: Option<u32>,
 }
 
@@ -73,17 +73,17 @@ impl DocIndex {
         DocIndex::build_with_parts(doc, &[])
     }
 
-    pub fn build_with_parts(doc: &Document, parts: &[String]) -> DocIndex {
+    pub fn build_with_parts(doc: &Document, parts: &[HeaderFooterId]) -> DocIndex {
         let mut parts = parts.to_vec();
-        let known: std::collections::HashSet<&str> = parts.iter().map(String::as_str).collect();
-        let more: Vec<String> = doc.stories.keys().filter(|k| !known.contains(k.as_str())).cloned().collect();
+        let known: HashSet<HeaderFooterId> = parts.iter().copied().collect();
+        let more: Vec<HeaderFooterId> = doc.stories.keys().filter(|k| !known.contains(k)).copied().collect();
         parts.extend(more);
         let mut idx = DocIndex { parts, ..DocIndex::default() };
         for (i, s) in doc.sections.iter().enumerate() {
             idx.add_blocks(Container::Section(i), &s.blocks);
         }
-        for (k, name) in idx.parts.clone().iter().enumerate() {
-            if let Some(blocks) = doc.stories.get(name) {
+        for (k, id) in idx.parts.clone().iter().enumerate() {
+            if let Some(blocks) = doc.stories.get(id) {
                 idx.add_blocks(Container::Story(StoryId::HeaderFooter(k as u32)), blocks);
             }
         }
@@ -275,15 +275,15 @@ impl DocIndex {
         }
     }
 
-    pub fn added_part(&mut self, doc: &Document, name: &str) {
-        let k = match self.parts.iter().position(|p| p == name) {
+    pub fn added_part(&mut self, doc: &Document, id: HeaderFooterId) {
+        let k = match self.parts.iter().position(|p| *p == id) {
             Some(k) => k,
             None => {
-                self.parts.push(name.to_string());
+                self.parts.push(id);
                 self.parts.len() - 1
             }
         };
-        if let Some(blocks) = doc.stories.get(name) {
+        if let Some(blocks) = doc.stories.get(&id) {
             self.add_blocks(Container::Story(StoryId::HeaderFooter(k as u32)), blocks);
         }
     }
@@ -296,7 +296,7 @@ impl DocIndex {
         removed.iter().for_each(|b| self.remove_block(b));
     }
 
-    pub fn parts(&self) -> &[String] {
+    pub fn parts(&self) -> &[HeaderFooterId] {
         &self.parts
     }
 
@@ -337,12 +337,12 @@ impl DocIndex {
         self.floats.get(&id).copied()
     }
 
-    pub fn header_footer(&self, name: &str) -> Option<StoryId> {
-        self.parts.iter().position(|p| p == name).map(|k| StoryId::HeaderFooter(k as u32))
+    pub fn header_footer(&self, id: HeaderFooterId) -> Option<StoryId> {
+        self.parts.iter().position(|p| *p == id).map(|k| StoryId::HeaderFooter(k as u32))
     }
 
-    pub fn part_name(&self, k: u32) -> Option<&str> {
-        self.parts.get(k as usize).map(String::as_str)
+    pub fn part(&self, k: u32) -> Option<HeaderFooterId> {
+        self.parts.get(k as usize).copied()
     }
 
     pub fn story(&self, container: Container) -> StoryId {
@@ -451,7 +451,7 @@ impl DocIndex {
     fn story_blocks<'d>(&self, doc: &'d Document, s: StoryId) -> Option<&'d Vec<Block>> {
         match s {
             StoryId::Body => None,
-            StoryId::HeaderFooter(k) => doc.stories.get(self.part_name(k)?),
+            StoryId::HeaderFooter(k) => doc.stories.get(&self.part(k)?),
             StoryId::Footnote(id) => doc.footnotes.get(&id),
             StoryId::Endnote(id) => doc.endnotes.get(&id),
             StoryId::TextBox(f) => self.text_box(doc, f).map(|tb| &tb.blocks),
@@ -462,7 +462,7 @@ impl DocIndex {
     fn story_blocks_mut<'d>(&self, doc: &'d mut Document, s: StoryId) -> Option<&'d mut Vec<Block>> {
         match s {
             StoryId::Body => None,
-            StoryId::HeaderFooter(k) => doc.stories.get_mut(self.part_name(k)?),
+            StoryId::HeaderFooter(k) => doc.stories.get_mut(&self.part(k)?),
             StoryId::Footnote(id) => doc.footnotes.get_mut(&id),
             StoryId::Endnote(id) => doc.endnotes.get_mut(&id),
             StoryId::TextBox(f) => {
@@ -604,7 +604,7 @@ mod tests {
 
     fn doc() -> Document {
         let bytes = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/editor/FX-NEST-3.docx")).expect("FX-NEST-3 fixture");
-        crate::docx::read_editable(&bytes).expect("FX-NEST-3 reads")
+        crate::docx::read_editable(&bytes).expect("FX-NEST-3 reads").0
     }
 
     #[test]

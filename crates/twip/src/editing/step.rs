@@ -1,10 +1,11 @@
 //! Edit steps
 
+use crate::docx::origin::ParagraphOrigin;
 use std::collections::HashSet;
 use std::ops::Range;
 use std::rc::Rc;
 
-use crate::docx::{Block, Document, Inline, Paragraph, Row, Run};
+use crate::docx::{Block, Document, HeaderFooterId, Inline, Paragraph, ResourceId, Row, Run, Session};
 use crate::layout::{Change, ParaId, TableId, Unit};
 
 use super::index::{Container, DocIndex};
@@ -61,12 +62,12 @@ pub enum Step {
         inlines: Vec<Inline>,
     },
     ImageData {
-        index: usize,
+        image: ResourceId,
         data: Vec<u8>,
         filled: bool,
     },
     HeaderPart {
-        name: String,
+        id: HeaderFooterId,
         section: usize,
         footer: bool,
         slot: usize,
@@ -112,17 +113,17 @@ pub enum Step {
         views: Vec<(crate::docx::FieldId, crate::docx::FieldView)>,
     },
     AddImage {
-        index: usize,
+        image: ResourceId,
         data: Option<Vec<u8>>,
     },
     /// The styles and numbering tables, and the lists added since reading.
-    Resolver {
-        resolver: Option<Rc<crate::docx::resolve::Resolver>>,
+    Definitions {
+        definitions: Option<Rc<crate::docx::definitions::Definitions>>,
         added: Vec<crate::docx::AddedList>,
     },
     /// The style, numbering and theme tables with a family renamed, and the renames the save applies.
     Fonts {
-        resolver: Option<Rc<crate::docx::resolve::Resolver>>,
+        definitions: Option<Rc<crate::docx::definitions::Definitions>>,
         renames: Vec<crate::docx::font_table::FontRename>,
     },
     DefaultTab(f64),
@@ -224,8 +225,8 @@ pub struct SectionBack {
 /// before one join back into it, and the stories they take out.
 #[derive(Clone, Debug)]
 pub enum Split {
-    Apart { backs: Vec<SectionBack>, stories: Vec<(String, Vec<Block>)> },
-    Joined { count: usize, stories: Vec<String> },
+    Apart { backs: Vec<SectionBack>, stories: Vec<(HeaderFooterId, Vec<Block>)> },
+    Joined { count: usize, stories: Vec<HeaderFooterId> },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -247,17 +248,17 @@ pub struct TableProps {
     /// The table's shading, its own over its style's.
     pub shd: Option<crate::docx::props::Shd>,
     pub alt: Option<Rc<crate::docx::TableAlt>>,
-    /// Its `w:tblPr` as written, its own shading in it.
-    pub direct: crate::docx::Raw,
+    /// Its authored properties, its own shading among them.
+    pub direct: crate::docx::table_props::TableDirect,
 }
 
 impl Step {
-    pub fn pictures_of(&self, images: &HashSet<usize>) -> i64 {
+    pub fn pictures_of(&self, images: &HashSet<ResourceId>) -> i64 {
         self.pictures_where(&|k| images.contains(&k))
     }
 
-    pub fn pictures_where(&self, images: &dyn Fn(usize) -> bool) -> i64 {
-        fn inlines(v: &[Inline], images: &dyn Fn(usize) -> bool) -> i64 {
+    pub fn pictures_where(&self, images: &dyn Fn(ResourceId) -> bool) -> i64 {
+        fn inlines(v: &[Inline], images: &dyn Fn(ResourceId) -> bool) -> i64 {
             v.iter()
                 .filter(|i| match i {
                     Inline::Picture(p, _) => p.image.is_some_and(images),
@@ -266,7 +267,7 @@ impl Step {
                 })
                 .count() as i64
         }
-        fn blocks(v: &[Block], images: &dyn Fn(usize) -> bool) -> i64 {
+        fn blocks(v: &[Block], images: &dyn Fn(ResourceId) -> bool) -> i64 {
             v.iter()
                 .map(|b| match b {
                     Block::Para(p) => inlines(&p.inlines, images),
@@ -287,7 +288,12 @@ impl Step {
     pub fn lays_out(&self) -> bool {
         !matches!(
             self,
-            Step::Control { .. } | Step::DataPart { .. } | Step::Comment { .. } | Step::AddImage { .. } | Step::Resolver { .. } | Step::Fonts { .. }
+            Step::Control { .. }
+                | Step::DataPart { .. }
+                | Step::Comment { .. }
+                | Step::AddImage { .. }
+                | Step::Definitions { .. }
+                | Step::Fonts { .. }
         )
     }
 }
@@ -582,7 +588,7 @@ pub fn run_of(i: &Inline) -> Option<&Run> {
         | Inline::FieldSep { run, .. }
         | Inline::FieldEnd { run, .. }
         | Inline::CommentRef { run, .. } => Some(run),
-        Inline::Bookmark(_) | Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::Opaque(_) => None,
+        Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::FieldEdge { .. } | Inline::Foreign(_) => None,
     }
 }
 
@@ -612,21 +618,19 @@ fn cut(inlines: &mut Vec<Inline>, u: Unit, after_markers: bool) -> usize {
 /// Moves the ends of the paragraphs a vanished mark joined onto `p`'s start past a splice of `range` with `added`
 /// units, or to `exact`: their ends before, when that moved them.
 fn shift_parts(p: &mut Paragraph, range: &Range<Unit>, added: u32, exact: Option<&[u32]>) -> Option<Rc<[u32]>> {
-    let src = p.src.as_mut().filter(|s| !s.joined.is_empty())?;
+    let joined = Some(p.joined_parts()).filter(|j| !j.is_empty())?;
     let (start, end) = (range.start.0, range.end.0);
-    let exact = exact.filter(|e| e.len() == src.joined.len());
+    let exact = exact.filter(|e| e.len() == joined.len());
     let moved = |k: usize, at: u32| match exact {
         Some(e) => e[k],
         None if at > start => at.max(end) - end + start + added,
         None => at,
     };
-    if src.joined.iter().enumerate().all(|(k, j)| moved(k, j.end) == j.end) {
+    if joined.iter().enumerate().all(|(k, j)| moved(k, j.end) == j.end) {
         return None;
     }
-    let before = src.joined.iter().map(|j| j.end).collect();
-    for (k, j) in Rc::make_mut(src).joined.iter_mut().enumerate() {
-        j.end = moved(k, j.end);
-    }
+    let before = joined.iter().map(|j| j.end).collect();
+    p.move_joined(moved);
     Some(before)
 }
 
@@ -721,7 +725,7 @@ fn units_of(inlines: &[Inline]) -> u32 {
 
 /// The line numbers' run, from the styles now in place.
 fn refresh_line_number_run(doc: &mut Document) {
-    if let Some(res) = &doc.resolver {
+    if let Some(res) = &doc.definitions {
         doc.line_number_run = Some(crate::docx::line_number_run(res));
     }
 }
@@ -758,7 +762,7 @@ pub(super) fn para_hint(idx: &DocIndex, para: ParaId, added: isize) -> Option<Ch
 // Apply
 
 impl Step {
-    pub fn apply(self, doc: &mut Document, idx: &mut DocIndex) -> Result<Applied, StepError> {
+    pub fn apply(self, doc: &mut Document, docx: &mut Session, idx: &mut DocIndex) -> Result<Applied, StepError> {
         match self {
             Step::Text { para, range, with, edges } => {
                 let p = idx.para_mut(doc, para).ok_or(StepError::Missing)?;
@@ -923,11 +927,11 @@ impl Step {
                 };
                 Ok(Applied { inverse: Step::Separator { key, blocks: old }, map: Map::Same, hint: None })
             }
-            Step::ImageData { index, data, filled } => {
-                let slot = doc.images.get_mut(index).ok_or(StepError::Missing)?;
+            Step::ImageData { image, data, filled } => {
+                let slot = doc.images.get_mut(image).ok_or(StepError::Missing)?;
                 let old = std::mem::replace(slot, data);
-                let was = if filled { !doc.filled.insert(index) } else { doc.filled.remove(&index) };
-                Ok(Applied { inverse: Step::ImageData { index, data: old, filled: was }, map: Map::Same, hint: None })
+                let was = if filled { !doc.filled.insert(image) } else { doc.filled.remove(&image) };
+                Ok(Applied { inverse: Step::ImageData { image, data: old, filled: was }, map: Map::Same, hint: None })
             }
             Step::BuildingBlock { k, part } => {
                 let g = doc.glossary.get_or_insert_with(Default::default);
@@ -951,29 +955,29 @@ impl Step {
                 }
                 Ok(Applied { inverse: Step::BuildingBlock { k, part: old }, map: Map::Same, hint: None })
             }
-            Step::HeaderPart { name, section, footer, slot, blocks } => {
+            Step::HeaderPart { id, section, footer, slot, blocks } => {
                 let sec = doc.sections.get_mut(section).ok_or(StepError::Missing)?;
                 let refs = if footer { &mut sec.footers } else { &mut sec.headers };
                 let r = refs.get_mut(slot).ok_or(StepError::OutOfRange)?;
                 match blocks {
-                    Some(_) if r.is_some() || doc.stories.contains_key(&name) => return Err(StepError::OutOfRange),
-                    None if r.as_deref() != Some(name.as_str()) || !doc.stories.contains_key(&name) => return Err(StepError::Missing),
+                    Some(_) if r.is_some() || doc.stories.contains_key(&id) => return Err(StepError::OutOfRange),
+                    None if *r != Some(id) || !doc.stories.contains_key(&id) => return Err(StepError::Missing),
                     _ => {}
                 }
                 // Its `w:sectPr` loses the reference of a header it no longer has.
-                doc.edited_sections.insert(section);
+                docx.edited_sections.insert(section);
                 match blocks {
                     Some(b) => {
-                        *r = Some(name.clone());
-                        doc.stories.insert(name.clone(), b);
-                        idx.added_part(doc, &name);
-                        Ok(Applied { inverse: Step::HeaderPart { name, section, footer, slot, blocks: None }, map: Map::Same, hint: None })
+                        *r = Some(id);
+                        doc.stories.insert(id, b);
+                        idx.added_part(doc, id);
+                        Ok(Applied { inverse: Step::HeaderPart { id, section, footer, slot, blocks: None }, map: Map::Same, hint: None })
                     }
                     None => {
                         *r = None;
-                        let b = doc.stories.remove(&name).ok_or(StepError::Missing)?;
+                        let b = doc.stories.remove(&id).ok_or(StepError::Missing)?;
                         idx.removed_part(&b);
-                        Ok(Applied { inverse: Step::HeaderPart { name, section, footer, slot, blocks: Some(b) }, map: Map::Same, hint: None })
+                        Ok(Applied { inverse: Step::HeaderPart { id, section, footer, slot, blocks: Some(b) }, map: Map::Same, hint: None })
                     }
                 }
             }
@@ -990,14 +994,14 @@ impl Step {
                     (Some(k), Some(p)) => Some(std::mem::replace(&mut doc.data_parts[k], p)),
                     (None, Some(p)) => {
                         if let Some(src) = &p.src {
-                            doc.removed_data.retain(|r| r != src);
+                            docx.removed_data.retain(|r| r != src);
                         }
                         doc.data_parts.push(p);
                         None
                     }
                     (Some(k), None) => {
                         let p = doc.data_parts.remove(k);
-                        doc.removed_data.extend(p.src.clone());
+                        docx.removed_data.extend(p.src.clone());
                         Some(p)
                     }
                     (None, None) => None,
@@ -1025,31 +1029,30 @@ impl Step {
                 }
                 Ok(Applied { inverse: Step::FieldViews { para, views: old }, map: Map::Same, hint: para_hint(idx, para, 0) })
             }
-            Step::AddImage { index, data: Some(data) } => {
-                if index != doc.images.len() {
+            Step::AddImage { image, data: Some(data) } => {
+                if doc.images.contains(image) {
                     return Err(StepError::OutOfRange);
                 }
-                doc.images.push(data);
-                Ok(Applied { inverse: Step::AddImage { index, data: None }, map: Map::Same, hint: None })
+                doc.images.insert(image, data);
+                Ok(Applied { inverse: Step::AddImage { image, data: None }, map: Map::Same, hint: None })
             }
-            Step::AddImage { index, data: None } => {
-                if index + 1 != doc.images.len() {
-                    return Err(StepError::OutOfRange);
-                }
-                let data = doc.images.pop();
-                Ok(Applied { inverse: Step::AddImage { index, data }, map: Map::Same, hint: None })
+            Step::AddImage { image, data: None } => {
+                let data = Some(doc.images.remove(image).ok_or(StepError::Missing)?);
+                Ok(Applied { inverse: Step::AddImage { image, data }, map: Map::Same, hint: None })
             }
-            Step::Resolver { resolver, added } => {
-                let resolver = std::mem::replace(&mut doc.resolver, resolver);
-                let added = std::mem::replace(&mut doc.added_lists, added);
+            Step::Definitions { definitions, added } => {
+                let definitions = std::mem::replace(&mut doc.definitions, definitions);
+                in_step(doc);
+                let added = std::mem::replace(&mut docx.added_lists, added);
                 refresh_line_number_run(doc);
-                Ok(Applied { inverse: Step::Resolver { resolver, added }, map: Map::Same, hint: None })
+                Ok(Applied { inverse: Step::Definitions { definitions, added }, map: Map::Same, hint: None })
             }
-            Step::Fonts { resolver, renames } => {
-                let resolver = std::mem::replace(&mut doc.resolver, resolver);
-                let renames = std::mem::replace(&mut doc.font_renames, renames);
+            Step::Fonts { definitions, renames } => {
+                let definitions = std::mem::replace(&mut doc.definitions, definitions);
+                in_step(doc);
+                let renames = std::mem::replace(&mut docx.font_renames, renames);
                 refresh_line_number_run(doc);
-                Ok(Applied { inverse: Step::Fonts { resolver, renames }, map: Map::Same, hint: None })
+                Ok(Applied { inverse: Step::Fonts { definitions, renames }, map: Map::Same, hint: None })
             }
             Step::DefaultTab(v) => {
                 let old = std::mem::replace(&mut doc.settings.default_tab, v);
@@ -1099,8 +1102,8 @@ impl Step {
             }
             Step::SectionBreak { section, back } => {
                 let n = doc.sections.len();
-                if doc.section_sources.len() != n {
-                    doc.section_sources = vec![1; n];
+                if docx.section_sources.len() != n {
+                    docx.section_sources = vec![1; n];
                 }
                 let inverse = match back {
                     None => {
@@ -1109,26 +1112,26 @@ impl Step {
                         }
                         let mut gone = doc.sections.remove(section);
                         let blocks = std::mem::take(&mut gone.blocks);
-                        let back = SectionBack { blocks: blocks.len(), section: gone, sources: doc.section_sources.remove(section), edited: false };
+                        let back = SectionBack { blocks: blocks.len(), section: gone, sources: docx.section_sources.remove(section), edited: false };
                         doc.sections[section].blocks.splice(0..0, blocks);
-                        doc.section_sources[section] += back.sources;
-                        let edited = doc.edited_sections.remove(&section);
-                        doc.edited_sections = doc.edited_sections.iter().map(|&k| if k > section { k - 1 } else { k }).collect();
+                        docx.section_sources[section] += back.sources;
+                        let edited = docx.edited_sections.remove(&section);
+                        docx.edited_sections = docx.edited_sections.iter().map(|&k| if k > section { k - 1 } else { k }).collect();
                         Step::SectionBreak { section, back: Some(Box::new(SectionBack { edited, ..back })) }
                     }
                     Some(back) => {
                         let SectionBack { blocks, section: mut s, sources, edited } = *back;
                         let next = doc.sections.get_mut(section).ok_or(StepError::Missing)?;
-                        if blocks >= next.blocks.len() || doc.section_sources[section] < sources {
+                        if blocks >= next.blocks.len() || docx.section_sources[section] < sources {
                             return Err(StepError::OutOfRange);
                         }
                         s.blocks = next.blocks.drain(..blocks).collect();
-                        doc.section_sources[section] -= sources;
-                        doc.section_sources.insert(section, sources);
+                        docx.section_sources[section] -= sources;
+                        docx.section_sources.insert(section, sources);
                         doc.sections.insert(section, s);
-                        doc.edited_sections = doc.edited_sections.iter().map(|&k| if k >= section { k + 1 } else { k }).collect();
+                        docx.edited_sections = docx.edited_sections.iter().map(|&k| if k >= section { k + 1 } else { k }).collect();
                         if edited {
-                            doc.edited_sections.insert(section);
+                            docx.edited_sections.insert(section);
                         }
                         Step::SectionBreak { section, back: None }
                     }
@@ -1141,12 +1144,12 @@ impl Step {
             }
             Step::Sections { section, split } => {
                 let n = doc.sections.len();
-                if doc.section_sources.len() != n {
-                    doc.section_sources = vec![1; n];
+                if docx.section_sources.len() != n {
+                    docx.section_sources = vec![1; n];
                 }
                 let inverse = match *split {
-                    Split::Apart { backs, stories } => split_sections(doc, section, backs, stories)?,
-                    Split::Joined { count, stories } => join_sections(doc, section, count, stories)?,
+                    Split::Apart { backs, stories } => split_sections(doc, docx, section, backs, stories)?,
+                    Split::Joined { count, stories } => join_sections(doc, docx, section, count, stories)?,
                 };
                 let parts = idx.parts().to_vec();
                 let flow = idx.flow;
@@ -1159,7 +1162,7 @@ impl Step {
                 let old = Box::new(s.page());
                 s.set_page(*page);
                 let old_change = std::mem::replace(&mut s.change, change);
-                doc.edited_sections.insert(section);
+                docx.edited_sections.insert(section);
                 Ok(Applied { inverse: Step::SectionPage { section, page: old, change: old_change }, map: Map::Same, hint: None })
             }
             Step::TableProps { table, props } => {
@@ -1304,12 +1307,18 @@ impl Split {
 
 // Section splits
 
-fn split_sections(doc: &mut Document, section: usize, backs: Vec<SectionBack>, stories: Vec<(String, Vec<Block>)>) -> Result<Split, StepError> {
+fn split_sections(
+    doc: &mut Document,
+    docx: &mut Session,
+    section: usize,
+    backs: Vec<SectionBack>,
+    stories: Vec<(HeaderFooterId, Vec<Block>)>,
+) -> Result<Split, StepError> {
     let (blocks, sources) = backs.iter().fold((0, 0), |(b, s), x| (b + x.blocks, s + x.sources));
     let next = doc.sections.get_mut(section).ok_or(StepError::Missing)?;
     if backs.is_empty()
         || blocks >= next.blocks.len()
-        || doc.section_sources[section] < sources
+        || docx.section_sources[section] < sources
         || stories.iter().any(|(k, _)| doc.stories.contains_key(k))
     {
         return Err(StepError::OutOfRange);
@@ -1329,33 +1338,42 @@ fn split_sections(doc: &mut Document, section: usize, backs: Vec<SectionBack>, s
         }
     }
     drop(taken);
-    doc.section_sources[section] -= sources;
-    doc.section_sources.splice(section..section, made_sources);
+    docx.section_sources[section] -= sources;
+    docx.section_sources.splice(section..section, made_sources);
     doc.sections.splice(section..section, made);
-    doc.edited_sections = doc.edited_sections.iter().map(|&k| if k >= section { k + count } else { k }).chain(edited).collect();
-    let names = stories.iter().map(|(k, _)| k.clone()).collect();
+    docx.edited_sections = docx.edited_sections.iter().map(|&k| if k >= section { k + count } else { k }).chain(edited).collect();
+    let ids = stories.iter().map(|(k, _)| *k).collect();
     doc.stories.extend(stories);
-    Ok(Split::Joined { count, stories: names })
+    Ok(Split::Joined { count, stories: ids })
 }
 
-fn join_sections(doc: &mut Document, section: usize, count: usize, names: Vec<String>) -> Result<Split, StepError> {
+fn join_sections(doc: &mut Document, docx: &mut Session, section: usize, count: usize, ids: Vec<HeaderFooterId>) -> Result<Split, StepError> {
     let end = section + count;
     // Into a section with blocks: splitting them back leaves it some.
-    if count == 0 || end >= doc.sections.len() || doc.sections[end].blocks.is_empty() || names.iter().any(|k| !doc.stories.contains_key(k)) {
+    if count == 0 || end >= doc.sections.len() || doc.sections[end].blocks.is_empty() || ids.iter().any(|k| !doc.stories.contains_key(k)) {
         return Err(StepError::OutOfRange);
     }
     let mut blocks = Vec::new();
     let mut backs = Vec::with_capacity(count);
-    for (k, (mut s, sources)) in doc.sections.drain(section..end).zip(doc.section_sources.drain(section..end)).enumerate() {
+    for (k, (mut s, sources)) in doc.sections.drain(section..end).zip(docx.section_sources.drain(section..end)).enumerate() {
         let b = std::mem::take(&mut s.blocks);
-        backs.push(SectionBack { blocks: b.len(), section: s, sources, edited: doc.edited_sections.contains(&(section + k)) });
+        backs.push(SectionBack { blocks: b.len(), section: s, sources, edited: docx.edited_sections.contains(&(section + k)) });
         blocks.extend(b);
     }
     doc.sections[section].blocks.splice(0..0, blocks);
-    doc.section_sources[section] += backs.iter().map(|b| b.sources).sum::<usize>();
-    doc.edited_sections = doc.edited_sections.iter().filter(|&&k| k < section || k >= end).map(|&k| if k >= end { k - count } else { k }).collect();
-    let stories = names.into_iter().filter_map(|k| doc.stories.remove(&k).map(|b| (k, b))).collect();
+    docx.section_sources[section] += backs.iter().map(|b| b.sources).sum::<usize>();
+    docx.edited_sections = docx.edited_sections.iter().filter(|&&k| k < section || k >= end).map(|&k| if k >= end { k - count } else { k }).collect();
+    let stories = ids.into_iter().filter_map(|k| doc.stories.remove(&k).map(|b| (k, b))).collect();
     Ok(Split::Apart { backs, stories })
+}
+
+/// In a debug build, the document's typed definitions brought in step with its resolver, which checks they agree.
+fn in_step(doc: &Document) {
+    if cfg!(debug_assertions)
+        && let Some(r) = &doc.definitions
+    {
+        r.typed();
+    }
 }
 
 #[cfg(test)]
@@ -1365,8 +1383,8 @@ mod tests {
         let mut doc = crate::docx::read(&crate::editing::tests::blank_body("<w:p/>")).expect("reads");
         let empty = crate::docx::Section { blocks: Vec::new(), ..doc.sections[0].clone() };
         doc.sections.push(empty);
-        doc.section_sources = vec![1, 0];
-        assert!(super::join_sections(&mut doc, 0, 1, Vec::new()).is_err());
+        let mut docx = crate::docx::Session { section_sources: vec![1, 0], ..Default::default() };
+        assert!(super::join_sections(&mut doc, &mut docx, 0, 1, Vec::new()).is_err());
         assert_eq!((doc.sections.len(), doc.sections[0].blocks.len()), (2, 1), "as it was");
     }
 }

@@ -59,7 +59,7 @@ fn a_default_tab_stop_set_in_a_sub_template_relays_the_document_on_close() {
     assert_eq!(e.editing_sub_template(), None);
     let live = line_ends(&mut e);
     assert_ne!(live, before, "the tab stop moves the tab");
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut fresh = Editor::open(&saved, fonts()).expect("reopens");
     fresh.complete(fonts());
     assert_eq!(live, line_ends(&mut fresh));

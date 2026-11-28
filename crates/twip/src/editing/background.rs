@@ -4,8 +4,9 @@ use crate::api::command::{PictureWatermark, TextWatermark, Watermark, WatermarkL
 use crate::api::drawing::{ColourValue, FillValue};
 use crate::api::value::{Bytes, Color, Points};
 use crate::docx::watermark::{self as wm, PictureMark, TextMark};
-use crate::docx::{Block, Float, Inline, ThemeColourRef};
-use crate::drawing::paint::{BlipAdjust, BlipMode, Fill};
+use crate::docx::{Block, Float, HeaderFooterId, Inline, ThemeColourRef};
+use crate::drawing::paint::{BlipAdjust, BlipMode, Fill, PatternPreset};
+use crate::drawing::patterns;
 use crate::font::Fonts;
 use crate::layout::ParaId;
 
@@ -27,7 +28,7 @@ impl Editor {
         let now = match self.background_of(&v, &was) {
             Ok(b) => b,
             Err(why) => {
-                self.pending_images.clear();
+                self.pending_images = Default::default();
                 return Outcome::Refused(crate::api::error::Error::invalid(why));
             }
         };
@@ -72,8 +73,9 @@ impl Editor {
                             return kept;
                         }
                         crate::docx::image::image_type(bytes)?;
-                        added = Some(bytes.to_vec());
-                        Some(self.doc.images.len() + self.pending_images.len())
+                        let id = crate::docx::ResourceId::next();
+                        added = Some((id, bytes.to_vec()));
+                        Some(id)
                     })?
                     .ok_or("no fill")?;
                 let fill = page_gradient(one_colour(fill, palette), palette)?;
@@ -99,7 +101,7 @@ impl Editor {
             if let Fill::Blip(b) = f
                 && matches!(b.mode, BlipMode::Tile { .. })
                 && let Some(BlipAdjust::Duotone([fg, bg])) = b.adjust.iter().find(|a| matches!(a, BlipAdjust::Duotone(_)))
-                && let Some(p) = b.image.and_then(|i| self.doc.images.get(i)).and_then(|d| crate::drawing::patterns::of_picture(d))
+                && let Some(p) = b.image.and_then(|i| self.doc.images.get(i)).and_then(pattern_of_picture)
             {
                 return Some(FillValue::Pattern {
                     preset: p.name().into(),
@@ -107,7 +109,7 @@ impl Editor {
                     background: ColourValue::of(bg, None),
                 });
             }
-            return Some(FillValue::of(f, None, &[]));
+            return Some(FillValue::of(f, None, &Default::default()));
         }
         let colour = self.doc.page_colour?;
         let value = super::theme::colour_value(colour, self.doc.page_colour_theme);
@@ -130,7 +132,7 @@ impl Editor {
     pub fn watermark_image(&self, section: usize) -> Option<&[u8]> {
         let (f, _) = self.shown_watermark(section)?;
         let wm::Watermark::Picture(p) = wm::of(f)? else { return None };
-        self.doc.images.get(p.image?).map(Vec::as_slice)
+        self.doc.images.get(p.image?)
     }
 
     /// The page background's picture (Fill Effects > Picture or Texture): its image's bytes.
@@ -139,7 +141,7 @@ impl Editor {
             crate::drawing::paint::Fill::Blip(b) => b.image?,
             _ => return None,
         };
-        self.doc.images.get(k).map(Vec::as_slice)
+        self.doc.images.get(k)
     }
 
     /// The watermark section `section`'s pages show: the first in its headers, else in any header.
@@ -158,7 +160,7 @@ impl Editor {
                 italic: Some(t.italic),
             }),
             wm::Watermark::Picture(p) => {
-                let natural = p.image.and_then(|i| self.doc.images.get(i)).and_then(|d| natural_size(d));
+                let natural = p.image.and_then(|i| self.doc.images.get(i)).and_then(natural_size);
                 // Auto: the size that fits the section's margins.
                 let auto = natural.map(|(w, h)| picture_size((w, h), None, self.margin_area(section)));
                 let scale = match (natural, auto) {
@@ -218,9 +220,9 @@ impl Editor {
         };
         let mut tx = self.begin("Watermark");
         let mut changed = false;
-        for (name, section) in self.header_parts() {
+        for (part, section) in self.header_parts() {
             let Some(f) = make(self, section) else { continue };
-            let Some(steps) = self.restyled(&name, Some(f), language.as_deref()) else { continue };
+            let Some(steps) = self.restyled(part, Some(f), language.as_deref()) else { continue };
             for s in steps {
                 if self.step(&mut tx, s).is_err() {
                     self.abort(tx);
@@ -239,7 +241,7 @@ impl Editor {
                 std::rc::Rc::make_mut(&mut run).lang.clone_from(l);
             }
             para.inlines.push(Inline::Float(Box::new(f), run));
-            let step = Step::HeaderPart { name: self.new_story_name(false), section: 0, footer: false, slot, blocks: Some(vec![Block::Para(para)]) };
+            let step = Step::HeaderPart { id: HeaderFooterId::next(), section: 0, footer: false, slot, blocks: Some(vec![Block::Para(para)]) };
             if self.step(&mut tx, step).is_err() {
                 self.abort(tx);
                 return Outcome::Unchanged("the header can't change");
@@ -256,9 +258,9 @@ impl Editor {
     /// Takes the watermarks out of every header.
     pub(super) fn remove_watermark(&mut self, fonts: &Fonts) -> Outcome {
         let mut tx = self.begin("Remove Watermark");
-        let names: Vec<String> = self.doc.stories.keys().cloned().collect();
-        for name in names {
-            for s in self.restyled(&name, None, None).unwrap_or_default() {
+        let parts: Vec<HeaderFooterId> = self.doc.stories.keys().copied().collect();
+        for part in parts {
+            for s in self.restyled(part, None, None).unwrap_or_default() {
                 if self.step(&mut tx, s).is_err() {
                     self.abort(tx);
                     return Outcome::Unchanged("the header can't change");
@@ -275,7 +277,10 @@ impl Editor {
     /// The watermark `w` describes, with a picture's own size and scale and its image (new, or the index of the one
     /// the watermark keeps); checked.
     #[allow(clippy::type_complexity)]
-    fn mark_of(&self, w: Watermark) -> Result<(wm::Watermark, Option<(f64, f64, Option<f64>)>, Option<Result<Vec<u8>, usize>>), String> {
+    fn mark_of(
+        &self,
+        w: Watermark,
+    ) -> Result<(wm::Watermark, Option<(f64, f64, Option<f64>)>, Option<Result<Vec<u8>, crate::docx::ResourceId>>), String> {
         Ok(match w {
             Watermark::Text(t) => {
                 let text: String = t.text.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
@@ -288,7 +293,7 @@ impl Editor {
                         return Err("a watermark's font name has no quotes, commas, semicolons, backslashes or outer spaces".into());
                     }
                     Some(f) => f,
-                    None => self.doc.resolver.as_ref().map_or_else(|| "Calibri".to_string(), |r| r.theme.minor.clone()),
+                    None => self.doc.definitions.as_ref().map_or_else(|| "Calibri".to_string(), |r| r.cascade().theme.minor.clone()),
                 };
                 if t.language.as_deref().is_some_and(|l| l.is_empty() || l.len() > 35 || !l.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')) {
                     return Err("a language is a tag such as en-US".into());
@@ -322,7 +327,7 @@ impl Editor {
                 };
                 let bytes = match &image {
                     Ok(d) => d.as_slice(),
-                    Err(k) => self.doc.images.get(*k).map_or(&[][..], Vec::as_slice),
+                    Err(k) => self.doc.images.get(*k).unwrap_or_default(),
                 };
                 let (w, h) = natural_size(bytes).ok_or("not a picture")?;
                 if crate::docx::image::is_svg(bytes) {
@@ -335,7 +340,7 @@ impl Editor {
     }
 
     /// The image of the picture watermark the edited section shows.
-    fn watermark_picture(&self) -> Option<usize> {
+    fn watermark_picture(&self) -> Option<crate::docx::ResourceId> {
         match wm::of(self.shown_watermark(self.selection_section())?.0)? {
             wm::Watermark::Picture(p) => p.image,
             wm::Watermark::Text(_) => None,
@@ -343,13 +348,13 @@ impl Editor {
     }
 
     /// Each header part a section shows, once, with the first section that has it as its own.
-    fn header_parts(&self) -> Vec<(String, usize)> {
+    fn header_parts(&self) -> Vec<(HeaderFooterId, usize)> {
         let mut seen = std::collections::HashSet::new();
-        let mut out: Vec<(String, usize)> = Vec::new();
+        let mut out: Vec<(HeaderFooterId, usize)> = Vec::new();
         for (k, s) in self.doc.sections.iter().enumerate() {
-            for name in s.headers.iter().flatten() {
-                if self.doc.stories.contains_key(name) && seen.insert(name.as_str()) {
-                    out.push((name.clone(), k));
+            for &part in s.headers.iter().flatten() {
+                if self.doc.stories.contains_key(&part) && seen.insert(part) {
+                    out.push((part, k));
                 }
             }
         }
@@ -364,9 +369,9 @@ impl Editor {
             .map_or([468.0, 648.0], |s| [(s.page_w - s.left - s.right - s.gutter).max(36.0), (s.page_h - s.top - s.bottom).max(36.0)])
     }
 
-    /// The steps that take the watermarks out of header part `name`, putting `with` at the start of its first
-    /// paragraph; `None` when nothing changes.
-    fn restyled(&self, name: &str, with: Option<Float>, language: Option<&str>) -> Option<Vec<Step>> {
+    /// The steps that take the watermarks out of header `part`, putting `with` at the start of its first paragraph;
+    /// `None` when nothing changes.
+    fn restyled(&self, part: HeaderFooterId, with: Option<Float>, language: Option<&str>) -> Option<Vec<Step>> {
         fn paras<'b>(blocks: &'b [Block], out: &mut Vec<&'b crate::docx::Paragraph>) {
             for b in blocks {
                 match b {
@@ -375,7 +380,7 @@ impl Editor {
                 }
             }
         }
-        let blocks = self.doc.stories.get(name)?;
+        let blocks = self.doc.stories.get(&part)?;
         let mut all = Vec::new();
         paras(blocks, &mut all);
         let first = blocks.iter().find_map(|b| if let Block::Para(p) = b { Some(p.id) } else { None }).or(all.first().map(|p| p.id));
@@ -404,7 +409,7 @@ impl Editor {
     /// The VML shape numbers the headers use (`o:spid`'s `_x0000_s` numbers as read, and the shapes made since).
     fn shape_numbers(&self) -> std::collections::HashSet<u32> {
         let mut used: std::collections::HashSet<u32> =
-            self.doc.source.as_ref().map_or_else(Default::default, |s| s.stories.values().flat_map(|(xml, _)| spids(xml)).collect());
+            self.docx.source.as_ref().map_or_else(Default::default, |s| s.stories.values().flat_map(|(xml, _)| spids(xml)).collect());
         used.extend(
             self.doc
                 .stories
@@ -434,11 +439,11 @@ fn one_colour(f: Fill, palette: crate::drawing::paint::Palette) -> Fill {
     let (Some((light, p)), crate::drawing::paint::GradientKind::Linear { .. }) = (derived, g.kind) else { return Fill::Gradient(g) };
     let first = a.resolve(palette.theme, palette.map, None).to_rgb();
     let n = (p.fraction().clamp(0.0, 1.0) * 255.0).round() as u8;
-    let second = if light { crate::drawing::vml::lighten(first, n) } else { crate::drawing::vml::darken(first, n) };
+    let second = if light { crate::drawing::colour::lighten(first, n) } else { crate::drawing::colour::darken(first, n) };
     let opacity: Vec<ColourMod> =
         a.mods.iter().filter(|m| matches!(m, ColourMod::Alpha(_) | ColourMod::AlphaOff(_) | ColourMod::AlphaMod(_))).cloned().collect();
     let at = |rgb: u32| Colour { mods: opacity.clone(), ..Colour::srgb(rgb) };
-    g.stops = crate::drawing::vml::two_colour(&at(first), &at(second));
+    g.stops = crate::drawing::paint::two_colour(&at(first), &at(second));
     Fill::Gradient(g)
 }
 
@@ -458,7 +463,7 @@ fn page_gradient(f: Fill, palette: crate::drawing::paint::Palette) -> Result<Fil
         }
     }
     let clear = g.stops.iter().any(|(_, c)| c.resolve(palette.theme, palette.map, None).a < 255);
-    if clear && !crate::drawing::vml::is_two_colour(&g) {
+    if clear && !crate::drawing::paint::is_two_colour(&g) {
         return Err("a page gradient's colours are opaque, or two of them blended".into());
     }
     Ok(Fill::Gradient(g))
@@ -528,4 +533,55 @@ fn ink_em(text: &str, family: &str, bold: bool, italic: bool, fonts: &Fonts) -> 
         return estimate;
     }
     (((x1 - x0) * em).max(0.05), ((top - low) * em).max(0.05))
+}
+
+/// The preset a pattern fill's tile picture draws: an opaque 8×8 picture in black and white, black its foreground
+/// (any other colours show blends of the pattern's two).
+fn pattern_of_picture(data: &[u8]) -> Option<PatternPreset> {
+    let (w, h, _, _) = crate::docx::image::image_info(data)?;
+    if (w, h) != (8.0, 8.0) {
+        return None;
+    }
+    let (_, _, px) = twip_graphics::image::pixels_straight(data).ok()?;
+    let px = px.as_chunks::<4>().0;
+    if px.len() != 64 {
+        return None;
+    }
+    let mut bits = [0u8; 8];
+    for (k, p) in px.iter().enumerate() {
+        match p {
+            [0, 0, 0, 255] => bits[k / 8] |= 0x80 >> (k % 8),
+            [255, 255, 255, 255] => {}
+            _ => return None,
+        }
+    }
+    patterns::of_tile(bits)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_an_opaque_black_and_white_tile_is_a_preset() {
+        let png = |f: &dyn Fn(usize, bool) -> [u8; 4]| {
+            let bits = patterns::tile(PatternPreset::Pct50);
+            let rgba: Vec<u8> = (0..64).flat_map(|k| f(k, bits[k / 8] & (0x80 >> (k % 8)) != 0)).collect();
+            crate::render::svg::png(8, 8, &rgba)
+        };
+        assert_eq!(pattern_of_picture(&png(&|_, on| if on { [0, 0, 0, 255] } else { [255, 255, 255, 255] })), Some(PatternPreset::Pct50));
+        // Other colours, a third tone, or a clear pixel, is a picture.
+        assert_eq!(pattern_of_picture(&png(&|_, on| if on { [0, 0, 0xFF, 255] } else { [0xFF, 0xFF, 0, 255] })), None);
+        assert_eq!(
+            pattern_of_picture(&png(&|k, on| if on {
+                [0, 0, 0, 255]
+            } else if k == 1 {
+                [200, 200, 200, 255]
+            } else {
+                [255, 255, 255, 255]
+            })),
+            None
+        );
+        assert_eq!(pattern_of_picture(&png(&|k, on| if on { [0, 0, 0, 255] } else { [255, 255, 255, if k == 1 { 0 } else { 255 }] })), None);
+    }
 }

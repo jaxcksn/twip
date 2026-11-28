@@ -1,0 +1,365 @@
+//! A package from the model alone: the writer against a new document's package, every node unanchored
+
+use crate::docx::char_props::RunXml;
+use crate::docx::definitions::Definitions;
+use crate::docx::definitions::DefinitionsXml;
+use crate::docx::list_xml::NumberingXml;
+use crate::docx::origin::SectionOrigin;
+use crate::docx::style_xml::StylesPart;
+use crate::docx::table_props::TableXml;
+use std::fmt;
+use std::rc::Rc;
+
+use super::super::Session;
+use super::super::model::{Block, Cell, Document, Inline, Origin, Paragraph, Row, Run, RunStyle, Section, Table};
+use super::super::para_props::ParaDirect;
+use super::super::review::RangeKind;
+use super::super::run_xml;
+use super::super::table_props::{CellDirect, ExceptionsDirect, RowDirect, TableDirect};
+use super::props::Cx;
+use crate::format::cascade::TableRegion;
+
+/// What [`generate`] cannot write.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum GenerateError {
+    /// Content, formatting or a part of the document that generating does not cover, named.
+    Unsupported(&'static str),
+    /// The writer failed.
+    Write(String),
+}
+
+impl fmt::Display for GenerateError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            GenerateError::Unsupported(what) => write!(f, "cannot generate {what}"),
+            GenerateError::Write(e) => write!(f, "cannot write the package: {e}"),
+        }
+    }
+}
+
+impl std::error::Error for GenerateError {}
+
+/// `doc` as a new package, written from the model alone, whatever it was read from: body paragraphs of text, tabs and
+/// breaks, their character and paragraph formatting and paragraph style, in the lists the document defines, tables of
+/// them (their table style, table, row and cell properties), on one section's page setup; the styles, document
+/// defaults, latent styles, list definitions and lists, each written from its definition. Anything else is an error
+/// that names it; nothing is left out.
+pub fn generate(doc: &Document) -> Result<Vec<u8>, GenerateError> {
+    let (blank, blank_session) = super::super::read_editable(&super::super::blank::blank_docx()).map_err(GenerateError::Write)?;
+    let (Some(src), Some(new_res)) = (blank_session.source, blank.definitions.as_deref()) else {
+        return Err(GenerateError::Write("the blank package reads without its source".into()));
+    };
+    let res = doc.definitions.as_deref().ok_or(GenerateError::Unsupported("a document without styles"))?;
+    covered(doc, &blank, res, new_res)?;
+    let cx = Cx::of(&src);
+    let section = page(&doc.sections[0], &blank.sections[0], blocks(&doc.sections[0].blocks, res, &cx, None)?)?;
+    let mut res = res.clone();
+    // Application defaults: empty written ones.
+    if res.typed().styles.defaults.is_none() {
+        let empty = super::super::style_xml::DefaultsDef::typed(Rc::default());
+        res.set_defaults(empty).map_err(|_| GenerateError::Write("the defaults don't read".into()))?;
+    }
+    let new = new_res.typed();
+    let res = res.unanchored(new.styles.root().into(), new.numbering.root().to_string());
+    let edited = section.read_page().is_some_and(|was| !super::super::page_borders::same_page(was, &section.page()))
+        || (section.line_grid, section.rtl_gutter) != (blank.sections[0].line_grid, blank.sections[0].rtl_gutter);
+    let out = Document {
+        sections: vec![section],
+        properties: doc.properties.clone(),
+        settings: doc.settings.clone(),
+        definitions: Some(Rc::new(res)),
+        ..Default::default()
+    };
+    let session = Session { source: Some(src), edited_sections: if edited { [0].into() } else { Default::default() }, ..Default::default() };
+    let bytes = super::save(&out, &session).map_err(GenerateError::Write)?;
+    let (back, _) = super::super::read_editable(&bytes).map_err(GenerateError::Write)?;
+    reads_back(&out.sections[0], &back)?;
+    definitions_read_back(out.definitions.as_deref(), back.definitions.as_deref())?;
+    Ok(bytes)
+}
+
+/// Body content unanchored: paragraphs (in `region` when they are in a cell) and tables.
+fn blocks(blocks: &[Block], res: &Definitions, cx: &Cx, region: Option<&TableRegion>) -> Result<Vec<Block>, GenerateError> {
+    blocks
+        .iter()
+        .map(|b| match b {
+            Block::Para(p) => paragraph(p, res, cx, region).map(Block::Para),
+            Block::Table(t) => table(t, res, cx).map(Block::Table),
+        })
+        .collect()
+}
+
+/// `t` unanchored: its table style reference among its own properties, which the writer writes, as it does a new
+/// table's, from its resolved properties; its rows' properties, exceptions and cells' properties as their typed
+/// properties write them; its cells' content in their table style regions.
+fn table(t: &Table, res: &Definitions, cx: &Cx) -> Result<Table, GenerateError> {
+    let fail = |what| Err(GenerateError::Unsupported(what));
+    if t.change.is_some() || t.grid_change.is_some() {
+        return fail("a tracked change");
+    }
+    if !t.controls.is_empty() {
+        return fail("a content control");
+    }
+    let mut own = (**t.direct.get()).clone();
+    if own.style.is_none() {
+        own.style = t.style_id.as_deref().map(Into::into);
+    }
+    let mut out = Table { origin: Origin::NONE, direct: TableDirect::typed(Rc::new(own)), ..t.clone() };
+    for (ri, row) in out.rows.iter_mut().enumerate() {
+        if row.rev.ins.is_some() || row.rev.del.is_some() || row.rev.change.is_some() || row.rev.ex_change.is_some() {
+            return fail("a tracked change");
+        }
+        if !row.controls.is_empty() {
+            return fail("a content control");
+        }
+        if row.div.is_some() {
+            return fail("an HTML division");
+        }
+        *row = Row {
+            origin: Origin::NONE,
+            direct: RowDirect::typed(row.direct.get().clone()),
+            exceptions: ExceptionsDirect::typed(row.exceptions.get().clone()),
+            ..row.clone()
+        };
+        for (ci, cell) in row.cells.iter_mut().enumerate() {
+            if cell.rev.structural.is_some() || cell.rev.change.is_some() {
+                return fail("a tracked change");
+            }
+            if !cell.controls.is_empty() {
+                return fail("a content control");
+            }
+            let region = res.cascade().region_of(t, ri, ci);
+            let content = blocks(&cell.blocks, res, cx, Some(&region))?;
+            // Its own properties, an empty element for none: the writer adds its width, span and merge to them.
+            let props = cell.direct.get();
+            let direct = if **props == crate::format::CellProps::default() {
+                CellDirect::from_xml(Some(&format!("<{}tcPr/>", cx.w)), cx)
+            } else {
+                CellDirect::typed(props.clone())
+            };
+            *cell = Cell { direct, blocks: content, ..cell.clone() };
+        }
+    }
+    Ok(out)
+}
+
+/// `s`'s page setup and `blocks` on the new document's section `blank`: written as an edit of its page.
+fn page(s: &Section, blank: &Section, blocks: Vec<Block>) -> Result<Section, GenerateError> {
+    let fail = |what| Err(GenerateError::Unsupported(what));
+    if s.line_grid.is_some_and(|g| super::line_grid_of(super::line_pitch(g)) != g) {
+        return fail("a line grid");
+    }
+    let borders = super::super::page_borders::PageBordersDirect::typed(s.page_borders_direct.get().clone());
+    Ok(Section {
+        blocks,
+        page_borders_direct: borders,
+        headers: blank.headers,
+        footers: blank.footers,
+        change: None,
+        origin: Origin::new(blank.page()),
+        ..s.clone()
+    })
+}
+
+/// `back`, the package written, reads back with `s`'s page setup and its tables as they are.
+fn reads_back(s: &Section, back: &Document) -> Result<(), GenerateError> {
+    let [b] = back.sections.as_slice() else { return Err(GenerateError::Write("the package reads back without its section".into())) };
+    // The page borders by their typed value: what is read back holds the element written too
+    if !b.page().authored_eq(&s.page()) || (b.line_grid, b.rtl_gutter) != (s.line_grid, s.rtl_gutter) {
+        return Err(GenerateError::Unsupported("a page setup that reads back otherwise"));
+    }
+    if !same_tables(&s.blocks, &b.blocks) {
+        return Err(GenerateError::Unsupported("table formatting that is not its own"));
+    }
+    Ok(())
+}
+
+/// The definitions `back` read from the package written are `ours`, those written: every style (whether Word's read
+/// order leaves it as it was, and its run defaults), the default styles, the document defaults, the latent styles,
+/// the list definitions and lists, and the style links the paragraph styles' order decides, so text resolves as it
+/// did. The styles' order in the part is the writer's (new ones after the part's own, by id), which nothing resolves
+/// by but those links.
+fn definitions_read_back(ours: Option<&Definitions>, back: Option<&Definitions>) -> Result<(), GenerateError> {
+    let (Some(ours), Some(back)) = (ours, back) else { return Err(GenerateError::Write("the package reads back without its styles".into())) };
+    let (a, b) = (ours.cascade(), back.cascade());
+    let (x, y) = (&*a.styles, &*b.styles);
+    let entry_same = |e: &crate::format::StyleEntry, f: &crate::format::StyleEntry| {
+        *e.style == *f.style && e.origin == f.origin && e.frozen == f.frozen && e.word_run_defaults == f.word_run_defaults
+    };
+    let styles = x.styles.len() == y.styles.len() && x.styles.iter().all(|(id, e)| y.styles.get(id).is_some_and(|f| entry_same(e, f)));
+    let sheet = (&x.default_paragraph, &x.default_table, &x.default_character, &x.default_numbering)
+        == (&y.default_paragraph, &y.default_table, &y.default_character, &y.default_numbering)
+        && x.defaults == y.defaults
+        && x.latent == y.latent;
+    if !styles || !sheet {
+        return Err(GenerateError::Unsupported("styles that read back otherwise"));
+    }
+    if *a.lists != *b.lists || a.style_links != b.style_links {
+        return Err(GenerateError::Unsupported("lists that read back otherwise"));
+    }
+    Ok(())
+}
+
+/// Whether the tables among `a` and `b` (as many blocks) lay out alike, their cells' tables too: every resolved field
+/// but the identity of what they were read from, and of their paragraphs, whose formatting is checked as they are
+/// written.
+fn same_tables(a: &[Block], b: &[Block]) -> bool {
+    let bare = |t: &Table| Table {
+        origin: Origin::NONE,
+        id: 0,
+        rows: t
+            .rows
+            .iter()
+            .map(|r| Row { origin: Origin::NONE, cells: r.cells.iter().map(|c| Cell { blocks: Vec::new(), ..c.clone() }).collect(), ..r.clone() })
+            .collect(),
+        ..t.clone()
+    };
+    a.len() == b.len()
+        && a.iter().zip(b).all(|pair| match pair {
+            (Block::Para(_), Block::Para(_)) => true,
+            (Block::Table(x), Block::Table(y)) => {
+                bare(x) == bare(y)
+                    && x.rows.iter().zip(&y.rows).all(|(r, q)| r.cells.iter().zip(&q.cells).all(|(c, d)| same_tables(&c.blocks, &d.blocks)))
+            }
+            _ => false,
+        })
+}
+
+/// The document-wide state generating writes, or keeps as a new document has it: one section, with no headers or
+/// footers, and nothing outside the body.
+fn covered(doc: &Document, blank: &Document, res: &Definitions, new_res: &Definitions) -> Result<(), GenerateError> {
+    let fail = |what| Err(GenerateError::Unsupported(what));
+    let [s] = doc.sections.as_slice() else { return fail("more than one section") };
+    if s.headers.iter().chain(&s.footers).any(Option::is_some) || !doc.stories.is_empty() {
+        return fail("a header or footer");
+    }
+    if s.change.is_some() {
+        return fail("a tracked change");
+    }
+    if !doc.footnotes.is_empty() || !doc.endnotes.is_empty() || !doc.separators.is_empty() {
+        return fail("a note");
+    }
+    if !doc.comments.by_id.is_empty() {
+        return fail("a comment");
+    }
+    if !doc.controls.is_empty() {
+        return fail("a content control");
+    }
+    if doc.glossary.is_some() {
+        return fail("a glossary");
+    }
+    if !doc.alt_chunks.is_empty() {
+        return fail("imported content");
+    }
+    if !doc.data_parts.is_empty() {
+        return fail("a custom XML part");
+    }
+    if doc.page_colour.is_some() || doc.page_fill.is_some() {
+        return fail("a page background");
+    }
+    let (c, new) = (res.cascade(), new_res.cascade());
+    if !c.lists.pictures.is_empty() {
+        return fail("a picture bullet");
+    }
+    if c.colours != new.colours || c.theme != new.theme {
+        return fail("a theme");
+    }
+    // Settings by their debug form, which shows every field; the styles' rules that follow from them.
+    if format!("{:?}", doc.settings) != format!("{:?}", blank.settings) || c.rules != new.rules {
+        return fail("document settings");
+    }
+    Ok(())
+}
+
+/// `p` unanchored (in `region` when it is in a cell), its style reference written as direct formatting, once its
+/// formatting is known to follow from what is written.
+fn paragraph(p: &Paragraph, res: &Definitions, cx: &Cx, region: Option<&TableRegion>) -> Result<Paragraph, GenerateError> {
+    let fail = |what| Err(GenerateError::Unsupported(what));
+    let c = res.cascade();
+    if p.style.num.is_some_and(|n| !c.lists.lists.contains_key(&n.list)) {
+        return fail("a list without its definition");
+    }
+    if p.div.is_some() {
+        return fail("an HTML division");
+    }
+    if !p.controls.is_empty() {
+        return fail("a content control");
+    }
+    if p.style.change.is_some() {
+        return fail("a tracked change");
+    }
+    let mut props = (**p.style.direct.get()).clone();
+    if props.frame.is_some() || props.frame_locked.is_some() {
+        return fail("a frame");
+    }
+    if props.style.is_none()
+        && let Some(id) = p.style.style_id.as_deref().filter(|id| Some(*id) != c.styles.default_paragraph.as_deref())
+    {
+        props.style = Some(id.into());
+    }
+    let mark = p.mark.direct.props().and_then(|m| m.size);
+    let again = crate::docx::para_xml::with(res, ParaDirect::typed(Rc::new(props)), mark, region);
+    let mut style = (*p.style).clone();
+    style.direct = again.style.direct.clone();
+    if !style.layout_eq(&again.style) {
+        return fail("paragraph formatting that is not its own");
+    }
+    let base = again.base.clone();
+    let inlines = p
+        .inlines
+        .iter()
+        .map(|i| match i {
+            Inline::Text(t, r) => Ok(Inline::Text(t.clone(), run(r, res, &base, cx)?)),
+            Inline::Tab(r) => Ok(Inline::Tab(run(r, res, &base, cx)?)),
+            Inline::Break(k, r) => Ok(Inline::Break(*k, run(r, res, &base, cx)?)),
+            other => Err(GenerateError::Unsupported(unsupported(other))),
+        })
+        .collect::<Result<_, _>>()?;
+    Ok(Paragraph {
+        style: Rc::new(again.style),
+        mark: run(&p.mark, res, &base, cx)?,
+        list: p.list.clone(),
+        inlines,
+        origin: Origin::NONE,
+        id: p.id,
+        controls: Vec::new(),
+        div: None,
+    })
+}
+
+/// `r` with its authored properties written where `cx` describes, once its formatting is known to follow from them
+/// over `base`.
+fn run(r: &Run, res: &Definitions, base: &crate::format::CharProps, cx: &Cx) -> Result<Run, GenerateError> {
+    if !r.rev.is_empty() {
+        return Err(GenerateError::Unsupported("a tracked change"));
+    }
+    if !run_xml::resolve(res, base, r.direct.clone(), r.toc).layout_eq(r) {
+        return Err(GenerateError::Unsupported("character formatting that is not its own"));
+    }
+    Ok(match r.direct.moved_to(cx) {
+        Some(direct) => Rc::new(RunStyle { direct, ..(**r).clone() }),
+        None => r.clone(),
+    })
+}
+
+/// What an inline generating does not cover is.
+fn unsupported(i: &Inline) -> &'static str {
+    match i {
+        Inline::Text(..) | Inline::Tab(_) | Inline::Break(..) => "text",
+        Inline::PTab(..) => "an absolute tab",
+        Inline::Sym { .. } => "a symbol",
+        Inline::Picture(..) => "a picture",
+        Inline::Float(..) => "a floating object",
+        Inline::NoteRef { .. } | Inline::NoteMark(..) | Inline::Separator { .. } => "a note",
+        Inline::FieldBegin { .. } | Inline::FieldSep { .. } | Inline::FieldEnd { .. } => "a field",
+        Inline::Range(r) if r.bookmark().is_some() => "a bookmark",
+        Inline::Range(r) if r.permission().is_some() => "content kept as read",
+        Inline::Range(r) if matches!(r.kind, RangeKind::CommentStart | RangeKind::CommentEnd) => "a comment",
+        Inline::Range(_) => "a tracked move",
+        Inline::CommentRef { .. } => "a comment",
+        Inline::ControlStart(_) | Inline::ControlEnd(_) => "a content control",
+        Inline::Ruby(..) => "ruby text",
+        Inline::DateBlock(..) => "a date",
+        Inline::FieldEdge { .. } | Inline::Foreign(_) => "content kept as read",
+    }
+}

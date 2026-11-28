@@ -1,5 +1,6 @@
 //! Editor
 
+use crate::docx::origin::ParagraphOrigin;
 pub mod autocorrect;
 mod background;
 mod bindings;
@@ -109,16 +110,18 @@ use std::time::Duration;
 use crate::clock::Instant;
 
 use crate::api::record::Origin;
+use crate::docx::review::ReviewView;
 use crate::docx::{Block, BreakKind, Document, Inline, Paragraph, Run};
 use crate::font::Fonts;
 use crate::layout::{Budget, Change, DocumentLayout, ParaId, Revision, Snapshot, Step as LayoutStep, TableId, Target, Unit};
 
+pub use crate::docx::DateStorage;
 use commands::{Command, Dir, MoveBy, Outcome};
 use geometry::Pages;
 use history::{History, SelectionRecord, Transaction, Typing, TypingRun};
 use index::{Container, DocIndex};
 use input::{PointerKind, Request, Viewport};
-pub use merge::{DateSettings, DateStorage, date_formats, date_settings};
+pub use merge::{DateSettings, date_formats, date_settings};
 use navigate::Nav;
 pub use notes::NoteSeparatorInfo;
 use position::{Affinity, Place, Position, StoryId};
@@ -147,7 +150,7 @@ struct Drag {
     column: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Correction {
     pub para: ParaId,
     pub range: std::ops::Range<Unit>,
@@ -156,28 +159,33 @@ pub struct Correction {
     pub to: String,
     pub typed: usize,
     pub kind: CorrectionKind,
-    /// For an indent or border line: the paragraph property (`w:ind`, `w:pBdr`) as AutoFormat wrote it, so a later change
-    /// to it ends the correction.
-    pub(crate) applied: Option<Option<String>>,
+    /// For an indent or border line: the paragraph's indents or borders as AutoFormat set them, so a later change to
+    /// them ends the correction.
+    pub(crate) applied: Option<crate::format::ParaProps>,
 }
 
 /// What an automatic change made, which its AutoCorrect Options offer to undo or stop.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum CorrectionKind {
     /// AutoCorrect replaced the text typed (`from`) in the range.
     Text,
     /// AutoFormat made the address typed (`from`) a link: the range is the link's field.
     Hyperlink,
-    /// AutoFormat made the characters typed (`from`) the paragraph's bottom border; the paragraph's borders before it, as
-    /// written (`w:pBdr`).
-    BorderLine { borders: Option<String> },
-    /// AutoFormat made the Tab typed at the paragraph's start an indent; the paragraph's indents before it, as written
-    /// (`w:ind`).
-    Indent { ind: Option<String> },
+    /// AutoFormat made the characters typed (`from`) the paragraph's bottom border; the paragraph's own borders before
+    /// it.
+    BorderLine { borders: crate::format::ParaProps },
+    /// AutoFormat made the Tab typed at the paragraph's start an indent; the paragraph's own indents before it.
+    Indent { ind: crate::format::ParaProps },
 }
 
 pub struct Editor {
     doc: Document,
+    /// The DOCX session the document was read with: what saving it needs.
+    docx: crate::docx::Session,
+    /// How the document shows: the markup view and options, hidden text and optional hyphens. The layout's view.
+    review: ReviewView,
+    /// The file's name, and folder when the host gave one: what FILENAME shows. Not saved.
+    file_name: Option<String>,
     layout: DocumentLayout,
     index: DocIndex,
     history: History,
@@ -185,8 +193,9 @@ pub struct Editor {
     /// The page point line moves keep to: each line reads its place along it from the point.
     goal: Option<[f64; 2]>,
     pending: Option<Run>,
-    /// The format painter's formatting: a run's `w:rPr`, and a paragraph's `w:pPr` when it took the paragraph's too.
-    painter: Option<(Option<String>, Option<Option<String>>)>,
+    /// The format painter's formatting: a run's authored properties, and a paragraph's `w:pPr` when it took the
+    /// paragraph's too.
+    painter: Option<(Rc<crate::format::CharProps>, Option<Rc<crate::format::ParaProps>>)>,
     /// Ctrl+Shift+V pastes the painter's formatting: since Copy Formatting, with the clipboard it first saw then (its
     /// fingerprint), until the clipboard changes.
     painter_claim: Option<Option<u64>>,
@@ -303,7 +312,7 @@ pub struct Editor {
     events: Vec<input::Notice>,
     made: Option<crate::api::command::CommandResult>,
     pending_controls: Vec<(crate::docx::ControlId, crate::docx::Control)>,
-    pending_images: Vec<Vec<u8>>,
+    pending_images: crate::docx::Resources,
     /// The editable ranges as of a [`Editor::perm_generation`] ([`Editor::editable_ranges`]).
     editable_cache: std::cell::RefCell<Option<(u64, Rc<protection::EditableRanges>)>>,
     /// Counts the steps that can have changed the editable ranges.
@@ -352,10 +361,10 @@ pub struct Editor {
     balloon_lookups: usize,
     #[cfg(test)]
     mark_builds: usize,
-    /// A style's XML that formatting commands edit instead of the selection ([`Editor::format_style`]).
-    style_target: Option<String>,
+    /// The style formatting commands edit instead of the selection ([`Editor::format_style`]).
+    style_target: Option<styles::StyleTarget>,
     /// The table style part formatting commands edit, when they edit a table style.
-    style_part: Option<&'static str>,
+    style_part: Option<crate::format::RegionKind>,
     /// The list numbers a click selected.
     list_label: Option<list_labels::LabelHold>,
     /// A list level's number formatting that character formatting commands edit instead of the selection
@@ -461,16 +470,27 @@ pub struct Committed {
 
 impl Editor {
     pub fn open(bytes: &[u8], fonts: &Fonts) -> Result<Editor, String> {
-        let doc = crate::docx::read_editable(bytes)?;
-        Ok(Editor::with_document(doc, fonts))
+        let (doc, docx) = crate::docx::read_editable(bytes)?;
+        Ok(Editor::with_session(doc, docx, fonts))
     }
 
+    /// An editor of a document no package was read for: one built, or read for layout only.
     pub fn with_document(doc: Document, fonts: &Fonts) -> Editor {
+        Editor::with_session(doc, crate::docx::Session::default(), fonts)
+    }
+
+    /// An editor of a document read with its DOCX session.
+    pub fn with_session(doc: Document, docx: crate::docx::Session, fonts: &Fonts) -> Editor {
         let index = DocIndex::build(&doc);
-        let doc_hides_white_space = doc.hides_white_space;
+        let review = ReviewView::opening(&doc.settings);
+        let white_space_hidden = doc.settings.hides_page_boundaries;
+        let layout = DocumentLayout::new(review.clone());
         let mut e = Editor {
             doc,
-            layout: DocumentLayout::new(),
+            docx,
+            review,
+            file_name: None,
+            layout,
             index,
             history: History::default(),
             selection: Selection::Caret(Position::text(StoryId::Body, ParaId(0), Unit(0))),
@@ -538,7 +558,7 @@ impl Editor {
             text_drag_off: false,
             mark_options: view::MarkOptions::default(),
             click_and_type_off: false,
-            white_space_hidden: doc_hides_white_space,
+            white_space_hidden,
             click_and_type_style: None,
             tab_stop: None,
             mode: Mode::Editing,
@@ -554,7 +574,7 @@ impl Editor {
             events: Vec::new(),
             made: None,
             pending_controls: Vec::new(),
-            pending_images: Vec::new(),
+            pending_images: Default::default(),
             editable_cache: Default::default(),
             perm_generation: 0,
             editing_groups: Vec::new(),
@@ -632,6 +652,12 @@ impl Editor {
 
     pub fn document(&self) -> &Document {
         &self.doc
+    }
+
+    /// The DOCX session the document was read with, as the edits since leave it: what [`crate::docx::write::save`]
+    /// takes with the document.
+    pub fn docx(&self) -> &crate::docx::Session {
+        &self.docx
     }
 
     /// The document, as the editor holds it (its imported HTML brought in).
@@ -718,22 +744,22 @@ impl Editor {
     }
 
     pub fn set_markup_view(&mut self, view: crate::docx::review::MarkupView) -> Outcome {
-        if self.doc.review.view == view {
+        if self.review.view == view {
             return Outcome::Unchanged("already in that view");
         }
-        self.doc.review.view = view;
+        self.review.view = view;
         self.relayout_review();
         Outcome::Moved
     }
 
     /// Sets the markup's view settings past the markup view, laying the document out again when they change.
     fn set_markup(&mut self, change: impl FnOnce(&mut crate::docx::review::Markup), unchanged: &'static str) -> Outcome {
-        let mut m = (*self.doc.review.markup).clone();
+        let mut m = (*self.review.markup).clone();
         change(&mut m);
-        if m == *self.doc.review.markup {
+        if m == *self.review.markup {
             return Outcome::Unchanged(unchanged);
         }
-        self.doc.review.markup = Rc::new(m);
+        self.review.markup = Rc::new(m);
         self.relayout_review();
         Outcome::Moved
     }
@@ -783,8 +809,8 @@ impl Editor {
         }
         self.mark_options = o;
         let (hidden, hyphens) = (o.shows_hidden_text(), o.shows_optional_hyphens());
-        if (self.doc.review.show_hidden, self.doc.review.show_optional_hyphens) != (hidden, hyphens) {
-            (self.doc.review.show_hidden, self.doc.review.show_optional_hyphens) = (hidden, hyphens);
+        if (self.review.show_hidden, self.review.show_optional_hyphens) != (hidden, hyphens) {
+            (self.review.show_hidden, self.review.show_optional_hyphens) = (hidden, hyphens);
             self.relayout_review();
         }
         Outcome::Moved
@@ -793,7 +819,7 @@ impl Editor {
     /// Whether the editor's own layout is the document as printed: no markup, hidden text and optional hyphens as
     /// `hidden_text` (Word's Print hidden text option) has them, no shown sub-templates.
     pub fn lays_out_as_printed(&self, hidden_text: bool) -> bool {
-        let r = &self.doc.review;
+        let r = &self.review;
         r.view == crate::docx::review::MarkupView::NoMarkup
             && r.show_hidden == hidden_text
             && !r.show_optional_hyphens
@@ -802,13 +828,23 @@ impl Editor {
             && self.table_preview.is_empty()
     }
 
-    /// The document as printed, to lay out on its own when [`Editor::lays_out_as_printed`] is false: no markup, hidden
-    /// text only with `hidden_text`, optional hyphens only where a line breaks at them.
-    pub fn printed_document(&self, hidden_text: bool) -> crate::docx::Document {
-        let mut doc = self.doc.clone();
-        doc.review.view = crate::docx::review::MarkupView::NoMarkup;
-        (doc.review.show_hidden, doc.review.show_optional_hyphens) = (hidden_text, false);
-        doc
+    /// The view the document prints in, to lay it out in on its own when [`Editor::lays_out_as_printed`] is false: no
+    /// markup, hidden text only with `hidden_text`, optional hyphens only where a line breaks at them.
+    pub fn printed_view(&self, hidden_text: bool) -> ReviewView {
+        let mut view = self.review.clone();
+        view.view = crate::docx::review::MarkupView::NoMarkup;
+        (view.show_hidden, view.show_optional_hyphens) = (hidden_text, false);
+        view
+    }
+
+    /// How the document shows: the markup view and options, hidden text and optional hyphens.
+    pub fn review(&self) -> &ReviewView {
+        &self.review
+    }
+
+    /// The file's name, and folder when the host gave one: what FILENAME shows.
+    pub fn file_name(&self) -> Option<&str> {
+        self.file_name.as_deref()
     }
 
     /// Which formatting marks show.
@@ -822,10 +858,10 @@ impl Editor {
     }
 
     pub fn set_author_color(&mut self, author: crate::docx::review::AuthorId, color: u32) -> Outcome {
-        if self.doc.review.palette.color(author) == color {
+        if self.review.palette.color(author) == color {
             return Outcome::Unchanged("already that colour");
         }
-        Rc::make_mut(&mut self.doc.review.palette).chosen.insert(author, color);
+        Rc::make_mut(&mut self.review.palette).chosen.insert(author, color);
         self.relayout_review();
         Outcome::Moved
     }
@@ -837,6 +873,7 @@ impl Editor {
     }
 
     fn relayout_review(&mut self) {
+        self.layout.set_view(self.review.clone());
         self.relayout([None]);
     }
 
@@ -930,15 +967,18 @@ impl Editor {
 
     /// The hyphenation patterns automatic hyphenation uses.
     pub fn set_hyphenation(&mut self, h: Option<crate::layout::hyphenate::Hyphenation>) {
-        if self.doc.hyphenation != h {
-            self.doc.hyphenation = h;
+        if self.layout.set_hyphenation(h) {
             self.relayout_environment();
         }
     }
 
-    fn pending_image(&mut self, data: Vec<u8>) -> usize {
-        self.pending_images.push(data);
-        self.doc.images.len() + self.pending_images.len() - 1
+    /// The hyphenation patterns the host supplied.
+    pub fn hyphenation(&self) -> Option<&crate::layout::hyphenate::Hyphenation> {
+        self.layout.hyphenation()
+    }
+
+    fn pending_image(&mut self, data: Vec<u8>) -> crate::docx::ResourceId {
+        self.pending_images.add(data)
     }
 
     fn refuse_read_only(&mut self) -> Outcome {
@@ -1002,7 +1042,7 @@ impl Editor {
     fn nav(&mut self) -> Nav<'_> {
         let snapshot = self.layout.snapshot();
         self.pages.sync(&snapshot);
-        Nav { doc: &self.doc, idx: &self.index, pages: &mut self.pages, near: self.near }
+        Nav { doc: &self.doc, review: &self.review, idx: &self.index, pages: &mut self.pages, near: self.near }
     }
 
     // Layout coordination
@@ -1415,7 +1455,7 @@ impl Editor {
         // Editable ranges, once found
         let cached = self.editable_cache.get_mut().is_some();
         let perms = cached && self.moves_perms(&s);
-        let a = s.apply(&mut self.doc, &mut self.index)?;
+        let a = s.apply(&mut self.doc, &mut self.docx, &mut self.index)?;
         if perms || (cached && self.moves_perms(&a.inverse)) {
             self.perm_generation += 1;
         }
@@ -1434,10 +1474,10 @@ impl Editor {
         self.selection = tx.before.selection;
         self.restore_aside();
         self.pending_controls.clear();
-        self.pending_images.clear();
+        self.pending_images = Default::default();
         self.perm_generation += 1;
         for s in tx.undo.into_iter().rev() {
-            let _ = s.apply(&mut self.doc, &mut self.index);
+            let _ = s.apply(&mut self.doc, &mut self.docx, &mut self.index);
         }
     }
 
@@ -1492,9 +1532,8 @@ impl Editor {
         for (id, c) in std::mem::take(&mut self.pending_controls) {
             let _ = self.step(tx, Step::Control { id, control: Some(c) });
         }
-        for data in std::mem::take(&mut self.pending_images) {
-            let index = self.doc.images.len();
-            let _ = self.apply_step(tx, Step::AddImage { index, data: Some(data) });
+        for (image, data) in std::mem::take(&mut self.pending_images) {
+            let _ = self.apply_step(tx, Step::AddImage { image, data: Some(data) });
         }
         let mut edited: Vec<ParaId> = tx.undo.iter().filter_map(|s| if let Step::Text { para, .. } = s { Some(*para) } else { None }).collect();
         let mut seen = std::collections::HashSet::with_capacity(edited.len());
@@ -1959,22 +1998,23 @@ impl Editor {
     fn merge_section(&mut self, tx: &mut Tx, section: usize) -> Result<(), StepError> {
         let secs = &self.doc.sections;
         let s = secs.get(section).ok_or(StepError::Missing)?;
-        let elsewhere =
-            |name: &str| secs.iter().enumerate().any(|(k, o)| k != section && o.headers.iter().chain(&o.footers).flatten().any(|n| n == name));
-        let mut own: Vec<(String, bool, usize)> = Vec::new();
+        let elsewhere = |id: crate::docx::HeaderFooterId| {
+            secs.iter().enumerate().any(|(k, o)| k != section && (o.headers.contains(&Some(id)) || o.footers.contains(&Some(id))))
+        };
+        let mut own: Vec<(crate::docx::HeaderFooterId, bool, usize)> = Vec::new();
         for (footer, refs) in [(false, &s.headers), (true, &s.footers)] {
-            for (slot, name) in refs.iter().enumerate() {
-                if let Some(name) = name
-                    && self.doc.stories.contains_key(name)
-                    && !elsewhere(name)
-                    && !own.iter().any(|(n, ..)| n == name)
+            for (slot, id) in refs.iter().enumerate() {
+                if let Some(id) = *id
+                    && self.doc.stories.contains_key(&id)
+                    && !elsewhere(id)
+                    && !own.iter().any(|(n, ..)| *n == id)
                 {
-                    own.push((name.clone(), footer, slot));
+                    own.push((id, footer, slot));
                 }
             }
         }
-        for (name, footer, slot) in own {
-            self.step(tx, Step::HeaderPart { name, section, footer, slot, blocks: None })?;
+        for (id, footer, slot) in own {
+            self.step(tx, Step::HeaderPart { id, section, footer, slot, blocks: None })?;
         }
         self.step(tx, Step::SectionBreak { section, back: None }).map(|_| ())
     }
@@ -2439,7 +2479,7 @@ impl Editor {
 
     fn page_break(&mut self, fonts: &Fonts) -> Outcome {
         let s = &self.doc.settings;
-        if s.compat() == crate::docx::Compat::Legacy && s.has("splitPgBreakAndParaMark") {
+        if s.compat() == crate::docx::Compat::Legacy && s.policy.split_pg_break_and_para_mark {
             return self.insert_inline(|run| Inline::Break(BreakKind::Page, run), "Page Break", fonts);
         }
         if self.refuse_replacing() {
@@ -2478,7 +2518,7 @@ impl Editor {
             mark: p.mark.clone(),
             list: p.list.clone(),
             inlines: Vec::new(),
-            src: None,
+            origin: crate::docx::Origin::NONE,
             id: crate::docx::next_para_id(),
             div: None,
             controls: p.controls.clone(),
@@ -2699,7 +2739,7 @@ impl Editor {
             }
             return Outcome::Unchanged("row end");
         };
-        let Some(t) = self.index.para(&self.doc, para).map(|q| UnitText::in_review(q, &self.doc.review)) else {
+        let Some(t) = self.index.para(&self.doc, para).map(|q| UnitText::in_review(q, &self.review)) else {
             return Outcome::Unchanged("no paragraph");
         };
         let typing = |at| TypingRun { para, at, kind: if dir == Dir::Back { Typing::Backspace } else { Typing::Delete } };
@@ -2886,7 +2926,7 @@ impl Editor {
     fn add_row(&mut self, table: TableId, after: usize, story: StoryId, fonts: &Fonts) -> Outcome {
         let Some(t) = self.index.table(&self.doc, table) else { return Outcome::Unchanged("no table") };
         let Some(mut row) = t.rows.get(after).cloned() else { return Outcome::Unchanged("no row") };
-        row.src = None;
+        row.detach();
         for cell in &mut row.cells {
             let Some(p) = cell.blocks.iter().find_map(|b| match b {
                 Block::Para(p) => Some(p),
@@ -2899,7 +2939,7 @@ impl Editor {
                 mark: p.mark.clone(),
                 list: None,
                 inlines: vec![Inline::Text(String::new(), p.mark.clone())],
-                src: None,
+                origin: crate::docx::Origin::NONE,
                 id: crate::docx::next_para_id(),
                 div: None,
                 controls: Vec::new(),
@@ -3698,14 +3738,14 @@ impl Editor {
 
     fn word_span(&self, p: Position) -> (Position, Position) {
         let Some((para, off)) = p.para_offset() else { return (p, p) };
-        let Some(t) = self.index.para(&self.doc, para).map(|q| UnitText::in_review(q, &self.doc.review)) else { return (p, p) };
+        let Some(t) = self.index.para(&self.doc, para).map(|q| UnitText::in_review(q, &self.review)) else { return (p, p) };
         let (a, b) = t.word_at(off);
         (Position::text(p.story, para, a), Position::text(p.story, para, b))
     }
 
     fn sentence_span(&self, p: Position) -> (Position, Position) {
         let Some((para, off)) = p.para_offset() else { return (p, p) };
-        let Some(t) = self.index.para(&self.doc, para).map(|q| UnitText::in_review(q, &self.doc.review)) else { return (p, p) };
+        let Some(t) = self.index.para(&self.doc, para).map(|q| UnitText::in_review(q, &self.review)) else { return (p, p) };
         let (a, b) = t.sentence_at(off);
         (Position::text(p.story, para, a), Position::text(p.story, para, b))
     }
@@ -4067,7 +4107,7 @@ impl Editor {
                         std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
                         std::collections::hash_map::Entry::Vacant(e) => {
                             let Some(p) = self.index.para(&self.doc, para) else { continue };
-                            e.insert(UnitText::of_review(p, &self.doc.review))
+                            e.insert(UnitText::of_review(p, &self.review))
                         }
                     };
                     let stops: Vec<&geometry::Stop> = line.stops.iter().filter(|s| s.para == para).collect();
@@ -4104,7 +4144,7 @@ impl Editor {
                                     .para(&self.doc, para)
                                     .and_then(|q| stories::inline_at(q, u))
                                     .and_then(crate::docx::Inline::run)
-                                    .is_some_and(|r| self.doc.review.hides(&r.rev))
+                                    .is_some_and(|r| self.review.hides(&r.rev))
                         };
                         match text.char_at(a.unit) {
                             Some(' ') if spaces && !stand_in(a.unit) => mark(MarkKind::Space, a.x, b.x),
@@ -4119,7 +4159,7 @@ impl Editor {
                     if !paragraphs {
                         continue;
                     }
-                    if let Some(last) = stops.last().filter(|s| s.unit != text.len() && self.doc.review.show_hidden && o.shows_hidden_text())
+                    if let Some(last) = stops.last().filter(|s| s.unit != text.len() && self.review.show_hidden && o.shows_hidden_text())
                         && self.index.para(&self.doc, para).is_some_and(|q| shown_join_at(q, last.unit))
                     {
                         out.push(FormattingMark { page, kind: MarkKind::HiddenParagraph, at: line.strip(last.x, last.x) });
@@ -4140,10 +4180,7 @@ impl Editor {
                             MarkKind::CellEnd
                         }
                         // A hidden mark shown apart
-                        _ if self.doc.review.show_hidden
-                            && o.shows_hidden_text()
-                            && self.index.para(&self.doc, para).is_some_and(|q| q.mark.hidden) =>
-                        {
+                        _ if self.review.show_hidden && o.shows_hidden_text() && self.index.para(&self.doc, para).is_some_and(|q| q.mark.hidden) => {
                             MarkKind::HiddenParagraph
                         }
                         _ => MarkKind::Paragraph,
@@ -4316,7 +4353,7 @@ impl Editor {
     #[cfg(test)]
     pub(crate) fn read_text(&self, para: ParaId, a: Unit, b: Unit) -> String {
         let Some(p) = self.index.para(&self.doc, para) else { return String::new() };
-        seen_text(p, &self.doc.review).text_in(a, b).map(plain_char).collect()
+        seen_text(p, &self.review).text_in(a, b).map(plain_char).collect()
     }
 
     pub fn selected_text_within(&mut self, limit: usize) -> Option<String> {
@@ -4347,7 +4384,7 @@ impl Editor {
                         std::collections::hash_map::Entry::Occupied(o) => o.into_mut(),
                         std::collections::hash_map::Entry::Vacant(v) => {
                             let Some(p) = self.index.para(&self.doc, para) else { break };
-                            v.insert(seen_text(p, &self.doc.review))
+                            v.insert(seen_text(p, &self.review))
                         }
                     };
                     let end = match b.para_offset() {
@@ -4416,8 +4453,11 @@ fn seen_text(p: &Paragraph, review: &crate::docx::review::ReviewView) -> text::S
 /// Whether a paragraph joined to `p` through its vanished mark ends at `u`, its parts showing on their own lines while
 /// hidden text shows.
 fn shown_join_at(p: &Paragraph, u: Unit) -> bool {
-    let Some(src) = &p.src else { return false };
-    p.style.parts.len() == src.joined.len() + 1 && src.joined.iter().any(|j| j.end == u.0)
+    if p.origin.is_none() {
+        return false;
+    }
+    let joined = p.joined_parts();
+    p.style.parts.len() == joined.len() + 1 && joined.iter().any(|j| j.end == u.0)
 }
 
 /// The deepest nesting an edit may make, in table levels. The reader refuses parts nested deeper than

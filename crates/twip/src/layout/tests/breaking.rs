@@ -3,7 +3,7 @@
 use crate::docx::blank::blank_docx;
 use crate::docx::write::repackage;
 use crate::layout::fragment::Item;
-use crate::layout::layout;
+use crate::layout::tests::layout;
 use crate::layout::traverse::paint;
 
 use super::fonts;
@@ -917,9 +917,8 @@ fn an_empty_deleted_mark_paragraph_before_a_table_isnt_laid_out() {
         r#"<w:tbl><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>Row</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#;
     let top = r#"<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>Top</w:t></w:r></w:p>"#;
     let gap = |mid: &str| {
-        let mut doc = test_doc("", ARIAL_12, &format!("{top}{mid}{table}"), "")?;
-        doc.review.view = crate::docx::review::MarkupView::NoMarkup;
-        let snap = layout(&doc, &fonts());
+        let doc = test_doc("", ARIAL_12, &format!("{top}{mid}{table}"), "")?;
+        let snap = crate::layout::layout(&doc, &super::no_markup(&doc), &fonts());
         let mut y = std::collections::HashMap::new();
         paint(&snap.pages()[0], &mut |p| {
             if let Item::Glyphs(r) = p.absolute() {
@@ -934,9 +933,8 @@ fn an_empty_deleted_mark_paragraph_before_a_table_isnt_laid_out() {
 
 /// Each line's text and (x, baseline) on page 1 of `body` with deletions hidden.
 fn hidden_view(settings: &str, body: &str) -> Option<std::collections::HashMap<String, (f64, f64)>> {
-    let mut doc = test_doc(settings, ARIAL_12, body, "")?;
-    doc.review.view = crate::docx::review::MarkupView::NoMarkup;
-    let snap = layout(&doc, &fonts());
+    let doc = test_doc(settings, ARIAL_12, body, "")?;
+    let snap = crate::layout::layout(&doc, &super::no_markup(&doc), &fonts());
     let mut y = std::collections::HashMap::new();
     paint(&snap.pages()[0], &mut |p| {
         if let Item::Glyphs(r) = p.absolute() {
@@ -1139,7 +1137,14 @@ fn paragraphs_group_by_their_four_sides_and_box_edges() {
 #[test]
 fn a_page_break_before_opens_a_new_box() {
     use crate::layout::line::neighbour_borders;
-    let border = crate::docx::props::Border { style: "single".into(), width: 0.5, space: 1.0, shadow: false, color: None, color_theme: None };
+    let border = crate::docx::props::Border {
+        style: crate::docx::props::BorderStyle::Single,
+        width: 0.5,
+        space: 1.0,
+        shadow: false,
+        color: None,
+        color_theme: None,
+    };
     let Some(doc) = super::plain_doc(&["x".into()]) else { return };
     let Some(crate::docx::Block::Para(p)) = doc.sections[0].blocks.first() else { return };
     let a = crate::docx::ParaStyle { border_top: Some(border), ..(*p.style).clone() };
@@ -2914,7 +2919,8 @@ fn tables_read_as_one_save_as_one() {
     let doc = format!(r#"<w:document xmlns:w="{w}"><w:body>{body}<w:sectPr/></w:body></w:document>"#);
     let rels = r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>"#;
     let bytes = super::package_bytes(&[("word/document.xml", &doc), ("word/_rels/document.xml.rels", rels)]).unwrap();
-    let saved = crate::docx::write::save(&crate::docx::read_editable(&bytes).expect("reads")).expect("saves");
+    let (read, read_docx) = crate::docx::read_editable(&bytes).expect("reads");
+    let saved = crate::docx::write::save(&read, &read_docx).expect("saves");
     let mut xml = String::new();
     std::io::Read::read_to_string(
         &mut zip::ZipArchive::new(std::io::Cursor::new(&saved[..])).unwrap().by_name("word/document.xml").unwrap(),
@@ -2925,7 +2931,7 @@ fn tables_read_as_one_save_as_one() {
     let grid: Vec<&str> = xml.split(r#"<w:gridCol w:w=""#).skip(1).map(|s| &s[..s.find('"').unwrap()]).collect();
     assert_eq!(grid, ["2000", "1000", "1000", "2000"]);
     assert_eq!(xml.matches(r#"<w:gridSpan w:val="2"/>"#).count(), 3, "{xml}");
-    let again = crate::docx::read_editable(&saved).expect("reads again");
+    let (again, _) = crate::docx::read_editable(&saved).expect("reads again");
     assert!(matches!(&again.sections[0].blocks[1], crate::docx::Block::Table(t) if t.rows.len() == 2 && t.grid.len() == 4));
 }
 
@@ -2942,14 +2948,14 @@ fn a_later_tables_alignment_and_margins_are_its_rows_exceptions_and_another_styl
         crate::docx::read_editable(&bytes).expect("reads")
     };
     let tables = |d: &crate::docx::Document| d.sections[0].blocks.iter().filter(|b| matches!(b, crate::docx::Block::Table(_))).count();
-    assert_eq!(tables(&read("")), 2, "the second has no style");
+    assert_eq!(tables(&read("").0), 2, "the second has no style");
     let mar = r#"<w:tblCellMar><w:left w:w="500" w:type="dxa"/></w:tblCellMar>"#;
-    let doc = read(&format!(r#"<w:tblStyle w:val="Grid"/><w:jc w:val="center"/>{mar}"#));
+    let (doc, docx) = read(&format!(r#"<w:tblStyle w:val="Grid"/><w:jc w:val="center"/>{mar}"#));
     assert_eq!(tables(&doc), 1);
     let Some(crate::docx::Block::Table(t)) = doc.sections[0].blocks.get(1) else { panic!("a table") };
     assert_eq!((t.rows[0].jc, t.rows[1].jc), (None, Some(crate::docx::props::Jc::Center)));
     assert_eq!((t.rows[0].cells[0].margins[1], t.rows[1].cells[0].margins[1]), (0.0, 25.0), "{:?}", t.rows[1].cells[0].margins);
-    let saved = crate::docx::write::save(&doc).expect("saves");
+    let saved = crate::docx::write::save(&doc, &docx).expect("saves");
     let mut xml = String::new();
     std::io::Read::read_to_string(
         &mut zip::ZipArchive::new(std::io::Cursor::new(&saved[..])).unwrap().by_name("word/document.xml").unwrap(),
@@ -2958,7 +2964,7 @@ fn a_later_tables_alignment_and_margins_are_its_rows_exceptions_and_another_styl
     .unwrap();
     assert_eq!(xml.matches("<w:tbl>").count(), 1, "{xml}");
     assert!(xml.contains(&format!(r#"<w:tblPrEx><w:jc w:val="center"/>{mar}</w:tblPrEx>"#)), "{xml}");
-    let again = crate::docx::read_editable(&saved).expect("reads again");
+    let (again, _) = crate::docx::read_editable(&saved).expect("reads again");
     let Some(crate::docx::Block::Table(u)) = again.sections[0].blocks.get(1) else { panic!("a table") };
     assert_eq!((u.rows[1].jc, u.rows[1].cells[0].margins), (t.rows[1].jc, t.rows[1].cells[0].margins));
 }
@@ -3959,7 +3965,7 @@ fn a_cells_number_cut_by_its_edge_keeps_what_shows_of_it() {
         r#"<w:tbl><w:tblPr><w:tblW w:w="2880" w:type="dxa"/><w:tblInd w:w="720" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="2880"/></w:tblGrid><w:tr>{cell}</w:tr></w:tbl><w:p/>"#
     );
     let Some(doc) = test_doc("", "", &body, numbering) else { return };
-    let snap = crate::layout::layout(&doc, &fonts());
+    let snap = crate::layout::tests::layout(&doc, &fonts());
     let mut labels = Vec::new();
     crate::layout::traverse::paint_lines(&snap.pages()[0], &mut |_| {}, &mut |_, _, l, dx, _| {
         labels.extend(l.line.label.map(|(a, b)| (a + dx, b + dx)));

@@ -6,83 +6,49 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::hash::Hash;
 use std::ops::Range;
 
 use roxmltree::Node;
 
 use super::model::Gallery;
+#[cfg(test)]
 use super::numbering::Numbering;
+#[cfg(test)]
 use super::props::{ParaProps, RunProps};
+#[cfg(test)]
 use super::styles::{StyleKind, StyleOrigin, Styles};
 use super::xml::*;
+use crate::document::paragraph::ListId;
+use crate::format::{DefinedIn, ListChoice, ListDefId, Lists, StyleSheet};
+use std::rc::Rc;
 
-/// Ids as the glossary's parts write them, and the ids the document's tables hold them under. Ids that are the same
-/// in both aren't stored.
-#[derive(Clone, Debug, PartialEq)]
-pub struct IdMap<K: Eq + Hash> {
-    to_view: HashMap<K, K>,
-    to_glossary: HashMap<K, K>,
+pub use crate::document::glossary::*;
+
+/// The glossary part's XML with its body's style and list ids as `map`'s document tables hold them.
+pub fn to_view_xml<'a>(map: &GlossaryMap, xml: &'a str) -> Cow<'a, str> {
+    remap_xml(xml, |s| map.styles.view(&s.to_string()), |n| map.nums.view(&n))
 }
 
-impl<K: Eq + Hash> Default for IdMap<K> {
-    fn default() -> Self {
-        IdMap { to_view: HashMap::new(), to_glossary: HashMap::new() }
-    }
+/// Part XML written from the model, with its ids back as `map`'s glossary parts name them.
+pub fn to_glossary_xml<'a>(map: &GlossaryMap, xml: &'a str) -> Cow<'a, str> {
+    remap_xml(xml, |s| map.styles.glossary(&s.to_string()), |n| map.nums.glossary(&n))
 }
 
-impl<K: Eq + Hash + Clone> IdMap<K> {
-    fn insert(&mut self, glossary: K, view: K) {
-        if glossary != view {
-            self.to_glossary.insert(view.clone(), glossary.clone());
-            self.to_view.insert(glossary, view);
-        }
+#[cfg(test)]
+fn map_ppr(map: &GlossaryMap, p: &mut ParaProps) {
+    if let Some(s) = &mut p.style {
+        *s = map.styles.view(s);
     }
-
-    /// The document table's id for a glossary id.
-    pub fn view(&self, glossary: &K) -> K {
-        self.to_view.get(glossary).unwrap_or(glossary).clone()
-    }
-
-    /// The glossary's id for a document table id.
-    pub fn glossary(&self, view: &K) -> K {
-        self.to_glossary.get(view).unwrap_or(view).clone()
+    // numId 0 removes numbering; it names no list.
+    if let Some(n) = p.num_id.as_mut().filter(|n| **n != 0) {
+        *n = map.nums.view(n);
     }
 }
 
-/// How the glossary's style, list and list definition ids map onto the document's tables.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct GlossaryMap {
-    pub styles: IdMap<String>,
-    pub nums: IdMap<i64>,
-    pub abstracts: IdMap<i64>,
-}
-
-impl GlossaryMap {
-    /// The glossary part's XML with its body's style and list ids as the document's tables hold them.
-    pub fn to_view_xml<'a>(&self, xml: &'a str) -> Cow<'a, str> {
-        remap_xml(xml, |s| self.styles.view(&s.to_string()), |n| self.nums.view(&n))
-    }
-
-    /// Part XML written from the model, with its ids back as the glossary's parts name them.
-    pub fn to_glossary_xml<'a>(&self, xml: &'a str) -> Cow<'a, str> {
-        remap_xml(xml, |s| self.styles.glossary(&s.to_string()), |n| self.nums.glossary(&n))
-    }
-
-    fn map_ppr(&self, p: &mut ParaProps) {
-        if let Some(s) = &mut p.style {
-            *s = self.styles.view(s);
-        }
-        // numId 0 removes numbering; it names no list.
-        if let Some(n) = p.num_id.as_mut().filter(|n| **n != 0) {
-            *n = self.nums.view(n);
-        }
-    }
-
-    fn map_rpr(&self, p: &mut RunProps) {
-        if let Some(s) = &mut p.style {
-            *s = self.styles.view(s);
-        }
+#[cfg(test)]
+fn map_rpr(map: &GlossaryMap, p: &mut RunProps) {
+    if let Some(s) = &mut p.style {
+        *s = map.styles.view(s);
     }
 }
 
@@ -120,6 +86,7 @@ fn remap_xml<'a>(xml: &'a str, style: impl Fn(&str) -> String, num: impl Fn(i64)
     Cow::Owned(out)
 }
 
+#[cfg(test)]
 /// Adds the glossary's styles and lists to the document's tables and returns how their ids map.
 pub fn merge_tables(styles: &mut Styles, numbering: &mut Numbering, glossary_styles: Styles, glossary_numbering: Numbering) -> GlossaryMap {
     let mut map = GlossaryMap::default();
@@ -159,8 +126,8 @@ pub fn merge_tables(styles: &mut Styles, numbering: &mut Numbering, glossary_sty
         s.id = map.styles.view(&s.id);
         s.based_on = s.based_on.map(|b| map.styles.view(&b));
         s.next = s.next.map(|n| map.styles.view(&n));
-        map.map_ppr(&mut s.base.ppr);
-        map.map_rpr(&mut s.base.rpr);
+        map_ppr(&map, &mut s.base.ppr);
+        map_rpr(&map, &mut s.base.rpr);
         s.origin = StyleOrigin::Glossary;
         if s.kind == StyleKind::Paragraph {
             styles.paragraph_order.push(s.id.clone());
@@ -183,13 +150,141 @@ pub fn merge_tables(styles: &mut Styles, numbering: &mut Numbering, glossary_sty
     map
 }
 
+/// Adds the glossary's typed styles and list definitions to the document's, as [`merge_tables`] adds them to the XML
+/// path's tables, and returns how their ids map: a style named as one of the document's maps to it, another joins
+/// under its own id (`~g~` before it when the document has that id), its base, next style, paragraph style, list and
+/// character style mapped; the definitions and lists join under ids past the document's.
+pub fn merge_definitions(styles: &mut StyleSheet, lists: &mut Lists, glossary_styles: &StyleSheet, glossary_lists: &Lists) -> GlossaryMap {
+    let mut map = GlossaryMap::default();
+    let fresh = |mut ids: Vec<i64>, from: i64, m: &mut IdMap<i64>| {
+        ids.sort_unstable();
+        for (k, g) in ids.into_iter().enumerate() {
+            m.insert(g, from + k as i64);
+        }
+    };
+    let next_def = lists.defs.keys().max().map_or(0, |m| m.0 + 1);
+    fresh(glossary_lists.defs.keys().map(|k| k.0).collect(), next_def, &mut map.abstracts);
+    let next_list = lists.lists.keys().max().map_or(1, |m| m.0 + 1).max(1);
+    fresh(glossary_lists.lists.keys().map(|k| k.0).collect(), next_list, &mut map.nums);
+
+    // Style names compare as names do in the styles part: without case
+    let name = |s: &crate::format::Style| match s.name.as_deref().filter(|n| !n.is_empty()) {
+        Some(n) => n.to_lowercase(),
+        None => s.id.to_lowercase(),
+    };
+    let by_name: HashMap<String, String> = styles.styles.values().map(|e| (name(&e.style), e.style.id.to_string())).collect();
+    let mut ids: Vec<&Rc<str>> = glossary_styles.styles.keys().collect();
+    ids.sort();
+    let mut own = Vec::new();
+    for id in ids {
+        let g = &glossary_styles.styles[id].style;
+        match by_name.get(&name(g)) {
+            Some(doc_id) => map.styles.insert(g.id.to_string(), doc_id.clone()),
+            None => {
+                let view = if styles.styles.contains_key(&g.id) { format!("~g~{}", g.id) } else { g.id.to_string() };
+                map.styles.insert(g.id.to_string(), view);
+                own.push(id.clone());
+            }
+        }
+    }
+    let style = |v: &Rc<str>| -> Rc<str> { map.styles.view(&v.to_string()).into() };
+    for id in &own {
+        let mut e = glossary_styles.styles[id].clone();
+        let s = Rc::make_mut(&mut e.style);
+        s.id = style(&s.id);
+        s.based_on = s.based_on.as_ref().map(style);
+        s.next = s.next.as_ref().map(style);
+        s.format.para.style = s.format.para.style.as_ref().map(style);
+        if let Some(ListChoice::In(n)) = &mut s.format.para.list {
+            n.0 = map.nums.view(&n.0);
+        }
+        s.format.char.style = s.format.char.style.as_ref().map(style);
+        e.origin = DefinedIn::Glossary;
+        if s.kind == crate::format::StyleKind::Paragraph {
+            styles.paragraph_order.push(s.id.clone());
+        }
+        styles.styles.insert(s.id.clone(), e);
+    }
+    for (g, d) in &glossary_lists.defs {
+        let mut d = (**d).clone();
+        for l in d.levels.iter_mut().flatten() {
+            if l.style.is_some() {
+                let l = Rc::make_mut(l);
+                l.style = l.style.as_ref().map(style);
+            }
+        }
+        d.num_style_link = d.num_style_link.as_ref().map(style);
+        d.origin = DefinedIn::Glossary;
+        d.id = ListDefId(map.abstracts.view(&g.0));
+        lists.defs.insert(d.id, Rc::new(d));
+    }
+    for (g, n) in &glossary_lists.lists {
+        let mut n = (**n).clone();
+        n.def = n.def.map(|d| ListDefId(map.abstracts.view(&d.0)));
+        n.origin = DefinedIn::Glossary;
+        n.id = ListId(map.nums.view(&g.0));
+        lists.lists.insert(n.id, Rc::new(n));
+    }
+    map
+}
+
+/// The gallery a `w:gallery` value names.
+pub fn gallery(v: &str) -> Gallery {
+    match v {
+        "placeholder" => Gallery::Placeholder,
+        "autoTxt" => Gallery::AutoText,
+        _ => match v.strip_prefix("custom").and_then(|n| n.parse::<u8>().ok()) {
+            Some(n @ 1..=5) => Gallery::Custom(n),
+            _ => Gallery::Other(v.to_string()),
+        },
+    }
+}
+
+/// The `w:gallery` value of `g`.
+pub fn gallery_xml(g: &Gallery) -> String {
+    match g {
+        Gallery::Placeholder => "placeholder".into(),
+        Gallery::AutoText => "autoTxt".into(),
+        Gallery::Custom(n) => format!("custom{n}"),
+        Gallery::Other(v) => v.clone(),
+    }
+}
+
+/// Whether a gallery control naming gallery `name` (as Word's Content Control Properties name it: `Quick
+/// Parts`, `AutoText`, `Cover Pages`, ..., `Custom 1`) offers building blocks of gallery `g`: its built-in and
+/// custom ones, `Custom 1` to `Custom 5` their own.
+pub fn gallery_named(g: &Gallery, name: &str) -> bool {
+    let v = gallery_xml(g);
+    let base = v.strip_prefix("cust").filter(|_| !matches!(g, Gallery::Custom(_))).map_or(v.as_str(), |b| b);
+    let want: &[&str] = match name.trim() {
+        "Quick Parts" => &["docParts", "QuickParts"],
+        "AutoText" => &["autoTxt", "AutoTxt"],
+        "Cover Pages" => &["coverPg", "CoverPg"],
+        "Equations" => &["eq", "Eq"],
+        "Footers" => &["ftrs", "Ftrs"],
+        "Headers" => &["hdrs", "Hdrs"],
+        "Page Numbers" => &["pgNum", "PgNum"],
+        "Page Numbers (Top of Page)" => &["pgNumT", "PgNumT"],
+        "Page Numbers (Bottom of Page)" => &["pgNumB", "PgNumB"],
+        "Page Numbers (Margins)" => &["pgNumMargins", "PgNumMargins"],
+        "Tables" => &["tbls", "Tbls"],
+        "Table of Contents" => &["tblOfContents", "TblOfContents"],
+        "Text Boxes" => &["txtBox", "TxtBox"],
+        "Watermarks" => &["watermarks", "Watermarks"],
+        "Bibliographies" => &["bib", "Bib"],
+        "" => return true,
+        other => return other.strip_prefix("Custom ").and_then(|n| n.parse::<u8>().ok()).is_some_and(|n| *g == Gallery::Custom(n)),
+    };
+    want.contains(&base)
+}
+
 /// A `w:docPart`'s properties: name, category, gallery and guid. `None` when it has no name.
 pub(super) fn part_props(part: Node) -> Option<(String, String, Gallery, Option<String>)> {
     let pr = child(part, "docPartPr")?;
     let name = child(pr, "name").and_then(val)?.to_string();
     let category = child(pr, "category");
     let category_name = category.and_then(|c| child(c, "name")).and_then(val).unwrap_or("").to_string();
-    let gallery = Gallery::parse(category.and_then(|c| child(c, "gallery")).and_then(val).unwrap_or(""));
+    let gallery = self::gallery(category.and_then(|c| child(c, "gallery")).and_then(val).unwrap_or(""));
     let guid = child(pr, "guid").and_then(val).map(str::to_string);
     Some((name, category_name, gallery, guid))
 }
@@ -197,7 +292,7 @@ pub(super) fn part_props(part: Node) -> Option<(String, String, Gallery, Option<
 #[cfg(test)]
 mod tests {
     use super::super::model::*;
-    use super::super::styles::StyleOrigin;
+    use crate::docx::origin::ParagraphOrigin;
 
     fn fixture() -> Vec<u8> {
         let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-SUBTEMPLATES.docx");
@@ -225,7 +320,7 @@ mod tests {
 
     #[test]
     fn reads_building_blocks_with_their_properties() {
-        let doc = super::super::read_editable(&fixture()).unwrap();
+        let (doc, docx) = super::super::read_editable(&fixture()).unwrap();
         let g = doc.glossary.as_ref().expect("a glossary");
         let names: Vec<(&str, &str)> = g.parts.iter().map(|b| (b.name.as_str(), b.category.as_str())).collect();
         assert_eq!(
@@ -244,16 +339,16 @@ mod tests {
         assert!(g.parts.iter().all(|b| b.editable && b.state == PartState::AsRead));
         assert_eq!(g.find("Violation", "Sub-templates", None), Some(0));
         assert_eq!(g.find("violation", "Sub-templates", None), None);
-        let src = doc.source.as_ref().and_then(|s| s.glossary.as_ref()).expect("the glossary as read");
+        let src = docx.source.as_ref().and_then(|s| s.glossary.as_ref()).expect("the glossary as read");
         assert_eq!(src.parts.len(), 6);
         assert!(src.xml[src.parts[1].0.clone()].contains("FeeRow"));
     }
 
     #[test]
     fn body_styles_resolve_by_name_with_the_document_first() {
-        let doc = super::super::read_editable(&fixture()).unwrap();
+        let (doc, _) = super::super::read_editable(&fixture()).unwrap();
         let g = doc.glossary.as_ref().unwrap();
-        let res = doc.resolver.as_ref().unwrap();
+        let res = doc.definitions.as_ref().unwrap();
         let body = paras(&g.parts[0].body);
         // Heading 1 is in both parts: the document's (16pt), not the glossary's (24pt).
         assert_eq!(body[0].style.style_id.as_deref(), Some("Heading1"));
@@ -261,19 +356,20 @@ mod tests {
         // Notice is only the glossary's: its own definition, kept under its id.
         assert_eq!(body[1].style.style_id.as_deref(), Some("Notice"));
         assert!(first_run(body[1]).italic);
-        assert_eq!(res.styles.by_id["Notice"].origin, StyleOrigin::Glossary);
-        assert_eq!(res.styles.by_id["Heading1"].origin, StyleOrigin::Document);
+        let sheet = &res.cascade().styles;
+        assert_eq!(sheet.styles["Notice"].origin, crate::format::DefinedIn::Glossary);
+        assert_eq!(sheet.styles["Heading1"].origin, crate::format::DefinedIn::Document);
         // The glossary's Header is another style than the document's Header: it moves to a free id.
         assert_eq!(g.map.styles.view(&"Header".to_string()), "~g~Header");
         assert_eq!(g.map.styles.glossary(&"~g~Header".to_string()), "Header");
         let fee = paras(&g.parts[1].body);
         assert_eq!(fee[1].style.style_id.as_deref(), Some("~g~Header"));
-        assert_eq!(res.styles.by_id["Header"].name, "header");
+        assert_eq!(sheet.get("Header").and_then(|s| s.name.as_deref()), Some("header"));
     }
 
     #[test]
     fn body_lists_pictures_revisions_and_comments_are_read() {
-        let doc = super::super::read_editable(&fixture()).unwrap();
+        let (doc, docx) = super::super::read_editable(&fixture()).unwrap();
         let g = doc.glossary.as_ref().unwrap();
         let body = paras(&g.parts[0].body);
         let labels: Vec<&str> = body[2..4].iter().map(|p| p.list.as_ref().map_or("", |l| l.text.as_str())).collect();
@@ -281,14 +377,14 @@ mod tests {
         // The glossary's list 1 is held past the document's lists.
         assert_ne!(g.map.nums.view(&1), 1);
         let picture = body[5].inlines.iter().find_map(|i| if let Inline::Picture(p, _) = i { p.image } else { None }).expect("a picture");
-        assert!(doc.images[picture].starts_with(b"\x89PNG"));
+        assert!(doc.images.get(picture).unwrap().starts_with(b"\x89PNG"));
         assert!(text(body[1]).contains("again"));
         let inserted = body[1].inlines.iter().any(|i| matches!(i, Inline::Text(s, r) if s.contains("again") && r.rev.ins.is_some()));
         assert!(inserted, "the tracked insertion is a revision");
         // The comment is the glossary's own: its markers aren't orphans, and they stay in the paragraph's source.
-        assert_eq!(doc.diagnostics.count(super::super::diagnostics::WarningCode::CommentReferenceOrphan), 0);
-        let src = body[1].src.as_ref().expect("a source");
-        let xml = &doc.source.as_ref().unwrap().glossary.as_ref().unwrap().xml;
+        assert_eq!(docx.diagnostics.count(super::super::diagnostics::WarningCode::CommentReferenceOrphan), 0);
+        let src = body[1].src().expect("a source");
+        let xml = &docx.source.as_ref().unwrap().glossary.as_ref().unwrap().xml;
         assert!(src.ranges.iter().any(|r| xml[r.clone()].contains("commentReference")));
     }
 
@@ -308,10 +404,10 @@ mod tests {
             out.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
             std::io::Write::write_all(&mut out, &data).unwrap();
         }
-        let doc = super::super::read_editable(&out.finish().unwrap().into_inner()).unwrap();
+        let (doc, docx) = super::super::read_editable(&out.finish().unwrap().into_inner()).unwrap();
         let g = doc.glossary.as_ref().unwrap();
         assert_eq!(g.parts.len(), 5);
         assert!(g.parts.iter().all(|b| b.name != "FeeRow"));
-        assert_eq!(doc.diagnostics.count(super::super::diagnostics::WarningCode::GlossaryUnreadable), 1);
+        assert_eq!(docx.diagnostics.count(super::super::diagnostics::WarningCode::GlossaryUnreadable), 1);
     }
 }

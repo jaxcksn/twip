@@ -98,7 +98,7 @@ pub fn story_ref(
     page_in_section: usize,
     page_number: i64,
     footer: bool,
-) -> (usize, Option<&String>) {
+) -> (usize, Option<HeaderFooterId>) {
     story_ref_in(sections, MarkupView::All, even_and_odd, si, page_in_section, page_number, footer)
 }
 
@@ -110,9 +110,9 @@ pub fn story_ref_in(
     page_in_section: usize,
     page_number: i64,
     footer: bool,
-) -> (usize, Option<&String>) {
+) -> (usize, Option<HeaderFooterId>) {
     let variant = story_variant(sections, view, even_and_odd, si, page_in_section, page_number);
-    let part = (0..=si).rev().find_map(|k| hf_refs(&sections[k], footer)[variant].as_ref());
+    let part = (0..=si).rev().find_map(|k| hf_refs(&sections[k], footer)[variant]);
     (variant, part)
 }
 
@@ -155,18 +155,18 @@ impl HfSources {
     }
 
     /// [`story_ref_in`] of the sections the table was made from.
-    pub fn story_ref<'s>(
+    pub fn story_ref(
         &self,
-        sections: &'s [Section],
+        sections: &[Section],
         view: MarkupView,
         even_and_odd: bool,
         si: usize,
         page_in_section: usize,
         page_number: i64,
         footer: bool,
-    ) -> (usize, Option<&'s String>) {
+    ) -> (usize, Option<HeaderFooterId>) {
         let variant = story_variant(sections, view, even_and_odd, si, page_in_section, page_number);
-        let part = self.0[si][usize::from(footer)][variant].and_then(|k| hf_refs(&sections[k], footer)[variant].as_ref());
+        let part = self.0[si][usize::from(footer)][variant].and_then(|k| hf_refs(&sections[k], footer)[variant]);
         (variant, part)
     }
 }
@@ -290,7 +290,7 @@ pub enum Next {
 pub struct Paginator<'d, 'p> {
     pub ctx: LayoutCtx<'d>,
     pub sections: &'d [Section],
-    pub stories: &'d std::collections::BTreeMap<String, Vec<Block>>,
+    pub stories: &'d std::collections::BTreeMap<HeaderFooterId, Vec<Block>>,
     pub notes: Notes<'d>,
     pub note_numbers: &'p HashMap<(NoteKind, i64), String>,
     /// Each body paragraph's chapter number for its page numbers.
@@ -327,10 +327,10 @@ impl<'d> Paginator<'d, '_> {
         let before = self.page_in_section(si);
         let first = before == 0;
         let s = self.sections[si].section_in(self.ctx.env.text.review.view);
-        let page_borders = self.sections[si].page_borders.as_ref().filter(|b| match b.display.as_str() {
-            "firstPage" => first,
-            "notFirstPage" => !first,
-            _ => true,
+        let page_borders = self.sections[si].page_borders.as_ref().filter(|b| match b.display {
+            crate::docx::PageBorderDisplay::FirstPage => first,
+            crate::docx::PageBorderDisplay::NotFirstPage => !first,
+            crate::docx::PageBorderDisplay::AllPages => true,
         });
         let page_borders = page_borders.filter(|_| !blank).map(|b| {
             let (left, right, _) = margins(&self.sections[si], &self.ctx, self.run.page_number);
@@ -388,7 +388,7 @@ impl<'d> Paginator<'d, '_> {
                 .hf_sources
                 .story_ref(self.sections, view, self.ctx.env.even_and_odd, si, pis, self.run.page_number, footer)
                 .1
-                .and_then(|p| self.stories.get(p))
+                .and_then(|p| self.stories.get(&p))
             else {
                 continue;
             };
@@ -437,7 +437,7 @@ impl<'d> Paginator<'d, '_> {
                 .hf_sources
                 .story_ref(self.sections, view, self.ctx.env.even_and_odd, si, pis, self.run.page_number, footer)
                 .1
-                .and_then(|p| self.stories.get(p))
+                .and_then(|p| self.stories.get(&p))
             else {
                 continue;
             };

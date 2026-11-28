@@ -1,7 +1,11 @@
 //! Style descriptions
 
+use crate::docx::Underline;
+use crate::docx::char_props::to_run_props;
+use crate::docx::para_props::to_para_props;
 use crate::docx::props::{Border, FontRef, Jc, LineRule, ParaProps, RunProps, Tab, TabKind, toggle};
-use crate::docx::styles::{Style, StyleKind, Styles};
+use crate::format::cascade::Cascade;
+use crate::format::{Style, StyleEntry, StyleKind};
 
 /// A line of a description's group: written under it, on its own line.
 const SUB: &str = "\r    ";
@@ -56,10 +60,14 @@ fn colour(rgb: u32, theme: Option<&str>) -> String {
     if named.is_empty() { format!("Custom Color(RGB({},{},{}))", rgb >> 16, (rgb >> 8) & 0xFF, rgb & 0xFF) } else { named.to_string() }
 }
 
-/// The `w:themeColor` of the style's own `w:rPr` `w:color`, if any.
-fn theme_colour(style: &Style, styles: &Styles) -> Option<String> {
-    use crate::docx::xml::{attr, child};
-    styles.cx().parse(&style.raw, |_, el| Some(attr(child(child(el, "rPr")?, "color")?, "themeColor")?.to_string())).flatten()
+/// The theme colour the style's own character properties give its text, as written.
+fn theme_colour(style: &Style) -> Option<String> {
+    let c = &style.format.char;
+    if let Some(crate::format::Color::Theme(t)) = c.color {
+        return crate::docx::props::theme_name(t.slot).map(str::to_string);
+    }
+    let on_colour = |a: &&crate::format::ForeignAttr| a.on.as_ref().is_some_and(|q| &*q.local == "color") && &*a.name.local == "themeColor";
+    c.color.and(c.foreign.as_deref()).and_then(|f| f.attributes.iter().find(on_colour)).map(|a| a.value.to_string())
 }
 
 fn font_name(f: &FontRef) -> String {
@@ -71,14 +79,15 @@ fn font_name(f: &FontRef) -> String {
 }
 
 fn border_line(b: &Border) -> String {
-    let style = match &*b.style {
-        "single" => "Single solid line",
-        "double" => "Double solid lines",
-        "dotted" => "Dotted line",
-        "dashed" => "Dashed line",
-        "thick" => "Single solid line",
-        "wave" => "Wave line",
-        other => other,
+    use crate::docx::props::BorderStyle;
+    let style = match b.style {
+        BorderStyle::Single => "Single solid line",
+        BorderStyle::Double => "Double solid lines",
+        BorderStyle::Dotted => "Dotted line",
+        BorderStyle::Dashed => "Dashed line",
+        BorderStyle::Thick => "Single solid line",
+        BorderStyle::Wave => "Wave line",
+        other => crate::docx::line_style::border_val(other),
     };
     let colour = b.color.map_or("Auto".to_string(), |c| colour(c, None));
     format!("({style}, {colour},  {} Line width)", points(b.width))
@@ -126,8 +135,8 @@ fn character(r: &RunProps, theme: Option<&str>, default_font: Option<&str>, out:
     if let Some(Some(c)) = r.color {
         out.push(format!("Font color: {}", colour(c, theme)));
     }
-    if let Some(u) = r.underline.as_deref().filter(|u| *u != "none") {
-        out.push(if u == "single" { "Underline".into() } else { format!("Underline: {u}") });
+    if let Some(u) = r.underline.filter(|u| *u != Underline::None) {
+        out.push(if u == Underline::Single { "Underline".into() } else { format!("Underline: {}", crate::docx::line_style::underline_val(u)) });
     }
     for (bit, name) in [(toggle::CAPS, "All caps"), (toggle::SMALL_CAPS, "Small caps"), (toggle::STRIKE, "Strikethrough"), (toggle::VANISH, "Hidden")]
     {
@@ -221,12 +230,13 @@ fn differs<T: PartialEq + Clone>(own: &Option<T>, base: &Option<T>) -> Option<T>
     own.as_ref().filter(|v| base.as_ref() != Some(*v)).cloned()
 }
 
-/// The paragraph properties a style sets over its base's, as text in the base resolves.
-fn own_ppr(style: &Style, styles: &Styles) -> ParaProps {
-    let Some(b) = style.based_on.as_deref() else { return style.base.ppr.clone() };
-    let mut base = styles.doc_ppr.clone();
-    base.merge(&styles.chain_ppr(Some(b)));
-    let o = &style.base.ppr;
+/// The paragraph properties a style sets over its base's (`based_on`), as text in the base resolves.
+fn own_ppr(own: &ParaProps, based_on: Option<&str>, c: &Cascade) -> ParaProps {
+    let Some(b) = based_on else { return own.clone() };
+    let mut base = c.doc_para().clone();
+    base.merge(&c.chain_para(Some(b)));
+    let base = to_para_props(&base, &c.colours);
+    let o = own;
     let mut p = o.clone();
     p.jc = differs(&o.jc, &base.jc);
     p.ind_left = differs(&o.ind_left, &base.ind_left);
@@ -246,12 +256,13 @@ fn own_ppr(style: &Style, styles: &Styles) -> ParaProps {
     p
 }
 
-/// The character properties a style sets over its base's.
-fn own_rpr(style: &Style, styles: &Styles) -> RunProps {
-    let Some(b) = style.based_on.as_deref() else { return style.base.rpr.clone() };
-    let mut base = styles.doc_rpr.clone();
-    base.merge_level(&styles.chain_rpr(Some(b)));
-    let o = &style.base.rpr;
+/// The character properties a style sets over its base's (`based_on`).
+fn own_rpr(own: &RunProps, based_on: Option<&str>, c: &Cascade) -> RunProps {
+    let Some(b) = based_on else { return own.clone() };
+    let mut base = c.doc_char().clone();
+    base.merge_level(&c.chain_char(Some(b)));
+    let base = to_run_props(&base, &c.colours);
+    let o = own;
     let mut r = o.clone();
     r.ascii = differs(&o.ascii, &base.ascii);
     r.size = differs(&o.size, &base.size);
@@ -265,38 +276,43 @@ fn own_rpr(style: &Style, styles: &Styles) -> RunProps {
 /// A style's own formatting in words, as the style dialog shows it: what it sets over the style it is based on, then
 /// its list flags, its base and the style that follows it. A style based on none also shows the defaults it starts
 /// from.
-pub fn describe(style: &Style, styles: &Styles) -> String {
-    let root = style.based_on.is_none() && style.kind == StyleKind::Paragraph;
+pub fn describe(e: &StyleEntry, c: &Cascade) -> String {
+    let style = &*e.style;
+    let based_on = c.based_on(e);
+    let format = c.format_of(e);
+    let root = based_on.is_none() && style.kind == StyleKind::Paragraph;
+    let doc_rpr = to_run_props(c.doc_char(), &c.colours);
     let mut items: Vec<String> = Vec::new();
-    let mut rpr = own_rpr(style, styles);
-    let default_font = if root && rpr.ascii.is_none() { styles.doc_rpr.ascii.as_ref().map(font_name) } else { None };
+    let mut rpr = own_rpr(&to_run_props(&format.char, &c.colours), based_on, c);
+    let default_font = if root && rpr.ascii.is_none() { doc_rpr.ascii.as_ref().map(font_name) } else { None };
     if root {
-        rpr.size = rpr.size.filter(|s| Some(*s) != styles.doc_rpr.size);
+        rpr.size = rpr.size.filter(|s| Some(*s) != doc_rpr.size);
     }
-    character(&rpr, theme_colour(style, styles).as_deref(), default_font.as_deref(), &mut items);
+    character(&rpr, theme_colour(style).as_deref(), default_font.as_deref(), &mut items);
     if style.kind != StyleKind::Character {
-        let mut ppr = own_ppr(style, styles);
+        let mut ppr = own_ppr(&to_para_props(&format.para, &c.colours), based_on, c);
         if root {
-            let mut merged = styles.doc_ppr.clone();
+            let mut merged = to_para_props(c.doc_para(), &c.colours);
             merged.merge(&ppr);
             ppr = merged;
         }
         paragraph(&ppr, root, &mut items);
     }
+    let on = |v: Option<bool>| v.unwrap_or(false);
     let mut flags: Vec<&str> = Vec::new();
     if style.link.is_some() {
         flags.push("Linked");
     }
-    if style.meta.auto_redefine {
+    if on(style.meta.auto_redefine) {
         flags.push("Automatically update");
     }
-    if style.meta.unhide_when_used {
+    if on(style.meta.unhide_when_used) {
         flags.push("Hide until used");
     }
-    if style.quick {
+    if on(style.quick) {
         flags.push("Show in the Styles gallery");
     }
-    if style.meta.locked {
+    if on(style.meta.locked) {
         flags.push("Locked");
     }
     let priority = style.priority.filter(|p| *p != 0).map(|p| format!("Priority: {}", p + 1));
@@ -306,11 +322,11 @@ pub fn describe(style: &Style, styles: &Styles) -> String {
         (true, Some(p)) => items.push(p),
         (true, None) => {}
     }
-    let name = |id: &str| styles.get(id).map_or(id.to_string(), display_name);
-    if let Some(b) = &style.based_on {
+    let name = |id: &str| c.styles.get(id).map_or(id.to_string(), |s| display_name(s));
+    if let Some(b) = based_on {
         items.push(format!("{SUB}Based on: {}", name(b)));
     }
-    if let Some(n) = style.next.as_deref().filter(|n| *n != style.id) {
+    if let Some(n) = style.next.as_deref().filter(|n| **n != *style.id) {
         items.push(format!("{SUB}Following style: {}", name(n)));
     }
     let mut out = String::new();
@@ -325,31 +341,32 @@ pub fn describe(style: &Style, styles: &Styles) -> String {
 
 /// A style's name as lists show it: a built-in's capitalised ("heading 1" is "Heading 1").
 pub fn display_name(s: &Style) -> String {
-    if !s.custom && !s.name.chars().any(char::is_uppercase) {
-        s.name
-            .split(' ')
+    let name = s.name.as_deref().unwrap_or_default();
+    if !s.custom.unwrap_or(false) && !name.chars().any(char::is_uppercase) {
+        name.split(' ')
             .map(|w| w.chars().take(1).flat_map(char::to_uppercase).chain(w.chars().skip(1)).collect::<String>())
             .collect::<Vec<_>>()
             .join(" ")
     } else {
-        s.name.clone()
+        name.to_string()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::describe;
+    use crate::docx::style_xml::StyleXml;
 
-    fn styles() -> crate::docx::styles::Styles {
+    fn cascade() -> std::rc::Rc<crate::format::cascade::Cascade> {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-STYLES.docx");
-        let doc = crate::docx::read_editable(&std::fs::read(path).expect("FX-STYLES")).expect("reads");
-        doc.resolver.expect("a resolver").styles.clone()
+        let (doc, _) = crate::docx::read_editable(&std::fs::read(path).expect("FX-STYLES")).expect("reads");
+        doc.definitions.expect("a resolver").cascade()
     }
 
     #[test]
     fn descriptions_read_as_the_style_dialog_writes_them() {
-        let s = styles();
-        let d = |id: &str| describe(s.get(id).expect(id), &s);
+        let c = cascade();
+        let d = |id: &str| describe(c.styles.styles.get(id).expect(id), &c);
         assert_eq!(
             d("Heading1"),
             "Font: 16 pt, Bold, Space\r    Before:  12 pt\r    After:  0 pt, Keep with next, Keep lines together, Level 1, Style: Show in the Styles gallery\r    Based on: Normal\r    Following style: Normal"
@@ -369,12 +386,18 @@ mod tests {
         assert_eq!(d("MemoBody"), "\r    Line spacing:  1.5 lines\r    Based on: Normal");
         assert_eq!(d("Locked"), "All caps, Style: Locked\r    Based on: Normal");
         assert_eq!(d("Draft"), "Font color: Custom Color(RGB(127,127,127)), Style: Hide until used, Priority: 51\r    Based on: Normal");
-        let mut draft = s.get("Draft").expect("Draft").clone();
-        draft.raw = r#"<w:style w:type="paragraph" w:styleId="Draft"><w:name w:val="Draft"/><w:pPr><w:rPr><w:color w:val="000000" w:themeColor="accent1"/></w:rPr></w:pPr><w:rPr><w:color w:val="7F7F7F"/><w:u w:val="single" w:color="C00000" w:themeColor="accent2"/></w:rPr></w:style>"#.into();
+        let mut draft = c.styles.styles.get("Draft").expect("Draft").clone();
+        let raw = r#"<w:style w:type="paragraph" w:styleId="Draft"><w:name w:val="Draft"/><w:basedOn w:val="Normal"/><w:pPr><w:rPr><w:color w:val="000000" w:themeColor="accent1"/></w:rPr></w:pPr><w:rPr><w:color w:val="7F7F7F"/><w:u w:val="single" w:color="C00000" w:themeColor="accent2"/></w:rPr></w:style>"#;
+        draft.style = crate::docx::style_xml::StyleDef::from_xml(
+            raw,
+            &crate::docx::write::props::Cx::of_xml(&format!("<w:styles xmlns:w=\"{}\">", crate::docx::write::props::W_NS)),
+        )
+        .get()
+        .clone();
         assert!(
-            describe(&draft, &s).starts_with("Font color: Custom Color(RGB(127,127,127))"),
+            describe(&draft, &c).starts_with("Font color: Custom Color(RGB(127,127,127))"),
             "the colour's own theme alone: {}",
-            describe(&draft, &s)
+            describe(&draft, &c)
         );
         assert_eq!(
             d("Normal"),

@@ -4,7 +4,8 @@ use std::path::Path;
 
 use crate::docx::{Block, Inline};
 use crate::layout::ids::Revision;
-use crate::layout::{Budget, Change, DocumentLayout, LayoutStatus, Step, dump, layout};
+use crate::layout::tests::layout;
+use crate::layout::{Budget, Change, LayoutStatus, Step, dump};
 
 use super::{doc, fonts};
 
@@ -12,13 +13,12 @@ use super::{doc, fonts};
 fn edits_while_pending() {
     let Some(mut d) = doc(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/big.docx"))) else { return };
     let fonts = fonts();
-    let mut dl = DocumentLayout::new();
+    let mut dl = crate::layout::tests::document_layout(&d);
     dl.edit(Revision(1), None);
     dl.complete(&d, &fonts);
     let Block::Para(p) = d.sections[0].blocks[2].clone() else { return };
     let mut q = p;
-    q.id = crate::docx::model::next_para_id();
-    q.src = None;
+    q.renew_identity();
     d.sections[0].blocks.insert(3, Block::Para(q));
     dl.edit(Revision(2), Some(Change { section: 0, first: 2, old_end: 3, new_end: 4, row: None }));
     assert_eq!(dl.run(&d, &fonts, Budget::Pages(2)), Step::Yielded);

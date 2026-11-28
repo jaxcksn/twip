@@ -97,7 +97,7 @@ fn story_starts(notes: &HashMap<i64, Vec<Block>>, ids: impl Iterator<Item = i64>
 }
 
 impl JobNotes {
-    pub fn new(doc: &Document) -> JobNotes {
+    pub fn new(doc: &Document, view: &crate::docx::review::ReviewView) -> JobNotes {
         let mut refs = Vec::new();
         let mut seen = HashSet::new();
         let mut numbers = HashMap::new();
@@ -198,7 +198,7 @@ impl JobNotes {
             }
         }
         let foot: Vec<i64> = of(NoteKind::Foot).collect();
-        let joined = [joined_notes(&doc.footnotes, &foot, &doc.review, false), joined_notes(&doc.endnotes, &endnotes, &doc.review, true)];
+        let joined = [joined_notes(&doc.footnotes, &foot, view, false), joined_notes(&doc.endnotes, &endnotes, view, true)];
         JobNotes { numbers, endnotes, ends, separator, paged, keyed, joined }
     }
 

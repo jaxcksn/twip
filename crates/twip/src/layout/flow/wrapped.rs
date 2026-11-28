@@ -354,7 +354,8 @@ impl<'d> PageFill<'d, '_> {
         let stays = |a: &Placed| {
             leading(a)
                 && a.key.2 < lead_end
-                && (matches!(a.float.v_relative.as_str(), "page" | "margin") || col.bottom.holds(origin + a.rect[3] - a.rect[1]))
+                && (matches!(a.float.v_relative, VerticalRelation::Page | VerticalRelation::Margin)
+                    || col.bottom.holds(origin + a.rect[3] - a.rect[1]))
         };
         let placed_end = if lead_only { 0 } else { bands[take - 1].1.last().map_or(0, |l| l.end) };
         if !lead_only {
@@ -827,7 +828,10 @@ impl<'d> PageFill<'d, '_> {
                         continue;
                     }
                     // A vertical section's table moves the line to its far side whole.
-                    let square = here.iter().filter(|f| f.in_band(yy, yy + h)).all(|f| f.float.wrap == "square" && f.key.2 != float::UPRIGHT_TABLE);
+                    let square = here
+                        .iter()
+                        .filter(|f| f.in_band(yy, yy + h))
+                        .all(|f| f.float.wrap == crate::docx::FloatWrap::Square && f.key.2 != float::UPRIGHT_TABLE);
                     // Compat ≤ 14: a line whose content fits no piece retries lower in steps of its height. One left no
                     // piece at all first goes to the top of a float starting inside it, then down by its height or to
                     // the bottom of the floats over its top, whichever is nearer.
@@ -906,14 +910,14 @@ impl<'d> PageFill<'d, '_> {
             // From the line laid out before the float: placed again once the line wraps it, it keeps that x, as the
             // first fill of the page that placed it found it (each fill takes the one before's), wherever later fills
             // put the paragraph.
-            if f.h_relative == "character" {
+            if f.h_relative == HorizontalRelation::Character {
                 let before = self.at.known.iter().find(|o| o.key == (si, bi, pb.from + k) && o.wrap != Wrap::None).map(|o| o.rect[0]);
                 x = before.unwrap_or_else(|| float::h_pos(f, &Frames { column: (char_x(k, b), 0.0), ..*frames }));
             }
-            if compat == Compat::Legacy && f.h_relative == "column" {
-                match f.h_align.as_deref() {
-                    Some("left") => x += style.ind_left,
-                    Some("right") => x -= style.ind_right,
+            if compat == Compat::Legacy && f.h_relative == HorizontalRelation::Column {
+                match f.h_align {
+                    Some(HorizontalAlign::Left) => x += style.ind_left,
+                    Some(HorizontalAlign::Right) => x -= style.ind_right,
                     // From a line that starts beside another paragraph's float (for a drawing, a frame before the
                     // paragraph included): from where its piece starts. One that doesn't wrap also counts from the
                     // piece its line was laid out again in beside the line's own wrapping floats.
@@ -922,7 +926,7 @@ impl<'d> PageFill<'d, '_> {
                         let drawing = f.text_box.is_none() || f.shape.is_some();
                         let segs = &bands[b].1;
                         let line = pb.from + segs[0].start..pb.from + segs.last().map_or(segs[0].end, |l| l.end).max(segs[0].start + 1);
-                        let unwrapped = f.wrap == "none";
+                        let unwrapped = f.wrap == crate::docx::FloatWrap::None;
                         let others: Vec<Placed> = floats
                             .iter()
                             .chain(&self.at.found)
@@ -942,7 +946,7 @@ impl<'d> PageFill<'d, '_> {
             }
             let mut fy = float::v_pos(f, h, frames, para_top, line_top);
             // A frame from the text that would start above the page starts at its top.
-            if f.text_box.is_some() && f.shape.is_none() && f.v_relative == "paragraph" {
+            if f.text_box.is_some() && f.shape.is_none() && f.v_relative == VerticalRelation::Paragraph {
                 fy = fy.max(0.0);
             }
             // Compat ≤ 14: a drawing's page position in whole twips, for the collision with the lines above and the
@@ -968,7 +972,7 @@ impl<'d> PageFill<'d, '_> {
             // Compat 15 keeps the box with its effect extents (a VML shape's outline allowance too, not its
             // distances) on the page, its top no higher than the top margin.
             let mut clamped = None;
-            if compat == Compat::Generic && matches!(f.v_relative.as_str(), "paragraph" | "line") {
+            if compat == Compat::Generic && matches!(f.v_relative, VerticalRelation::Paragraph | VerticalRelation::Line) {
                 let top = frames.margin[2] + f.effect[1];
                 // A VML shape moved down by it reaches no further below its box than above it.
                 // ponytail: read off one shape moved by its top extent only; a shape from far above may differ.
@@ -985,7 +989,8 @@ impl<'d> PageFill<'d, '_> {
                     x -= (r - frames.page_w).min(l);
                 }
             }
-            if compat == Compat::Generic && matches!(f.v_relative.as_str(), "paragraph" | "line") && !col.bottom.holds(fy + h) {
+            if compat == Compat::Generic && matches!(f.v_relative, VerticalRelation::Paragraph | VerticalRelation::Line) && !col.bottom.holds(fy + h)
+            {
                 let up = col.bottom.to_pt() - h;
                 let anchor_bottom = line_top + bands[b].1[0].pitch;
                 if up >= anchor_bottom - EPS {
@@ -1060,7 +1065,7 @@ impl<'d> PageFill<'d, '_> {
         // A frame placed in the flow: compat ≤ 14 lays it out below an earlier frame whose box with its
         // distances it meets, from the nearest twip; compat 15 moves one that may not overlap only down.
         let frame = |o: &Placed| o.float.text_box.is_some() && o.float.shape.is_none();
-        let in_flow = frame(&a) && a.float.v_relative == "paragraph" && a.float.v_offset == 0.0;
+        let in_flow = frame(&a) && a.float.v_relative == VerticalRelation::Paragraph && a.float.v_offset == 0.0;
         let mut under = Vec::new();
         // Compat ≤ 14 places a frame that may not overlap, or any frame once the page holds one, at the nearest
         // twip, its height kept.
@@ -1113,7 +1118,7 @@ impl<'d> PageFill<'d, '_> {
                     // overlap: then it goes a twip above that frame's bottom, in whole twips. So does one that
                     // may not overlap a frame with its own offset from the text; below a frame in the flow it
                     // goes to its bottom at the nearest twip.
-                    let fixed = matches!(o.float.v_relative.as_str(), "page" | "margin");
+                    let fixed = matches!(o.float.v_relative, VerticalRelation::Page | VerticalRelation::Margin);
                     let offset = fixed || o.float.v_offset != 0.0 && !(a.allow_overlap && o.allow_overlap);
                     let y = match offset {
                         false => (o.rect[3] * 20.0).round() / 20.0,
@@ -1127,10 +1132,10 @@ impl<'d> PageFill<'d, '_> {
         }
         // Its area: a frame's anchor boxes; a drawing's the page across, down the page when placed from it and
         // the column otherwise.
-        let across = match a.float.h_relative.as_str() {
+        let across = match a.float.h_relative {
             _ if in_flow && compat == Compat::Generic => (f64::INFINITY, f64::NEG_INFINITY),
-            "margin" if frame(&a) => (frames.margin[0], frames.page_w - frames.margin[1]),
-            "column" if frame(&a) => (col.x, col.x + col.width),
+            HorizontalRelation::Margin if frame(&a) => (frames.margin[0], frames.page_w - frames.margin[1]),
+            HorizontalRelation::Column if frame(&a) => (col.x, col.x + col.width),
             _ => (0.0, frames.page_w),
         };
         let others: Vec<Placed> = self.at.found.iter().filter(|o| !under.contains(&o.key)).cloned().collect();
@@ -1145,9 +1150,9 @@ impl<'d> PageFill<'d, '_> {
                     .known
                     .iter()
                     .any(|k| k.restarts && !frame(k) && k.wrap != Wrap::None && k.key.0 == a.key.0 && (k.key.1, k.key.2) > (a.key.1, a.key.2));
-        let down = match a.float.v_relative.as_str() {
-            "page" => (0.0, frames.page_h),
-            "margin" if frame(&a) => (frames.margin[2], frames.page_h - frames.margin[3]),
+        let down = match a.float.v_relative {
+            VerticalRelation::Page => (0.0, frames.page_h),
+            VerticalRelation::Margin if frame(&a) => (frames.margin[2], frames.page_h - frames.margin[3]),
             _ => (col.top.to_pt(), col.bottom.to_pt()),
         };
         if !restarted && !kept_at.contains(&a.key) && !float::avoid(&mut a, &others, across, down, compat) {

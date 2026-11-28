@@ -2,7 +2,7 @@
 
 use super::{fixture, fonts};
 use crate::layout::fragment::Item;
-use crate::layout::layout;
+use crate::layout::tests::layout;
 use crate::layout::traverse::{Spatial, paint_items, semantic_chars, spatial};
 
 #[test]

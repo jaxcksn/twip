@@ -67,7 +67,7 @@ pub fn tree_with(e: &Editor, spelling: &Spellers, language: &str, cache: &mut Tr
     let lang = document_language(doc, language);
     let context = {
         let mut h = DefaultHasher::new();
-        (&lang, spelling.signature(), std::mem::discriminant(&doc.review.view), &*doc.review.markup, doc.comments.by_id.len()).hash(&mut h);
+        (&lang, spelling.signature(), std::mem::discriminant(&e.review().view), &*e.review().markup, doc.comments.by_id.len()).hash(&mut h);
         h.finish()
     };
     let mut b = Builder { e, doc, spelling, language, lang, open: Vec::new(), notes: Vec::new(), cache, context, seen: Vec::new() };
@@ -115,7 +115,7 @@ fn fingerprint(p: &Paragraph, open: &[CommentId], notes: usize, context: u64) ->
             Inline::Float(f, _) => (&*f.alt, f.shape.as_ref().is_some_and(|s| s.nv.decorative)).hash(&mut h),
             Inline::NoteRef { kind, id, .. } => (matches!(kind, NoteKind::End), id).hash(&mut h),
             Inline::FieldBegin { view, value, .. } => (std::mem::discriminant(view), value).hash(&mut h),
-            Inline::Range(m) => (std::mem::discriminant(&m.kind), m.id).hash(&mut h),
+            Inline::Range(m) if m.is_review() => (std::mem::discriminant(&m.kind), m.id).hash(&mut h),
             // The rest read the same whatever else they hold.
             _ => {}
         }
@@ -255,7 +255,7 @@ impl Builder<'_> {
         for b in list {
             match b {
                 Block::Para(p) if p.style.num.is_some() && heading_level(self.doc, p).is_none() => {
-                    let level = p.style.num.map_or(0, |n| n.1).max(0);
+                    let level = p.style.num.map_or(0, |n| n.level).max(0);
                     let (children, floats) = self.inlines(p, depth);
                     if children.is_empty() && floats.is_empty() {
                         continue;
@@ -496,7 +496,7 @@ impl Builder<'_> {
                         (None, Alt::Decorative | Alt::Missing) => {}
                     }
                 }
-                Inline::Float(_, fr) if super::unread(&self.doc.review, &fr.rev) => {}
+                Inline::Float(_, fr) if super::unread(self.e.review(), &fr.rev) => {}
                 Inline::Float(f, _) => match (&f.text_box, alt(&f.alt, f.shape.as_deref())) {
                     (Some(tb), _) => floats.push(self.text_box(AccessibleId(f.id), &tb.blocks, depth)),
                     (None, Alt::Text(alt)) => floats.push(image(AccessibleId(f.id), alt)),
@@ -560,9 +560,9 @@ impl Builder<'_> {
             for (role, refs, word) in [(AccessibleRole::Header, &section.headers, "header"), (AccessibleRole::Footer, &section.footers, "footer")] {
                 // HfRefs: default, first page, even pages.
                 for (kind, name) in ["", "First page ", "Even page "].into_iter().zip(refs.iter()) {
-                    let Some(name) = name.as_ref().filter(|n| seen.insert(n.to_string())) else { continue };
-                    let Some(blocks) = doc.stories.get(name) else { continue };
-                    let index = doc.stories.keys().position(|k| k == name).unwrap_or(0) as u64;
+                    let Some(id) = name.filter(|n| seen.insert(*n)) else { continue };
+                    let Some(blocks) = doc.stories.get(&id) else { continue };
+                    let index = doc.stories.keys().position(|k| *k == id).unwrap_or(0) as u64;
                     let children = self.blocks(blocks, 0);
                     if children.is_empty() {
                         continue;
@@ -607,7 +607,7 @@ impl Builder<'_> {
             .comments
             .threads()
             .into_iter()
-            .filter(|(root, _)| doc.comments.by_id.get(root).is_some_and(|c| doc.review.shows_comment(c.author)))
+            .filter(|(root, _)| doc.comments.by_id.get(root).is_some_and(|c| self.e.review().shows_comment(c.author)))
             .filter_map(|(root, replies)| {
                 let mut node = self.comment(root)?;
                 node.children.extend(replies.into_iter().filter_map(|r| self.comment(r)));

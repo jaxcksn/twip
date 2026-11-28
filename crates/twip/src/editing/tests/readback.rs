@@ -1,5 +1,7 @@
 //! Theme colours and fonts on text, and formatting read-back
 
+use crate::docx::definitions::DefinitionsXml;
+use crate::docx::origin::FloatOrigin;
 use std::io::Read;
 
 use super::super::Editor;
@@ -16,7 +18,7 @@ use crate::docx::ThemeFont;
 use crate::layout::Unit;
 
 fn doc_xml(e: &Editor) -> String {
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
     let mut s = String::new();
     z.by_name("word/document.xml").unwrap().read_to_string(&mut s).unwrap();
@@ -36,7 +38,7 @@ fn all(body: &str) -> Editor {
 }
 
 fn reopened(e: &Editor) -> Editor {
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut e = Editor::open(&bytes, fonts()).expect("reopens");
     e.complete(fonts());
     e.execute(Command::SelectAll, fonts());
@@ -150,6 +152,56 @@ fn a_text_border_keeps_its_distance_shadow_and_theme_colour() {
     assert_eq!(reopened(&e).character_readback().expect("a readback").border, Tri::Uniform(NoneOr::Value(b)));
     e.set_text_border_line(None, fonts());
     assert_eq!(e.character_readback().expect("a readback").border, Tri::Uniform(NoneOr::None));
+}
+
+#[test]
+fn text_shading_and_borders_write_their_elements_as_paragraphs_do() {
+    use super::super::table_format::Shading;
+    let el = |xml: &str, name: &str| {
+        // The run's, after its mark's
+        let at = xml.rfind(&format!("<w:{name} ")).unwrap_or_else(|| panic!("no {name}: {xml}"));
+        xml[at..].split_inclusive("/>").next().unwrap_or_default().to_string()
+    };
+    let was = r#"<w:shd w:val="pct25" w:color="auto" w:fill="FF0000"/>"#;
+    let body = format!("<w:p><w:r><w:rPr>{was}</w:rPr><w:t>one</w:t></w:r></w:p>");
+    let red = ColourValue::rgb(Color(0xC0_0000));
+    let shadings = [
+        (ShadingPattern::Other, NoneOr::Value(accent(ThemeColour::Accent2, TransformKind::Tint, 0.2)), AutoOr::Auto),
+        (ShadingPattern::Pct20, NoneOr::None, AutoOr::Value(ColourValue::theme(ThemeColour::Text1))),
+        (ShadingPattern::Clear, NoneOr::Value(red.clone()), AutoOr::Value(red.clone())),
+    ];
+    for (pattern, fill, color) in shadings {
+        let mut e = all(&body);
+        let c = |c: Option<&ColourValue>| c.map(|c| e.word_colour(c).expect("a colour"));
+        let sh = Shading {
+            pattern: pattern.val(),
+            color: c(match &color {
+                AutoOr::Value(c) => Some(c),
+                AutoOr::Auto => None,
+            }),
+            fill: c(match &fill {
+                NoneOr::Value(c) => Some(c),
+                NoneOr::None => None,
+            }),
+        };
+        let s = ShadingValue { fill, pattern, color };
+        assert!(matches!(e.set_shading_value(ShadingTarget::Text, &s, fonts()), Outcome::Changed(_)));
+        assert_eq!(el(&doc_xml(&e), "shd"), sh.xml("w:", Some(was), None), "{pattern:?}");
+    }
+    let lines = [
+        BorderLine { width: Points(0.3), ..line(AutoOr::Auto, 4.4, false) },
+        line(AutoOr::Value(accent(ThemeColour::Accent4, TransformKind::Shade, 0.5)), 1.0, true),
+        line(AutoOr::Value(red), 0.0, false),
+    ];
+    for b in lines {
+        let mut e = all(TWO);
+        let colour = match &b.color {
+            AutoOr::Value(c) => Some(e.word_colour(c).expect("a colour")),
+            AutoOr::Auto => None,
+        };
+        assert!(matches!(e.set_text_border_line(Some(&b), fonts()), Outcome::Changed(_)));
+        assert_eq!(el(&doc_xml(&e), "bdr"), b.xml("w:", "bdr", colour), "{b:?}");
+    }
 }
 
 #[test]
@@ -325,7 +377,7 @@ fn document_defaults_take_a_theme_font_and_colour() {
         ..Default::default()
     };
     assert!(matches!(e.execute(Command::SetDocumentDefaults(d), fonts()), Outcome::Changed(_)));
-    let raw = e.document().resolver.as_ref().and_then(|r| r.styles.defaults_raw.clone()).expect("defaults");
+    let raw = e.document().definitions.as_ref().and_then(|r| r.defaults_xml()).expect("defaults");
     assert!(
         raw.contains(r#"w:asciiTheme="minorHAnsi""#) && raw.contains(r#"w:themeColor="accent1""#) && raw.contains(r#"w:themeTint="66""#),
         "{raw}"
@@ -397,7 +449,7 @@ fn page_borders_paint_in_front_of_the_text_unless_behind() {
 
 /// The saved headers' XML.
 fn headers_xml(e: &Editor) -> String {
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
     let mut out = String::new();
     for i in 0..z.len() {
@@ -601,8 +653,8 @@ fn a_page_number_in_the_first_pages_own_header_can_t_be_left_off_the_first_page(
     let mut e = Editor::open(&build("<w:p><w:r><w:t>Body</w:t></w:r></w:p>", sect, &parts), fonts()).expect("opens");
     e.complete(fonts());
     let caret_in = |e: &mut Editor, slot: usize| {
-        let name = e.document().sections[0].headers[slot].clone().expect("a header");
-        let story = e.index().header_footer(&name).expect("its story");
+        let name = e.document().sections[0].headers[slot].expect("a header");
+        let story = e.index().header_footer(name).expect("its story");
         let Some(crate::docx::Block::Para(p)) = e.document().stories[&name].first() else { panic!("a paragraph") };
         e.selection = Selection::Caret(Position::text(story, crate::layout::ParaId(p.id), crate::layout::Unit(0)));
     };
@@ -619,7 +671,7 @@ fn a_page_number_in_the_first_pages_own_header_can_t_be_left_off_the_first_page(
     caret_in(&mut e, 1);
     let out = e.insert_page_number_shown(PageNumberFormat::Page, PageNumberSpot::Caret, None, true, fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
-    let first = e.document().sections[0].headers[1].clone().expect("the first page's header");
+    let first = e.document().sections[0].headers[1].expect("the first page's header");
     let (depth, kept) = (e.history().undo_depth(), e.document().stories[&first].clone());
     let out = e.insert_page_number_shown(PageNumberFormat::Page, PageNumberSpot::Header, None, false, fonts());
     assert!(matches!(out, Outcome::Refused(_)), "{out:?}");
@@ -669,8 +721,8 @@ fn a_header_place_is_never_inside_a_body_selection() {
     let paras = super::texts_ids(&e);
     let at = |k: usize, u: u32| Position::text(StoryId::Body, paras[k], crate::layout::Unit(u));
     e.selection = Selection::range(at(0, 0), at(2, 2), crate::editing::selection::Granularity::Char);
-    let name = e.document().sections[0].headers[0].clone().expect("a header");
-    let story = e.index().header_footer(&name).expect("its story");
+    let name = e.document().sections[0].headers[0].expect("a header");
+    let story = e.index().header_footer(name).expect("its story");
     let Some(crate::docx::Block::Para(p)) = e.document().stories[&name].first() else { panic!("a paragraph") };
     let there = Position::text(story, crate::layout::ParaId(p.id), crate::layout::Unit(1));
     assert!(e.inside_selection(&at(1, 1)), "the body's middle");

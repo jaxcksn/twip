@@ -41,7 +41,7 @@ fn data_parts_survive_edits_and_saves() {
     let parts = again.data_parts(None, None);
     assert!(parts.iter().any(|p| p.namespace.as_deref() == Some("urn:store:calc") && p.xml == xml), "{parts:?}");
     // The parts the host didn't touch: their item parts byte for byte.
-    let src = crate::docx::read_editable(&bytes).unwrap();
+    let (src, _) = crate::docx::read_editable(&bytes).unwrap();
     for p in &src.data_parts {
         let name = p.src.clone().expect("read from the package");
         assert_eq!(part(&saved, &name), part(&bytes, &name), "{name} unchanged");
