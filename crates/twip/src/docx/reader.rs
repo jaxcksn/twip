@@ -25,6 +25,7 @@ use super::table_props::{self, CellDirect, ExceptionsDirect, PreviousDirect, Row
 use super::xml::*;
 use crate::docx::char_props::RunXml;
 use crate::docx::para_props::ParaXml;
+use crate::docx::table_props::TableXml;
 use crate::format::CharProps;
 use crate::format::cascade::TableRegion;
 use crate::format::cascade::div_chain;
@@ -1326,8 +1327,8 @@ struct Reader {
     /// The authored paragraph properties read so far, by the `w:pPr` written, likewise.
     interned_ppr: HashMap<Rc<str>, ParaDirect>,
     /// Rows' and cells' authored properties by the `w:trPr` and `w:tcPr` they were read from, for elements written alike.
-    interned_tr: HashMap<Rc<str>, Rc<crate::format::RowProps>>,
-    interned_tc: HashMap<Rc<str>, Rc<crate::format::CellProps>>,
+    interned_tr: HashMap<Rc<str>, RowDirect>,
+    interned_tc: HashMap<Rc<str>, CellDirect>,
     /// The paragraph being read: elements that produced units ([`ParaSrc::segs`]), and whether any can't be mapped.
     segs: Vec<(std::ops::Range<usize>, usize)>,
     /// [`ParaSrc::simple`].
@@ -2245,15 +2246,16 @@ impl Reader {
         let Some(n) = n else { return RowDirect::default() };
         let plain = n.namespaces().len() <= n.document().root_element().namespaces().len();
         let text = &n.document().input_text()[n.range()];
-        if let Some((x, p)) = self.interned_tr.get_key_value(text).filter(|_| plain) {
-            return if self.record { RowDirect::shared(p.clone(), x.clone()) } else { RowDirect::typed(p.clone()) };
+        if let Some(d) = self.interned_tr.get(text).filter(|_| plain) {
+            return d.clone();
         }
         let props = Rc::new(RowDirect::parse(n));
         let x = raw(n);
+        let d = if self.record { RowDirect::shared(props, x.clone()) } else { RowDirect::typed(props) };
         if plain {
-            self.interned_tr.insert(x.clone(), props.clone());
+            self.interned_tr.insert(x, d.clone());
         }
-        if self.record { RowDirect::shared(props, x) } else { RowDirect::typed(props) }
+        d
     }
 
     /// A cell's authored properties from its `w:tcPr`, with the element they were read from: cells whose `w:tcPr` is
@@ -2262,15 +2264,15 @@ impl Reader {
         let Some(n) = n else { return CellDirect::default() };
         let plain = n.namespaces().len() <= n.document().root_element().namespaces().len();
         let text = &n.document().input_text()[n.range()];
-        if let Some((x, p)) = self.interned_tc.get_key_value(text).filter(|_| plain) {
-            return CellDirect::shared(p.clone(), x.clone());
+        if let Some(d) = self.interned_tc.get(text).filter(|_| plain) {
+            return d.clone();
         }
-        let props = Rc::new(CellDirect::parse(n));
         let x = raw(n);
+        let d = CellDirect::shared(Rc::new(CellDirect::parse(n)), x.clone());
         if plain {
-            self.interned_tc.insert(x.clone(), props.clone());
+            self.interned_tc.insert(x, d.clone());
         }
-        CellDirect::shared(props, x)
+        d
     }
 
     /// The authored properties `rpr` holds.

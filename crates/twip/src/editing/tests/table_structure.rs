@@ -9,6 +9,7 @@ use super::super::selection::{CellRef, CellShape, Selection};
 use super::{blank_body, fonts, para_id, texts};
 use crate::api::command::{CellShift, SplitCells, VerticalDirection};
 use crate::document::paragraph::{ListId, ListRef};
+use crate::docx::table_props::TableXml;
 use crate::docx::{Block, Table, VMerge};
 use crate::layout::Unit;
 

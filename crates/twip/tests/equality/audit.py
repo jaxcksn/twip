@@ -36,7 +36,7 @@ COPY = WORK / "workspace"
 RELATIONS = {"L", "A", "AL", "none", "derive", "?"}
 # Formats and authored properties no site may compare with `==`: each has named equality operations (`layout_eq`,
 # `authored_eq`, `same_run`). The frozen XML resolution baseline keeps its comparisons as they were.
-FORBIDDEN = {"RunStyle", "ParaStyle", "TableDirect", "ExceptionsDirect", "RowDirect", "CellDirect", "PreviousDirect"}
+FORBIDDEN = {"RunStyle", "ParaStyle", "Authored", "PreviousDirect"}
 BASELINE = {"crates/twip/src/docx/resolve.rs", "crates/twip/src/docx/props.rs", "crates/twip/src/docx/styles.rs", "crates/twip/src/docx/numbering.rs"}
 COMPARISON = re.compile(r"^binary operation `[!=]=` cannot be applied|^can't compare|`(?:Partial)?Eq`|trait bounds were not satisfied")
 ITEM = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:struct|enum)\s+(\w+)")
@@ -90,7 +90,7 @@ def strip(types):
         # A hand-written `impl PartialEq for` the type goes too, to its closing brace.
         out, skip = [], False
         for line in lines:
-            m = re.match(r"^impl (?:Partial)?Eq for (\w+) \{", line)
+            m = re.match(r"^impl(?:<[^>]*>)? (?:Partial)?Eq for (\w+)(?:<[^>]*>)? \{", line)
             if m and m.group(1) in names:
                 skip = not line.rstrip().endswith("}")
                 missing.discard((path, m.group(1)))

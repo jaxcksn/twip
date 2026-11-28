@@ -1,6 +1,7 @@
 //! Table formatting commands
 
 use crate::docx::props::{Border, Jc, Look, Width};
+use crate::docx::table_props::TableXml;
 use crate::font::Fonts;
 
 use super::Editor;

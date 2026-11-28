@@ -37,6 +37,7 @@ use super::styles;
 use super::table_props::{self as tp, CellDirect, RowDirect, TableDirect};
 use super::write::props::{Cx, STYLE};
 use super::xml::{W, attr, child, children, is_w, on_off, on_off_str, val};
+use crate::docx::table_props::TableXml;
 use crate::format::{
     CellSet, CharProps, Defaults, DefaultsSet, ForeignChild, ForeignProps, LatentStyle, LatentStyles, Origin, ParaProps, ParaSet, QName, Region,
     RegionKind, RowSet, Set, Style, StyleEntry, StyleFormat, StyleKind, StyleProp, StyleSet, StyleSheet, TableSet,

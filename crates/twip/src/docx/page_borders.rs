@@ -10,11 +10,13 @@ use std::rc::Rc;
 
 use roxmltree::Node;
 
+use super::as_read::AsRead;
 use super::model::PageBorders;
 use super::prop_xml::{Compare, Out, Sink, border, border_attrs, foreign_child, push_esc};
 use super::props::{Border, ThemeColours};
 use super::write::props::Cx;
 use super::xml::{W, attr, child};
+use crate::document::origin::Origin;
 use crate::document::section::PageBorderDisplay;
 use crate::format::{ForeignAttr, ForeignChild, ForeignProps, PageBorderOffset, PageBorderProps, PageBorderZOrder, QName, TextBorder};
 
@@ -24,24 +26,24 @@ const EDGES: [&str; 4] = ["top", "left", "bottom", "right"];
 /// The modelled attributes of the element and of an edge, in the order they are written.
 const WRITTEN: [&str; 11] = ["offsetFrom", "display", "zOrder", "val", "sz", "space", "color", "themeColor", "themeTint", "themeShade", "shadow"];
 
-/// A section's authored page borders: typed, with the `w:pgBorders` they were read from beside them. The written
+/// A section's authored page borders: typed, with the `w:pgBorders` they were read from in their origin. The written
 /// form stands for the borders only while they are the ones it was read as.
 #[derive(Clone, Debug, Default)]
 pub struct PageBordersDirect {
     props: Option<Rc<PageBorderProps>>,
-    origin: Option<(Rc<PageBorderProps>, Rc<str>)>,
+    origin: Origin,
 }
 
 impl PageBordersDirect {
     /// Borders read from `xml`, the `w:pgBorders` they were parsed from.
     pub fn read(props: PageBorderProps, xml: Rc<str>) -> PageBordersDirect {
         let props = Rc::new(props);
-        PageBordersDirect { origin: Some((props.clone(), xml)), props: Some(props) }
+        PageBordersDirect { origin: AsRead::origin(props.clone(), xml), props: Some(props) }
     }
 
     /// Typed borders with no written form; `None`: no `w:pgBorders`.
     pub fn typed(props: Option<PageBorderProps>) -> PageBordersDirect {
-        PageBordersDirect { props: props.map(Rc::new), origin: None }
+        PageBordersDirect { props: props.map(Rc::new), origin: Origin::NONE }
     }
 
     /// The typed borders; `None` for no `w:pgBorders`.
@@ -51,9 +53,9 @@ impl PageBordersDirect {
 
     /// The `w:pgBorders` as read, while the borders are the ones read from it.
     pub fn as_read(&self) -> Option<&Rc<str>> {
-        let (read, xml) = self.origin.as_ref()?;
+        let r = AsRead::<PageBorderProps>::of(&self.origin)?;
         let now = self.props.as_ref()?;
-        (Rc::ptr_eq(read, now) || **read == **now).then_some(xml)
+        (Rc::ptr_eq(&r.read, now) || *r.read == **now).then_some(&r.xml)
     }
 
     /// The `w:pgBorders` to write in the part `cx` describes: as read while the borders are those, else written from

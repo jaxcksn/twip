@@ -5,6 +5,7 @@ use std::ops::Range;
 use std::rc::Rc;
 
 use crate::docx::review::{AuthorId, CellMarkKind, RangeKind, RevisionId, RevisionMark};
+use crate::docx::table_props::TableXml;
 use crate::docx::{Block, Document, Inline, Paragraph, Row, Run, RunStyle, Table, VMerge};
 use crate::font::Fonts;
 use crate::layout::{ParaId, TableId, Unit};

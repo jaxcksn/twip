@@ -2,6 +2,7 @@
 
 use crate::docx::char_props::RunXml;
 use crate::docx::resolvers::Resolvers;
+use crate::docx::table_props::TableXml;
 use std::fmt;
 use std::rc::Rc;
 

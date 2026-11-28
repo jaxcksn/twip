@@ -519,6 +519,10 @@ pub struct PropsEdit<P, S> {
 /// Table properties being edited.
 pub type TableEdit = PropsEdit<TableProps, TableSet>;
 
+/// What tells a row's exceptions to its table's properties from a table's own properties, both [`TableProps`] that
+/// edits set with [`TableSet`].
+pub enum RowExceptions {}
+
 /// Row properties being edited.
 pub type RowEdit = PropsEdit<RowProps, RowSet>;
 

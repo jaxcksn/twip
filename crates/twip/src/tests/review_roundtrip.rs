@@ -14,6 +14,7 @@ use crate::docx::review::{
     AuthorId, CellMarkKind, CellRevisions, Comment, CommentId, FormatChange, GridChange, Identity, MarkKind, ParaChange, RangeKind, RangeMark,
     RevisionId, RevisionMark, RowRevisions, RunRevisions, SectionChange, TableChange, Timestamp,
 };
+use crate::docx::table_props::TableXml;
 use crate::docx::{read_editable, write};
 
 const W: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";

@@ -5,6 +5,7 @@
 use crate::docx::baseline::Baseline;
 use crate::docx::char_props::RunXml;
 use crate::docx::para_props::ParaXml;
+use crate::docx::table_props::TableXml;
 use std::rc::Rc;
 
 use super::super::Editor;

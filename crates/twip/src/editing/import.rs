@@ -13,6 +13,7 @@ use crate::docx::resolvers::{Resolvers, TypedDefs};
 use crate::docx::review::{AuthorId, FormatChange, People, RevisionMark, TableChange};
 use crate::docx::style_xml::StyleDef;
 use crate::docx::style_xml::StyleEditError;
+use crate::docx::table_props::TableXml;
 use crate::docx::write::props::Cx;
 use crate::docx::{Block, Inline, Paragraph, Raw, ResourceId, Resources, Run, RunStyle};
 use crate::drawing::paint::Fill;

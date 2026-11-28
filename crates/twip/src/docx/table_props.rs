@@ -18,17 +18,20 @@ use std::rc::Rc;
 
 use roxmltree::Node;
 
+use super::as_read;
 use super::prop_xml::{Compare, FILL, LINE_COLOUR, Out, Sink, Twips, border, colour, colour_attrs, foreign_child, props_key};
 use super::props::{self as xml_props, Look, TableAnchor, TablePos, TblProps, TcProps, ThemeColours, TrProps};
 use super::write::props::{Cx, Props};
 use super::xml::{W, attr, attr_twips, child, int, on_off, twips, val};
+use crate::document::authored::{Authored, Empty};
 use crate::document::format::{Jc, ShadingPattern, Width};
 use crate::document::line::BorderStyle;
+use crate::document::origin::Origin;
 use crate::document::section::HeightRule;
 use crate::format::{
     CellEdit, CellMargins, CellProp, CellProps, CellSet, Color, FloatAnchor, FloatX, FloatY, ForeignProps, MarginSide, MergeRole, QName, RowEdit,
-    RowHeight, RowProp, RowProps, RowSet, Shading, TableBorders, TableEdit, TableFloat, TableLayout, TableOverlap, TableProp, TableProps, TableSet,
-    TableSide, TextBorder,
+    RowExceptions, RowHeight, RowProp, RowProps, RowSet, Shading, TableBorders, TableEdit, TableFloat, TableLayout, TableOverlap, TableProp,
+    TableProps, TableSet, TableSide, TextBorder,
 };
 
 // Kinds
@@ -70,8 +73,6 @@ trait Kind {
     /// Writes the attributes of modelled child `key` of `p` to `s`; false when `p` doesn't set it.
     fn emit(p: &Self::Props, key: &str, s: &mut dyn Sink) -> bool;
     fn place(s: Self::Set) -> Place;
-    /// No properties, shared.
-    fn empty() -> Rc<Self::Props>;
 }
 
 thread_local! {
@@ -228,9 +229,6 @@ impl Kind for Tbl {
     fn place(s: TableSet) -> Place {
         table_place(s)
     }
-    fn empty() -> Rc<TableProps> {
-        NO_TABLE.with(Rc::clone)
-    }
 }
 
 impl Kind for TblEx {
@@ -262,9 +260,6 @@ impl Kind for TblEx {
     }
     fn place(s: TableSet) -> Place {
         table_place(s)
-    }
-    fn empty() -> Rc<TableProps> {
-        NO_TABLE.with(Rc::clone)
     }
 }
 
@@ -346,9 +341,6 @@ impl Kind for Tr {
             RowProp::Hidden => "hidden",
         };
         Place { key, whole: s.whole, side: None }
-    }
-    fn empty() -> Rc<RowProps> {
-        NO_ROW.with(Rc::clone)
     }
 }
 
@@ -432,9 +424,6 @@ impl Kind for Tc {
             CellProp::HideMark => ("hideMark", None),
         };
         Place { key, whole: s.whole, side }
-    }
-    fn empty() -> Rc<CellProps> {
-        NO_CELL.with(Rc::clone)
     }
 }
 
@@ -1146,177 +1135,182 @@ pub(super) fn drop_replaced_cell(was: &CellProps, p: &mut CellProps, set: &[Cell
 
 // Holders
 
-/// Typed properties with the element they were read from (or last written as) beside them, and what edits since
-/// reading set.
-struct Holder<K: Kind> {
-    props: Rc<K::Props>,
-    origin: Option<(Rc<K::Props>, Rc<str>)>,
-    set: Vec<K::Set>,
-}
-
-impl<K: Kind> Clone for Holder<K> {
-    fn clone(&self) -> Self {
-        Holder { props: self.props.clone(), origin: self.origin.clone(), set: self.set.clone() }
+impl Empty for TableProps {
+    fn empty() -> Rc<TableProps> {
+        NO_TABLE.with(Rc::clone)
     }
 }
 
-impl<K: Kind> Default for Holder<K> {
-    fn default() -> Self {
-        Holder { props: K::empty(), origin: None, set: Vec::new() }
+impl Empty for RowProps {
+    fn empty() -> Rc<RowProps> {
+        NO_ROW.with(Rc::clone)
     }
 }
 
-impl<K: Kind> std::fmt::Debug for Holder<K> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.debug_struct(K::NAME).field("props", &self.props).field("origin", &self.origin.as_ref().map(|o| &o.1)).field("set", &self.set).finish()
+impl Empty for CellProps {
+    fn empty() -> Rc<CellProps> {
+        NO_CELL.with(Rc::clone)
     }
 }
 
-impl<K: Kind> Holder<K> {
-    fn read(props: K::Props, xml: Rc<str>) -> Self {
-        let props = Rc::new(props);
-        Holder { origin: Some((props.clone(), xml)), props, set: Vec::new() }
-    }
+/// What the WordprocessingML adapter adds to a table's, a row's exceptions', a row's and a cell's authored
+/// properties: the element they were read from, its parse and serializer, and the element they are written as.
+pub trait TableXml: Sized {
+    /// The typed properties.
+    type Props;
+    /// What an edit sets.
+    type Set;
+    /// An edit.
+    type Edit;
 
-    fn from_xml(xml: Option<&str>, cx: &Cx) -> Self {
-        let Some(x) = xml else { return Holder::default() };
-        Holder::read(cx.parse(x, |_, el| parse::<K>(el)).unwrap_or_default(), x.into())
-    }
+    /// Properties read from `xml`, the element they were parsed from.
+    fn read(props: Self::Props, xml: Rc<str>) -> Self;
 
-    fn as_read(&self) -> Option<&Rc<str>> {
-        let (read, xml) = self.origin.as_ref()?;
-        (Rc::ptr_eq(read, &self.props) || **read == *self.props).then_some(xml)
-    }
+    /// The properties of `xml`, the element with the main namespace bound to `w`.
+    #[cfg(test)]
+    fn in_w(xml: &str) -> Self;
 
-    fn xml(&self, colours: &ThemeColours, cx: &Cx) -> Option<std::borrow::Cow<'_, str>> {
-        if let Some(x) = self.as_read() {
-            return Some(std::borrow::Cow::Borrowed(x));
-        }
-        let origin = self.origin.as_ref().map(|(read, xml)| (&**read, &**xml));
-        if origin.is_none() && *self.props == K::Props::default() {
-            return None;
-        }
-        written_over::<K>(&self.props, colours, cx, origin, &self.set).map(std::borrow::Cow::Owned)
-    }
+    /// Properties read from `xml`, shared with other elements read alike.
+    fn shared(props: Rc<Self::Props>, xml: Rc<str>) -> Self;
 
-    fn edited(&self, mut props: K::Props, set: &[K::Set]) -> Self {
-        let mut all = self.set.clone();
-        all.extend_from_slice(set);
-        if K::foreign(&props).is_some() {
-            drop_replaced::<K>(&self.props, &mut props, &all);
-        }
-        Holder { props: Rc::new(props), origin: self.origin.clone(), set: all }
-    }
+    /// The element they were read from, while they are the properties read from it, with those properties.
+    fn read_from(&self) -> Option<(&Rc<Self::Props>, &Rc<str>)>;
 
-    fn moved_to(&self, cx: &Cx) -> Option<Self> {
-        let (read, xml) = self.origin.as_ref()?;
-        if cx.parse(xml, |_, el| parse::<K>(el)).is_some_and(|p| p == **read) {
-            return None;
-        }
-        Some(Holder { props: self.props.clone(), origin: None, set: self.set.clone() })
-    }
+    /// The properties `xml` (the element in the part `cx` describes) holds; none for no XML, and nothing typed (the
+    /// XML kept as written) for XML that doesn't parse.
+    fn from_xml(xml: Option<&str>, cx: &Cx) -> Self;
 
-    fn read_from(&self) -> Option<(&Rc<K::Props>, &Rc<str>)> {
-        let xml = self.as_read()?;
-        Some((&self.props, xml))
-    }
+    /// The element as read, while the properties are the ones read from it.
+    fn as_read(&self) -> Option<&Rc<str>>;
+
+    /// The element they were read from (or last written as), whatever they are now.
+    fn origin_xml(&self) -> Option<&Rc<str>>;
+
+    /// These properties with `xml` in place of the element they were read from: the same element, written otherwise
+    /// (its namespaces declared on it).
+    fn with_origin_xml(&self, xml: Rc<str>) -> Self;
+
+    /// The element to write in the part `cx` describes: as read while the properties are those, else written over it
+    /// from them (a theme colour's value as `colours` resolve it), the children other nodes own as they were read;
+    /// `None` when nothing is left.
+    fn xml(&self, colours: &ThemeColours, cx: &Cx) -> Option<std::borrow::Cow<'_, str>>;
+
+    /// `props` in place of these properties, set by an edit that set `set`, in order: the element they were read from
+    /// kept to write them over, what was set written again.
+    fn edited(&self, props: Self::Props, set: &[Self::Set]) -> Self;
+
+    /// An edit's result as these properties' successor.
+    fn edit(&self, e: Self::Edit) -> Self;
+
+    /// These properties where `cx` describes the part they are written in: `None` while the element they were read
+    /// from reads the same there, else without it, to be written from the properties.
+    fn moved_to(&self, cx: &Cx) -> Option<Self>;
+
+    /// The element as typed properties, without the children other nodes own.
+    fn parse(el: Node) -> Self::Props;
+
+    /// `p` as the element in the part `cx` describes, with the children other nodes own (`owned`, by local name, as
+    /// written) in their places; a theme colour's value is written as `colours` resolve it.
+    fn serialize(p: &Self::Props, owned: &[(&str, &str)], colours: &ThemeColours, cx: &Cx) -> String;
+
+    /// `p` as the element written over `origin` (the element the properties it holds were read from, and those
+    /// properties) by an edit that set `set`: each child the edit leaves alone as written there, each it changes in
+    /// its place, one side set in part among the others as written, the children other nodes own as they are there;
+    /// with nothing changed, the element as read. `None` when nothing is left.
+    fn written_over(p: &Self::Props, colours: &ThemeColours, cx: &Cx, origin: Option<(&Self::Props, &str)>, set: &[Self::Set]) -> Option<String>;
 }
 
 /// A holder of one kind's typed properties, with its parse, serializer and writer over the XML read.
 macro_rules! holder {
-    ($(#[$doc:meta])* $name:ident, $kind:ty, $props:ty, $set:ty, $edit:ty, $el:literal) => {
+    ($(#[$doc:meta])* $name:ident, $kind:ty, $props:ty, $set:ty, $edit:ty, $of:ty) => {
         $(#[$doc])*
         ///
         /// The written form stands for the properties only while they are the ones it was read as. Its `==` is
         /// always true, as a container's derived equality (layout equivalence) does not compare authored
-        /// properties: use [`Self::authored_eq`] for that.
-        #[derive(Clone, Debug, Default)]
-        pub struct $name(Holder<$kind>);
+        /// properties: use [`Authored::authored_eq`] for that.
+        pub type $name = Authored<Rc<$props>, $set, $of>;
 
-        impl $name {
-            #[doc = concat!("Properties read from `xml`, the `", $el, "` they were parsed from.")]
-            pub fn read(props: $props, xml: Rc<str>) -> $name {
-                $name(Holder::read(props, xml))
+        impl TableXml for $name {
+            type Props = $props;
+            type Set = $set;
+            type Edit = $edit;
+
+            fn read(props: $props, xml: Rc<str>) -> $name {
+                as_read::read(Rc::new(props), xml)
             }
 
-            #[doc = concat!("Properties read from `xml`, shared with other elements read alike.")]
-            pub fn shared(props: Rc<$props>, xml: Rc<str>) -> $name {
-                $name(Holder { origin: Some((props.clone(), xml)), props, set: Vec::new() })
+            #[cfg(test)]
+            fn in_w(xml: &str) -> $name {
+                $name::from_xml(Some(xml), &Cx::of_xml(&format!("<w:document xmlns:w=\"{W}\">")))
             }
 
-            #[doc = concat!("The `", $el, "` they were read from, while they are the properties read from it, with those properties.")]
-            pub fn read_from(&self) -> Option<(&Rc<$props>, &Rc<str>)> {
-                self.0.read_from()
+            fn shared(props: Rc<$props>, xml: Rc<str>) -> $name {
+                as_read::read(props, xml)
             }
 
-            /// Typed properties with no written form.
-            pub fn typed(props: Rc<$props>) -> $name {
-                $name(Holder { props, origin: None, set: Vec::new() })
+            fn read_from(&self) -> Option<(&Rc<$props>, &Rc<str>)> {
+                let xml = self.as_read()?;
+                Some((self.get(), xml))
             }
 
-            #[doc = concat!("The properties `xml` (a `", $el, "` in the part `cx` describes) holds; none for no XML, and nothing typed (the XML kept as written) for XML that doesn't parse.")]
-            pub fn from_xml(xml: Option<&str>, cx: &Cx) -> $name {
-                $name(Holder::from_xml(xml, cx))
+            fn from_xml(xml: Option<&str>, cx: &Cx) -> $name {
+                let Some(x) = xml else { return $name::default() };
+                $name::read(cx.parse(x, |_, el| parse::<$kind>(el)).unwrap_or_default(), x.into())
             }
 
-            /// The typed properties.
-            pub fn get(&self) -> &Rc<$props> {
-                &self.0.props
+            fn as_read(&self) -> Option<&Rc<str>> {
+                as_read::as_read(self, |read, now| read == now)
             }
 
-            #[doc = concat!("The `", $el, "` as read, while the properties are the ones read from it.")]
-            pub fn as_read(&self) -> Option<&Rc<str>> {
-                self.0.as_read()
+            fn origin_xml(&self) -> Option<&Rc<str>> {
+                as_read::origin_xml(self)
             }
 
-            #[doc = concat!("The `", $el, "` they were read from (or last written as), whatever they are now.")]
-            pub fn origin_xml(&self) -> Option<&Rc<str>> {
-                self.0.origin.as_ref().map(|(_, x)| x)
+            fn with_origin_xml(&self, xml: Rc<str>) -> $name {
+                as_read::with_origin_xml(self, xml)
             }
 
-            #[doc = concat!("These properties with `xml` in place of the `", $el, "` they were read from: the same element, written otherwise (its namespaces declared on it).")]
-            pub fn with_origin_xml(&self, xml: Rc<str>) -> $name {
-                let origin = self.0.origin.as_ref().map(|(p, _)| (p.clone(), xml));
-                $name(Holder { props: self.0.props.clone(), origin, set: self.0.set.clone() })
+            fn xml(&self, colours: &ThemeColours, cx: &Cx) -> Option<std::borrow::Cow<'_, str>> {
+                if let Some(x) = self.as_read() {
+                    return Some(std::borrow::Cow::Borrowed(x));
+                }
+                let origin = as_read::record(self);
+                if origin.is_none() && **self.get() == <$props>::default() {
+                    return None;
+                }
+                written_over::<$kind>(self.get(), colours, cx, origin, self.set()).map(std::borrow::Cow::Owned)
             }
 
-            #[doc = concat!("The `", $el, "` to write in the part `cx` describes: as read while the properties are those, else written over it from them (a theme colour's value as `colours` resolve it), the children other nodes own as they were read; `None` when nothing is left.")]
-            pub fn xml(&self, colours: &ThemeColours, cx: &Cx) -> Option<std::borrow::Cow<'_, str>> {
-                self.0.xml(colours, cx)
+            fn edited(&self, mut props: $props, set: &[$set]) -> $name {
+                self.edited_with(set, |was, all| {
+                    if <$kind as Kind>::foreign(&props).is_some() {
+                        drop_replaced::<$kind>(was, &mut props, all);
+                    }
+                    Rc::new(props)
+                })
             }
 
-            #[doc = concat!("`props` in place of these properties, set by an edit that set `set`, in order: the `", $el, "` they were read from kept to write them over, what was set written again.")]
-            pub fn edited(&self, props: $props, set: &[$set]) -> $name {
-                $name(self.0.edited(props, set))
-            }
-
-            /// An edit's result as these properties' successor.
-            pub fn edit(&self, e: $edit) -> $name {
+            fn edit(&self, e: $edit) -> $name {
                 self.edited(e.props, &e.set)
             }
 
-            #[doc = concat!("These properties where `cx` describes the part they are written in: `None` while the `", $el, "` they were read from reads the same there, else without it, to be written from the properties.")]
-            pub fn moved_to(&self, cx: &Cx) -> Option<$name> {
-                self.0.moved_to(cx).map($name)
+            fn moved_to(&self, cx: &Cx) -> Option<$name> {
+                let (read, xml) = as_read::record(self)?;
+                if cx.parse(xml, |_, el| parse::<$kind>(el)).is_some_and(|p| p == *read) {
+                    return None;
+                }
+                Some(self.with_origin(Origin::NONE))
             }
 
-            /// Authored equality: the typed properties.
-            pub fn authored_eq(&self, o: &$name) -> bool {
-                Rc::ptr_eq(&self.0.props, &o.0.props) || self.0.props == o.0.props
-            }
-
-            #[doc = concat!("A `", $el, "` as typed properties, without the children other nodes own.")]
-            pub fn parse(el: Node) -> $props {
+            fn parse(el: Node) -> $props {
                 parse::<$kind>(el)
             }
 
-            #[doc = concat!("`p` as a `", $el, "` in the part `cx` describes, with the children other nodes own (`owned`, by local name, as written) in their places; a theme colour's value is written as `colours` resolve it.")]
-            pub fn serialize(p: &$props, owned: &[(&str, &str)], colours: &ThemeColours, cx: &Cx) -> String {
+            fn serialize(p: &$props, owned: &[(&str, &str)], colours: &ThemeColours, cx: &Cx) -> String {
                 serialize::<$kind>(p, owned, colours, cx)
             }
 
-            #[doc = concat!("`p` as a `", $el, "` written over `origin` (the `", $el, "` the properties it holds were read from, and those properties) by an edit that set `set`: each child the edit leaves alone as written there, each it changes in its place, one side set in part among the others as written, the children other nodes own as they are there; with nothing changed, the element as read. `None` when nothing is left.")]
-            pub fn written_over(p: &$props, colours: &ThemeColours, cx: &Cx, origin: Option<(&$props, &str)>, set: &[$set]) -> Option<String> {
+            fn written_over(p: &$props, colours: &ThemeColours, cx: &Cx, origin: Option<(&$props, &str)>, set: &[$set]) -> Option<String> {
                 written_over::<$kind>(p, colours, cx, origin, set)
             }
         }
@@ -1324,53 +1318,21 @@ macro_rules! holder {
 }
 
 holder!(
-    /// A table's authored properties: typed, with the `w:tblPr` they were read from beside them.
-    TableDirect, Tbl, TableProps, TableSet, TableEdit, "w:tblPr"
+    /// A table's authored properties: typed, with the `w:tblPr` they were read from in their origin.
+    TableDirect, Tbl, TableProps, TableSet, TableEdit, ()
 );
 holder!(
-    /// A row's exceptions to its table's properties: typed, with the `w:tblPrEx` they were read from beside them.
-    ExceptionsDirect, TblEx, TableProps, TableSet, TableEdit, "w:tblPrEx"
+    /// A row's exceptions to its table's properties: typed, with the `w:tblPrEx` they were read from in their origin.
+    ExceptionsDirect, TblEx, TableProps, TableSet, TableEdit, RowExceptions
 );
 holder!(
-    /// A row's authored properties: typed, with the `w:trPr` they were read from beside them.
-    RowDirect, Tr, RowProps, RowSet, RowEdit, "w:trPr"
+    /// A row's authored properties: typed, with the `w:trPr` they were read from in their origin.
+    RowDirect, Tr, RowProps, RowSet, RowEdit, ()
 );
 holder!(
-    /// A cell's authored properties: typed, with the `w:tcPr` they were read from beside them.
-    CellDirect, Tc, CellProps, CellSet, CellEdit, "w:tcPr"
+    /// A cell's authored properties: typed, with the `w:tcPr` they were read from in their origin.
+    CellDirect, Tc, CellProps, CellSet, CellEdit, ()
 );
-
-impl PartialEq for TableDirect {
-    fn eq(&self, _: &TableDirect) -> bool {
-        true
-    }
-}
-
-impl PartialEq for ExceptionsDirect {
-    fn eq(&self, _: &ExceptionsDirect) -> bool {
-        true
-    }
-}
-
-impl PartialEq for RowDirect {
-    fn eq(&self, _: &RowDirect) -> bool {
-        true
-    }
-}
-
-impl PartialEq for CellDirect {
-    fn eq(&self, _: &CellDirect) -> bool {
-        true
-    }
-}
-
-impl TableDirect {
-    /// The properties of `xml`, a `w:tblPr` with the main namespace bound to `w`.
-    #[cfg(test)]
-    pub(crate) fn in_w(xml: &str) -> TableDirect {
-        TableDirect::from_xml(Some(xml), &Cx::of_xml(&format!("<w:document xmlns:w=\"{W}\">")))
-    }
-}
 
 /// The earlier properties a tracked change of a table's, a row's exceptions', a row's or a cell's properties records.
 /// Its `==` is always true, as its holders' is: use [`PreviousDirect::authored_eq`] for authored equality.
