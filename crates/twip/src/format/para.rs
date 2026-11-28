@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use super::{ForeignProps, Shading, TextBorder};
 use crate::document::authored::Empty;
-use crate::document::format::{Jc, Leader, LineRule, TabKind};
+use crate::document::format::{Jc, Leader, LineRule, Tab, TabKind};
 use crate::document::paragraph::{ListId, TextAlignment};
 use crate::docx::props::FramePr;
 
@@ -356,5 +356,59 @@ thread_local! {
 impl Empty for ParaProps {
     fn empty() -> Rc<ParaProps> {
         EMPTY.with(Rc::clone)
+    }
+}
+
+impl ParaProps {
+    /// Overrides everything `o` sets; tab stops accumulate (a cleared one removes the stop inherited there).
+    /// `foreign` stays this level's.
+    pub fn merge(&mut self, o: &ParaProps) {
+        macro_rules! take {
+            ($($f:ident).+) => { if o.$($f).+.is_some() { self.$($f).+ = o.$($f).+.clone(); } };
+        }
+        take!(style);
+        take!(align);
+        take!(indent_left);
+        take!(indent_right);
+        take!(indent_first);
+        take!(space_before);
+        take!(space_after);
+        take!(space_before_auto);
+        take!(space_after_auto);
+        take!(line);
+        take!(line_rule);
+        take!(tight_wrap);
+        take!(division);
+        take!(list);
+        take!(list_level);
+        take!(borders.top);
+        take!(borders.bottom);
+        take!(borders.left);
+        take!(borders.right);
+        take!(borders.between);
+        take!(shading);
+        take!(frame);
+        take!(frame_locked);
+        take!(text_flow);
+        take!(text_alignment);
+        take!(outline_level);
+        take!(collapsed);
+        let f = &mut self.flags;
+        f.on = (f.on & !o.flags.set) | (o.flags.on & o.flags.set);
+        f.set |= o.flags.set;
+        self.tabs.extend(o.tabs.iter().copied());
+    }
+
+    /// The effective tab stops: later levels replace stops at the same position; a cleared one removes them.
+    pub fn resolved_tabs(&self) -> Vec<Tab> {
+        let mut out: Vec<Tab> = Vec::new();
+        for t in &self.tabs {
+            out.retain(|x| (x.pos - t.pos).abs() >= 0.025);
+            if t.kind != TabKind::Clear {
+                out.push(Tab { pos: t.pos, kind: t.kind, leader: t.leader });
+            }
+        }
+        out.sort_by(|a, b| a.pos.total_cmp(&b.pos));
+        out
     }
 }

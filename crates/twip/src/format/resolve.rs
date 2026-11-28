@@ -1,19 +1,15 @@
-//! Resolution on typed levels: folding, toggles, and the effective format of runs and paragraphs; table, row and cell
-//! levels folded
+//! Resolution on typed levels: the effective format of runs and paragraphs
 
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use super::{
-    CellMargins, CellProps, CharProps, Color, FontHint, FontRef, ParaFlag, ParaProps, RowProps, ScriptClass, TableBorders, TableProps, TextBorder,
-    ThemeFace, TightWrap, Toggle,
-};
-use crate::document::format::{Emphasis, Jc, LineRule, ShadingPattern, TabKind, VertAlign};
+use super::{CharProps, Color, FontHint, FontRef, ParaFlag, ParaProps, ScriptClass, TextBorder, ThemeFace, TightWrap, Toggle};
+use crate::document::format::{Emphasis, Jc, LineRule, ShadingPattern, VertAlign};
 use crate::document::line::{BorderStyle, Underline};
 use crate::document::paragraph::{ListJc, TextAlignment};
 use crate::docx::font_table::GenericFamily;
 use crate::docx::model::{ParaStyle, RunStyle, TextEffects, ThemeColourRef, ThemeFont, Typography};
-use crate::docx::props::{Border, Shd, Tab, ThemeColours};
+use crate::docx::props::{Border, Shd, ThemeColours};
 use crate::docx::styles::ThemeFonts;
 
 /// What resolving a run needs from its document.
@@ -27,100 +23,6 @@ pub struct RunEnv<'a> {
     pub categories: &'a HashMap<String, GenericFamily>,
     /// OpenType features apply.
     pub open_type: bool,
-}
-
-impl CharProps {
-    /// Overrides everything `o` sets; toggles are absolute (direct formatting, or within one style chain).
-    /// `foreign` stays this level's.
-    pub fn merge(&mut self, o: &CharProps) {
-        let family = |f: &Option<FontRef>| matches!(f, Some(FontRef::Family(_)));
-        let theme = |f: &Option<FontRef>| matches!(f, Some(FontRef::Theme { .. }));
-        let (mine, theirs) = (&self.fonts.east_asian, &o.fonts.east_asian);
-        let named = family(mine) || self.east_asian_below.is_some();
-        if theme(mine) && family(theirs) && self.east_asian_below.is_none() {
-            self.east_asian_theme = mine.clone();
-        } else if theirs.is_some() {
-            self.east_asian_theme = None;
-        }
-        if o.east_asian_theme.is_some() && !named {
-            self.east_asian_theme = o.east_asian_theme.clone();
-        }
-        let mine = &self.fonts.east_asian;
-        if family(mine) && theme(theirs) {
-            self.east_asian_below = mine.clone();
-        } else if family(theirs) {
-            self.east_asian_below = None;
-        }
-        if o.east_asian_below.is_some() {
-            self.east_asian_below = o.east_asian_below.clone();
-        }
-        macro_rules! take {
-            ($($f:ident).+) => { if o.$($f).+.is_some() { self.$($f).+ = o.$($f).+.clone(); } };
-        }
-        take!(fonts.latin);
-        take!(fonts.latin_extended);
-        take!(fonts.east_asian);
-        take!(fonts.complex);
-        take!(hint);
-        take!(size);
-        take!(complex_size);
-        take!(complex);
-        take!(double_strike);
-        take!(no_proof);
-        take!(underline);
-        take!(color);
-        take!(highlight);
-        take!(shading);
-        take!(border);
-        take!(vertical);
-        take!(position);
-        take!(spacing);
-        take!(scale);
-        take!(kern);
-        take!(typography.ligatures);
-        take!(typography.contextual_alternates);
-        take!(typography.number_form);
-        take!(typography.number_spacing);
-        take!(typography.stylistic_sets);
-        take!(lang.latin);
-        take!(lang.east_asian);
-        take!(lang.complex);
-        take!(style);
-        take!(rtl);
-        take!(spec_vanish);
-        take!(emphasis);
-        take!(fit_text);
-        match (&mut self.effects, &o.effects) {
-            (_, None) => {}
-            (None, Some(e)) => self.effects = Some(e.clone()),
-            (Some(mine), Some(e)) => Rc::make_mut(mine).merge(e),
-        }
-        let t = &mut self.toggles;
-        t.on = (t.on & !o.toggles.set) | (o.toggles.on & o.toggles.set);
-        t.set |= o.toggles.set;
-    }
-
-    /// Adds a style chain's level: its values override, and each toggle it turns on flips the one below.
-    pub fn merge_level(&mut self, level: &CharProps) {
-        let flip = level.toggles.on & level.toggles.set;
-        let toggles = self.toggles;
-        self.merge(level);
-        self.toggles.on = toggles.on ^ flip;
-        self.toggles.set = toggles.set | flip;
-    }
-
-    /// One style chain's levels, root first, folded: the nearest level decides each toggle, and only toggles that
-    /// end on count.
-    pub fn fold_chain<'a>(chain: impl IntoIterator<Item = &'a CharProps>) -> CharProps {
-        let mut acc = CharProps::default();
-        for level in chain {
-            acc.merge(level);
-        }
-        let on = acc.toggles.on & acc.toggles.set;
-        acc.toggles.on = on;
-        acc.toggles.set = on;
-        acc
-    }
 }
 
 /// A run's levels over its paragraph's `base`: its character style chain's fold (a toggle level), then its direct
@@ -280,60 +182,6 @@ pub fn run_style(env: &RunEnv, p: &CharProps) -> RunStyle {
     }
 }
 
-impl ParaProps {
-    /// Overrides everything `o` sets; tab stops accumulate (a cleared one removes the stop inherited there).
-    /// `foreign` stays this level's.
-    pub fn merge(&mut self, o: &ParaProps) {
-        macro_rules! take {
-            ($($f:ident).+) => { if o.$($f).+.is_some() { self.$($f).+ = o.$($f).+.clone(); } };
-        }
-        take!(style);
-        take!(align);
-        take!(indent_left);
-        take!(indent_right);
-        take!(indent_first);
-        take!(space_before);
-        take!(space_after);
-        take!(space_before_auto);
-        take!(space_after_auto);
-        take!(line);
-        take!(line_rule);
-        take!(tight_wrap);
-        take!(division);
-        take!(list);
-        take!(list_level);
-        take!(borders.top);
-        take!(borders.bottom);
-        take!(borders.left);
-        take!(borders.right);
-        take!(borders.between);
-        take!(shading);
-        take!(frame);
-        take!(frame_locked);
-        take!(text_flow);
-        take!(text_alignment);
-        take!(outline_level);
-        take!(collapsed);
-        let f = &mut self.flags;
-        f.on = (f.on & !o.flags.set) | (o.flags.on & o.flags.set);
-        f.set |= o.flags.set;
-        self.tabs.extend(o.tabs.iter().copied());
-    }
-
-    /// The effective tab stops: later levels replace stops at the same position; a cleared one removes them.
-    pub fn resolved_tabs(&self) -> Vec<Tab> {
-        let mut out: Vec<Tab> = Vec::new();
-        for t in &self.tabs {
-            out.retain(|x| (x.pos - t.pos).abs() >= 0.025);
-            if t.kind != TabKind::Clear {
-                out.push(Tab { pos: t.pos, kind: t.kind, leader: t.leader });
-            }
-        }
-        out.sort_by(|a, b| a.pos.total_cmp(&b.pos));
-        out
-    }
-}
-
 /// The effective format of a paragraph whose folded levels are `p`, before its list, its run base and its divisions;
 /// a theme colour as `colours` resolve it.
 pub fn para_style(colours: &ThemeColours, p: &ParaProps) -> ParaStyle {
@@ -420,66 +268,6 @@ fn para_colour(colours: &ThemeColours, c: Option<Color>) -> (Option<u32>, Option
         Some(Color::Rgb(v)) => (Some(v), None),
         Some(Color::Theme(r)) => (Some(colours.resolve(r)), Some(r)),
         Some(Color::Auto) | None => (None, None),
-    }
-}
-
-// Tables
-
-impl TableBorders {
-    /// Overrides each side `o` sets.
-    pub fn merge(&mut self, o: &TableBorders) {
-        macro_rules! take {
-            ($($f:ident),*) => { $( if o.$f.is_some() { self.$f = o.$f; } )* };
-        }
-        take!(top, left, bottom, right, inside_h, inside_v, tl2br, tr2bl);
-    }
-}
-
-impl CellMargins {
-    /// Overrides each side `o` sets.
-    pub fn merge(&mut self, o: &CellMargins) {
-        macro_rules! take {
-            ($($f:ident),*) => { $( if o.$f.is_some() { self.$f = o.$f; } )* };
-        }
-        take!(top, left, bottom, right);
-    }
-}
-
-impl TableProps {
-    /// Overrides everything `o` sets, borders and margins side by side. A floating position comes with its level's
-    /// overlap (set or not), and an overlap without one at its level does nothing. `foreign` stays this level's.
-    pub fn merge(&mut self, o: &TableProps) {
-        macro_rules! take {
-            ($($f:ident),*) => { $( if o.$f.is_some() { self.$f = o.$f.clone(); } )* };
-        }
-        take!(style, width, align, indent, layout, look, cell_spacing, row_band, col_band, shading, bidi_visual, caption, description);
-        if o.floating.is_some() {
-            (self.floating, self.overlap) = (o.floating, o.overlap);
-        }
-        self.borders.merge(&o.borders);
-        self.margins.merge(&o.margins);
-    }
-}
-
-impl RowProps {
-    /// Overrides everything `o` sets. `foreign` stays this level's.
-    pub fn merge(&mut self, o: &RowProps) {
-        macro_rules! take {
-            ($($f:ident),*) => { $( if o.$f.is_some() { self.$f = o.$f; } )* };
-        }
-        take!(division, grid_before, grid_after, width_before, width_after, cant_split, height, header, cell_spacing, align, hidden);
-    }
-}
-
-impl CellProps {
-    /// Overrides everything `o` sets, borders and margins side by side. `foreign` stays this level's.
-    pub fn merge(&mut self, o: &CellProps) {
-        macro_rules! take {
-            ($($f:ident),*) => { $( if o.$f.is_some() { self.$f = o.$f; } )* };
-        }
-        take!(width, grid_span, h_merge, v_merge, shading, no_wrap, text_flow, fit_text, v_align, hide_mark);
-        self.borders.merge(&o.borders);
-        self.margins.merge(&o.margins);
     }
 }
 

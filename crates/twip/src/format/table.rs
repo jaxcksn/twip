@@ -631,3 +631,61 @@ impl Empty for CellProps {
         NO_CELL.with(Rc::clone)
     }
 }
+
+impl TableBorders {
+    /// Overrides each side `o` sets.
+    pub fn merge(&mut self, o: &TableBorders) {
+        macro_rules! take {
+            ($($f:ident),*) => { $( if o.$f.is_some() { self.$f = o.$f; } )* };
+        }
+        take!(top, left, bottom, right, inside_h, inside_v, tl2br, tr2bl);
+    }
+}
+
+impl CellMargins {
+    /// Overrides each side `o` sets.
+    pub fn merge(&mut self, o: &CellMargins) {
+        macro_rules! take {
+            ($($f:ident),*) => { $( if o.$f.is_some() { self.$f = o.$f; } )* };
+        }
+        take!(top, left, bottom, right);
+    }
+}
+
+impl TableProps {
+    /// Overrides everything `o` sets, borders and margins side by side. A floating position comes with its level's
+    /// overlap (set or not), and an overlap without one at its level does nothing. `foreign` stays this level's.
+    pub fn merge(&mut self, o: &TableProps) {
+        macro_rules! take {
+            ($($f:ident),*) => { $( if o.$f.is_some() { self.$f = o.$f.clone(); } )* };
+        }
+        take!(style, width, align, indent, layout, look, cell_spacing, row_band, col_band, shading, bidi_visual, caption, description);
+        if o.floating.is_some() {
+            (self.floating, self.overlap) = (o.floating, o.overlap);
+        }
+        self.borders.merge(&o.borders);
+        self.margins.merge(&o.margins);
+    }
+}
+
+impl RowProps {
+    /// Overrides everything `o` sets. `foreign` stays this level's.
+    pub fn merge(&mut self, o: &RowProps) {
+        macro_rules! take {
+            ($($f:ident),*) => { $( if o.$f.is_some() { self.$f = o.$f; } )* };
+        }
+        take!(division, grid_before, grid_after, width_before, width_after, cant_split, height, header, cell_spacing, align, hidden);
+    }
+}
+
+impl CellProps {
+    /// Overrides everything `o` sets, borders and margins side by side. `foreign` stays this level's.
+    pub fn merge(&mut self, o: &CellProps) {
+        macro_rules! take {
+            ($($f:ident),*) => { $( if o.$f.is_some() { self.$f = o.$f; } )* };
+        }
+        take!(width, grid_span, h_merge, v_merge, shading, no_wrap, text_flow, fit_text, v_align, hide_mark);
+        self.borders.merge(&o.borders);
+        self.margins.merge(&o.margins);
+    }
+}

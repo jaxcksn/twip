@@ -610,3 +610,97 @@ pub struct ForeignAttr {
     /// The modelled attribute beside it that decided the value in its place: it is written while that one is.
     pub beside: Option<Rc<str>>,
 }
+
+impl CharProps {
+    /// Overrides everything `o` sets; toggles are absolute (direct formatting, or within one style chain).
+    /// `foreign` stays this level's.
+    pub fn merge(&mut self, o: &CharProps) {
+        let family = |f: &Option<FontRef>| matches!(f, Some(FontRef::Family(_)));
+        let theme = |f: &Option<FontRef>| matches!(f, Some(FontRef::Theme { .. }));
+        let (mine, theirs) = (&self.fonts.east_asian, &o.fonts.east_asian);
+        let named = family(mine) || self.east_asian_below.is_some();
+        if theme(mine) && family(theirs) && self.east_asian_below.is_none() {
+            self.east_asian_theme = mine.clone();
+        } else if theirs.is_some() {
+            self.east_asian_theme = None;
+        }
+        if o.east_asian_theme.is_some() && !named {
+            self.east_asian_theme = o.east_asian_theme.clone();
+        }
+        let mine = &self.fonts.east_asian;
+        if family(mine) && theme(theirs) {
+            self.east_asian_below = mine.clone();
+        } else if family(theirs) {
+            self.east_asian_below = None;
+        }
+        if o.east_asian_below.is_some() {
+            self.east_asian_below = o.east_asian_below.clone();
+        }
+        macro_rules! take {
+            ($($f:ident).+) => { if o.$($f).+.is_some() { self.$($f).+ = o.$($f).+.clone(); } };
+        }
+        take!(fonts.latin);
+        take!(fonts.latin_extended);
+        take!(fonts.east_asian);
+        take!(fonts.complex);
+        take!(hint);
+        take!(size);
+        take!(complex_size);
+        take!(complex);
+        take!(double_strike);
+        take!(no_proof);
+        take!(underline);
+        take!(color);
+        take!(highlight);
+        take!(shading);
+        take!(border);
+        take!(vertical);
+        take!(position);
+        take!(spacing);
+        take!(scale);
+        take!(kern);
+        take!(typography.ligatures);
+        take!(typography.contextual_alternates);
+        take!(typography.number_form);
+        take!(typography.number_spacing);
+        take!(typography.stylistic_sets);
+        take!(lang.latin);
+        take!(lang.east_asian);
+        take!(lang.complex);
+        take!(style);
+        take!(rtl);
+        take!(spec_vanish);
+        take!(emphasis);
+        take!(fit_text);
+        match (&mut self.effects, &o.effects) {
+            (_, None) => {}
+            (None, Some(e)) => self.effects = Some(e.clone()),
+            (Some(mine), Some(e)) => Rc::make_mut(mine).merge(e),
+        }
+        let t = &mut self.toggles;
+        t.on = (t.on & !o.toggles.set) | (o.toggles.on & o.toggles.set);
+        t.set |= o.toggles.set;
+    }
+
+    /// Adds a style chain's level: its values override, and each toggle it turns on flips the one below.
+    pub fn merge_level(&mut self, level: &CharProps) {
+        let flip = level.toggles.on & level.toggles.set;
+        let toggles = self.toggles;
+        self.merge(level);
+        self.toggles.on = toggles.on ^ flip;
+        self.toggles.set = toggles.set | flip;
+    }
+
+    /// One style chain's levels, root first, folded: the nearest level decides each toggle, and only toggles that
+    /// end on count.
+    pub fn fold_chain<'a>(chain: impl IntoIterator<Item = &'a CharProps>) -> CharProps {
+        let mut acc = CharProps::default();
+        for level in chain {
+            acc.merge(level);
+        }
+        let on = acc.toggles.on & acc.toggles.set;
+        acc.toggles.on = on;
+        acc.toggles.set = on;
+        acc
+    }
+}
