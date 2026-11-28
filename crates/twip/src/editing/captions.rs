@@ -438,9 +438,8 @@ impl Editor {
             layout_in_cell: obj.layout_in_cell,
             order: usize::MAX / 2,
             z: self.front_z(),
-            src: None,
+            origin: crate::docx::Origin::NONE,
             locked: false,
-            frame_src: None,
             in_note: obj.in_note,
             parts: Vec::new(),
             shape: Some(Box::new(crate::drawing::Shape::new(

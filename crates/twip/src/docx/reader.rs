@@ -9,7 +9,7 @@ use roxmltree::Node;
 use super::char_props::{self, RunDirect};
 use super::diagnostics::{Diagnostics, WarningCode};
 use super::model::*;
-use super::origin::ParaSrc;
+use super::origin::{ParaSrc, xml_origin};
 use super::para_props::{self, ParaDirect};
 use super::para_xml;
 use super::props::*;
@@ -2512,7 +2512,7 @@ impl Reader {
         if self.record {
             for i in added {
                 if let Inline::Picture(p, _) = i {
-                    p.src = Raw(Some(raw(c)));
+                    p.origin = xml_origin(raw(c));
                 }
             }
         }
@@ -2623,7 +2623,7 @@ impl Reader {
                         let (lock, dirty) = (flag("fldLock"), flag("dirty"));
                         let form = child(c, "ffData").filter(|_| self.record).map(|f| {
                             let data = super::forms::FormData::parse(f);
-                            Rc::new(FormField { xml: Raw(Some(raw(f))), read: data.clone(), data })
+                            Rc::new(FormField::read(raw(f), data))
                         });
                         out.push(Inline::FieldBegin {
                             id,
@@ -2820,7 +2820,7 @@ impl Reader {
         };
         let raise = pr.and_then(|p| child(p, "hpsRaise")).and_then(|h| half_points(val(h))).unwrap_or(0.0);
         let size = pr.and_then(|p| child(p, "hps")).and_then(|h| half_points(val(h)));
-        Ruby { base: base_text, text: annotation, align, raise, size, xml: Raw(Some(raw(ruby))) }
+        Ruby { base: base_text, text: annotation, align, raise, size, origin: xml_origin(raw(ruby)) }
     }
 
     /// A checkbox content control (`w14:checkbox`) as one symbol: the character it
@@ -3166,7 +3166,7 @@ impl Reader {
                     effect: [0.0; 4],
                     shape: Some(Box::new(shape)),
                     text,
-                    src: Default::default(),
+                    origin: Origin::NONE,
                 },
                 run.clone(),
             ));
@@ -3246,9 +3246,8 @@ impl Reader {
                 layout_in_cell: v.allow_in_cell,
                 order: self.float_order,
                 z: st.z.unsigned_abs().min(u64::from(u32::MAX)) as u32,
-                src: Some(pict.range()),
+                origin: Float::origin_at(Some(pict.range()), None),
                 locked: false,
-                frame_src: None,
                 in_note: false,
                 parts: Vec::new(),
                 rot_swap: false,
@@ -3304,7 +3303,7 @@ impl Reader {
             let group = item.descendants().any(|n| n.tag_name().name() == "wgp");
             let text = txbx.filter(|_| !group).map(|t| Box::new(InlineText { id: next_para_id(), text_box: self.text_box(item, t, pkg) }));
             out.push(Inline::Picture(
-                Picture { w, h, image, alt, lock_aspect, effect, shape: Some(Box::new(shape)), text, src: Default::default() },
+                Picture { w, h, image, alt, lock_aspect, effect, shape: Some(Box::new(shape)), text, origin: Origin::NONE },
                 run.clone(),
             ));
             return;
@@ -3391,9 +3390,8 @@ impl Reader {
                 layout_in_cell: item.attribute("layoutInCell").map(|v| on_off_str(Some(v))).unwrap_or(true),
                 order: self.float_order,
                 z: item.attribute("relativeHeight").and_then(|v| v.parse().ok()).unwrap_or(0),
-                src: Some(d.range()),
+                origin: Float::origin_at(Some(d.range()), None),
                 locked: item.attribute("locked").is_some_and(|v| on_off_str(Some(v))),
-                frame_src: None,
                 in_note: false,
                 parts,
                 rot_swap: false,

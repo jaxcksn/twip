@@ -1116,7 +1116,7 @@ fn an_inline_picture_floats_where_it_is_and_goes_back_in_line() {
     let now = object_box(&mut r.e);
     // Off its paragraph's first line, it goes the quarter point below the paragraph's top that Word's conversion does.
     assert!(was.iter().zip(&now).all(|(a, b)| (a - b).abs() < 0.3), "stays where it was: {was:?} -> {now:?}");
-    let f = body_floats(&r.e).into_iter().find(|f| f.src.is_none()).expect("the new float");
+    let f = body_floats(&r.e).into_iter().find(|f| f.origin.is_none()).expect("the new float");
     assert_eq!(
         (f.wrap, f.h_relative, f.v_relative, f.image.is_some()),
         (crate::docx::FloatWrap::Square, crate::docx::HorizontalRelation::Column, crate::docx::VerticalRelation::Paragraph, true)

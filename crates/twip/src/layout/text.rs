@@ -1099,7 +1099,7 @@ impl<'a> Builder<'a> {
                         effect: f.effect,
                         shape: f.shape.clone(),
                         text: f.text_box.clone().map(|text_box| Box::new(crate::docx::model::InlineText { id: f.id, text_box })),
-                        src: Default::default(),
+                        origin: crate::docx::Origin::NONE,
                     },
                     run,
                 ),
@@ -1177,7 +1177,7 @@ impl<'a> Builder<'a> {
                         effect: [0.0; 4],
                         shape: None,
                         text: None,
-                        src: Default::default(),
+                        origin: crate::docx::Origin::NONE,
                     }));
                     self.atom(p, "\u{FFFC}");
                 }

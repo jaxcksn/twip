@@ -424,7 +424,7 @@ fn a_font_replaced_in_a_rubys_annotation_and_base_keeps_its_xml() {
     let fonts_of = |r: &crate::docx::Ruby| -> Vec<String> { r.base.iter().chain(&r.text).map(|(_, run)| run.ascii.clone()).collect() };
     let (r, _) = ruby(&e);
     assert_eq!(fonts_of(&r), ["Times New Roman", "Times New Roman"]);
-    let xml = r.xml.0.as_deref().expect("its XML").to_string();
+    let xml = r.origin_xml().expect("its XML").to_string();
     assert_eq!(xml.matches("w:ascii=\"Times New Roman\"").count(), 2, "{xml}");
     let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reads");
     assert_eq!(fonts_of(&ruby(&again).0), ["Times New Roman", "Times New Roman"], "as saved");
@@ -437,7 +437,7 @@ fn bold_over_a_ruby_leaves_an_empty_run_in_its_base_alone() {
     e.execute(Command::SelectAll, fonts());
     e.execute(C::SetBold(true), fonts());
     let (r, _) = ruby(&e);
-    let xml = r.xml.0.as_deref().expect("its XML").to_string();
+    let xml = r.origin_xml().expect("its XML").to_string();
     assert!(xml.contains("<w:r/></w:rubyBase>"), "no properties beside the empty run: {xml}");
     assert!(r.base.iter().all(|(_, run)| run.bold), "the base text is bold");
 }

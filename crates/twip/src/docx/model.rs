@@ -711,15 +711,15 @@ pub struct Picture {
     pub shape: Option<Box<crate::drawing::Shape>>,
     /// An inline shape's text (`wps:txbx`): its story, edited as a text box's (`StoryId::TextBox` of its id).
     pub text: Option<Box<InlineText>>,
-    /// Its run child as read (`w:drawing`, `w:pict`, `mc:AlternateContent`; editable reads only): a copy pasted into
-    /// the part it came from is written from it.
-    pub src: Raw,
+    /// Where it was read from (its run child as read; editable reads only): a copy pasted into the part it came from is
+    /// written from it.
+    pub origin: Origin,
 }
 
 impl Picture {
     /// Equal but for the text story's blocks.
     pub fn same_but_story(&self, o: &Picture) -> bool {
-        let Picture { w, h, image, alt, lock_aspect, effect, shape, text, src } = self;
+        let Picture { w, h, image, alt, lock_aspect, effect, shape, text, origin: _ } = self;
         let text = match (text, &o.text) {
             (Some(a), Some(b)) => a.id == b.id && a.text_box.same_box(&b.text_box),
             (a, b) => a.is_none() && b.is_none(),
@@ -731,7 +731,6 @@ impl Picture {
             && *lock_aspect == o.lock_aspect
             && *effect == o.effect
             && *shape == o.shape
-            && *src == o.src
     }
 }
 
@@ -767,9 +766,8 @@ impl Float {
             rot_swap,
             vml,
             relative,
-            src,
+            origin: _,
             locked,
-            frame_src,
             in_note,
             parts,
             shape,
@@ -802,9 +800,9 @@ impl Float {
             && *rot_swap == o.rot_swap
             && *vml == o.vml
             && *relative == o.relative
-            && *src == o.src
+            && self.src() == o.src()
             && *locked == o.locked
-            && *frame_src == o.frame_src
+            && self.frame_src() == o.frame_src()
             && *in_note == o.in_note
             && *parts == o.parts
             && *shape == o.shape
@@ -812,7 +810,7 @@ impl Float {
 
     /// A frame (`w:framePr` paragraphs made a float): read from one, or made since.
     pub fn is_frame(&self) -> bool {
-        self.frame_src.is_some() || self.text_box.as_ref().is_some_and(|tb| tb.blocks.iter().any(|b| matches!(b, Block::Para(p) if p.style.in_frame)))
+        self.read_as_frame() || self.text_box.as_ref().is_some_and(|tb| tb.blocks.iter().any(|b| matches!(b, Block::Para(p) if p.style.in_frame)))
     }
 }
 
@@ -910,12 +908,10 @@ pub struct Float {
     /// Read from a VML shape: its effect extents stand for its outline's pixels.
     pub vml: bool,
     pub relative: Relative,
-    /// The source `w:drawing` element's byte range in its part: saving drops it when the float is deleted.
-    pub src: Option<std::ops::Range<usize>>,
+    /// Where it was read from (its drawing, or a frame's paragraphs): saving drops that when the float is deleted.
+    pub origin: Origin,
     /// `wp:anchor/@locked`: the anchor stays in its paragraph when the float is moved.
     pub locked: bool,
-    /// A frame's paragraphs in the source (frames.rs): saving drops them when the frame is deleted.
-    pub frame_src: Option<std::ops::Range<usize>>,
     /// Anchored in a footnote or endnote: laid out as an inline object at its anchor, wrapping nothing.
     pub in_note: bool,
     pub parts: Vec<GroupPart>,
@@ -1102,11 +1098,10 @@ pub enum Inline {
 /// A legacy form field's data: what saving writes back.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FormField {
-    /// The `w:ffData` as read, written while `data` is as read.
-    pub xml: Raw,
-    /// Its settings and value, and as read.
+    /// Its settings and value.
     pub data: super::forms::FormData,
-    pub read: super::forms::FormData,
+    /// Where it was read from (its `w:ffData` and data as read): written as read while `data` is.
+    pub origin: Origin,
 }
 
 /// A field edge marker ([`Inline::FieldEdge`]): one allocation for each edge made, which its copies share.
@@ -1181,8 +1176,8 @@ pub struct Ruby {
     pub raise: f64,
     /// `w:hps`: the annotation's size, points.
     pub size: Option<f64>,
-    /// The `w:ruby` element as read: what saving writes.
-    pub xml: Raw,
+    /// Where it was read from (its `w:ruby` element as read): what saving writes.
+    pub origin: Origin,
 }
 
 #[derive(Clone, Debug, PartialEq)]

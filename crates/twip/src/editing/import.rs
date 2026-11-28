@@ -370,8 +370,16 @@ impl Rebind {
                             self.raw(&mut p.xml);
                             r.permission = Some(Rc::new(p));
                         }
-                        Inline::Ruby(r, _) if needs(&r.xml) => self.raw(&mut Rc::make_mut(r).xml),
-                        Inline::FieldBegin { form: Some(f), .. } if needs(&f.xml) => self.raw(&mut Rc::make_mut(f).xml),
+                        Inline::Ruby(r, _) => {
+                            if let Some(x) = r.origin_xml().and_then(|x| self.element(x)) {
+                                *r = Rc::new(r.with_origin_xml(x.into()));
+                            }
+                        }
+                        Inline::FieldBegin { form: Some(f), .. } => {
+                            if let Some(x) = f.origin_xml().and_then(|x| self.element(x)) {
+                                *f = Rc::new(f.with_origin_xml(x.into()));
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -535,8 +543,8 @@ impl Editor {
             if let Block::Para(p) = b {
                 for i in &mut p.inlines {
                     match i {
-                        Inline::Picture(pic, _) => pic.src = Default::default(),
-                        Inline::Float(f, _) => (f.src, f.frame_src) = (None, None),
+                        Inline::Picture(pic, _) => pic.origin = crate::docx::Origin::NONE,
+                        Inline::Float(f, _) => f.origin = crate::docx::Origin::NONE,
                         _ => {}
                     }
                 }

@@ -2947,7 +2947,7 @@ fn the_frame_dialog_moves_a_frame_saves_it_and_removes_it() {
             .filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None })
             .flat_map(|p| p.inlines.iter())
             .find_map(|i| match i {
-                Inline::Float(f, _) if f.frame_src.is_some() => match f.text_box.as_ref()?.blocks.first()? {
+                Inline::Float(f, _) if f.read_as_frame() => match f.text_box.as_ref()?.blocks.first()? {
                     Block::Para(q) => Some((f.id, q.id)),
                     _ => None,
                 },

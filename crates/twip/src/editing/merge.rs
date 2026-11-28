@@ -2702,7 +2702,7 @@ impl Editor {
                         s
                     })),
                     text: None,
-                    src: Default::default(),
+                    origin: crate::docx::Origin::NONE,
                 };
                 self.insert_inlines(
                     |run| vec![Inline::ControlStart(id), Inline::Picture(picture.clone(), run), Inline::ControlEnd(id)],

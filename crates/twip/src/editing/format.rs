@@ -338,7 +338,7 @@ fn table_again(t: &Table, res: &Resolvers) -> Option<(TableProps, Option<Vec<Row
 /// so, written into the XML. `None` when it stays as it is.
 pub(super) fn ruby_again(r: &Ruby, base: &CharProps, edit: Option<(&RubyEdit, bool)>, res: &Resolvers, cx: &Cx) -> Option<Rc<Ruby>> {
     use crate::docx::xml::is_w;
-    let raw = r.xml.0.as_deref()?;
+    let raw = &**r.origin_xml()?;
     let (mut splices, parts) = cx.parse(raw, |text, el| {
         let off = text.len() - raw.len() - "</x>".len();
         let mut splices: Vec<(std::ops::Range<usize>, String)> = Vec::new();
@@ -402,7 +402,7 @@ pub(super) fn ruby_again(r: &Ruby, base: &CharProps, edit: Option<(&RubyEdit, bo
     for (at, with) in splices {
         xml.replace_range(at, &with);
     }
-    Some(Rc::new(Ruby { base: base_text, text, xml: crate::docx::Raw(Some(Rc::from(xml.as_str()))), ..(*r).clone() }))
+    Some(Rc::new(Ruby { base: base_text, text, ..r.with_origin_xml(Rc::from(xml.as_str())) }))
 }
 
 impl Editor {

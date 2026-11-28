@@ -1173,7 +1173,7 @@ impl Editor {
                 effect: [0.0; 4],
                 shape: Some(Box::new(shape)),
                 text: None,
-                src: Default::default(),
+                origin: crate::docx::Origin::NONE,
             },
             run.clone(),
         )

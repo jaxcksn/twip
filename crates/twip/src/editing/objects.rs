@@ -786,7 +786,7 @@ impl Editor {
                         effect: [0.0; 4],
                         shape: shape.clone(),
                         text: None,
-                        src: Default::default(),
+                        origin: crate::docx::Origin::NONE,
                     },
                     run,
                 )
@@ -865,9 +865,8 @@ impl Editor {
             layout_in_cell: true,
             order: usize::MAX / 2,
             z: self.front_z(),
-            src: None,
+            origin: crate::docx::Origin::NONE,
             locked: false,
-            frame_src: None,
             in_note: false,
             parts: Vec::new(),
             // The shape the saved box reopens with: its white fill and outline draw now.
@@ -1283,9 +1282,8 @@ impl Editor {
             layout_in_cell: true,
             order: usize::MAX / 2,
             z: self.front_z(),
-            src: None,
+            origin: crate::docx::Origin::NONE,
             locked: false,
-            frame_src: None,
             in_note: false,
             parts: Vec::new(),
             shape: if boxed.is_some() { None } else { pic.shape.clone() },
@@ -1380,7 +1378,7 @@ impl Editor {
             effect: fl.effect,
             shape: fl.shape.clone(),
             text,
-            src: Default::default(),
+            origin: crate::docx::Origin::NONE,
         };
         let with = vec![Inline::Picture(pic, run.clone())];
         let mut tx = self.begin("Wrap Text");

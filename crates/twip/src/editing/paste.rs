@@ -855,8 +855,7 @@ impl Editor {
             rot_swap: false,
             vml: false,
             relative: Default::default(),
-            src: None,
-            frame_src: None,
+            origin: crate::docx::Origin::NONE,
             in_note: false,
             ..(*m).clone()
         };

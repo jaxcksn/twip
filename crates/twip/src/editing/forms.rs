@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use crate::api::command::{FormFieldChange, FormFieldFill, FormFieldType, TextInputType};
 use crate::docx::forms::{FormData, FormKind};
-use crate::docx::{ElementId, FieldId, FieldKind, FormField, Inline, Raw};
+use crate::docx::{ElementId, FieldId, FieldKind, FormField, Inline};
 use crate::font::Fonts;
 use crate::layout::{ParaId, Unit};
 
@@ -228,7 +228,7 @@ impl Editor {
             |run| {
                 let mut v = crate::docx::fields::field_inlines_with(id, &format!(" {code} "), &display, &run);
                 if let Some(Inline::FieldBegin { form, .. }) = v.first_mut() {
-                    *form = Some(Rc::new(FormField { xml: Raw(None), data: data.clone(), read: data.clone() }));
+                    *form = Some(Rc::new(FormField { data: data.clone(), origin: crate::docx::Origin::NONE }));
                 }
                 if let Some(b) = v.first_mut() {
                     shown(b);

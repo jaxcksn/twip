@@ -108,7 +108,7 @@ fn odd_documents_lay_out() {
                 effect: [0.0; 4],
                 shape: None,
                 text: None,
-                src: Default::default(),
+                origin: crate::docx::Origin::NONE,
             },
             run.clone(),
         )],

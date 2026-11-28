@@ -82,7 +82,7 @@ pub(crate) fn float(group: Vec<Paragraph>, legacy: bool) -> Float {
     let fr = group[0].style.frame.clone().unwrap();
     let start = group.first().and_then(|p| p.src()).and_then(|s| s.ranges.first()).map(|r| r.start);
     let end = group.last().and_then(|p| p.src()).and_then(|s| s.ranges.last()).map(|r| r.end);
-    let frame_src = start.zip(end).map(|(a, b)| a..b);
+    let origin = Float::origin_at(None, start.zip(end).map(|(a, b)| a..b));
     let apart = group.iter().any(|p| p.style.suppress_overlap);
     let flow = group[0].style.text_flow;
     let blocks = group
@@ -122,9 +122,8 @@ pub(crate) fn float(group: Vec<Paragraph>, legacy: bool) -> Float {
         layout_in_cell: true,
         order: 0,
         z: 0,
-        src: None,
+        origin,
         locked: false,
-        frame_src,
         in_note: false,
         parts: Vec::new(),
         shape: None,

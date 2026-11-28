@@ -2102,7 +2102,7 @@ fn part_xml_with<'a>(
                 Block::Para(p) => {
                     for i in &p.inlines {
                         if let Inline::Float(f, _) = i {
-                            if let Some(r) = &f.src {
+                            if let Some(r) = f.src() {
                                 out.insert(f.id, (r.clone(), (**f).clone()));
                             }
                             if let Some(tb) = &f.text_box {
@@ -2313,7 +2313,9 @@ impl<'a, 'i> Saver<'a, 'i> {
         p.inlines.iter().any(|i| match i {
             Inline::ControlStart(c) | Inline::Sym { control: Some(c), .. } => self.controls.get(c).is_some_and(|k| !k.as_read()),
             // A floating picture control is written without the fallback copy beside it.
-            Inline::Float(f, _) => f.picture_control(&self.controls).is_some() && f.src.clone().is_some_and(|r| self.alternate_content(r).is_some()),
+            Inline::Float(f, _) => {
+                f.picture_control(&self.controls).is_some() && f.src().cloned().is_some_and(|r| self.alternate_content(r).is_some())
+            }
             _ => false,
         })
     }
@@ -2470,7 +2472,7 @@ impl<'a, 'i> Saver<'a, 'i> {
         for q in &qs {
             for i in &q.inlines {
                 if let Inline::Float(f, _) = i
-                    && let Some(r) = &f.frame_src
+                    && let Some(r) = f.frame_src()
                     && !kept.contains(&f.id)
                 {
                     self.splices.push((r.clone(), String::new()));
@@ -3353,13 +3355,13 @@ impl<'a, 'i> Saver<'a, 'i> {
         for i in &p.inlines {
             let Inline::Float(f, run) = i else { continue };
             // A new frame is written as its paragraphs, before this one.
-            if here(f.id, run) || (f.frame_src.is_none() && f.is_frame()) {
+            if here(f.id, run) || (!f.read_as_frame() && f.is_frame()) {
                 continue;
             }
             let (open, close) = revisions::wrappers(&self.w, run.rev.ins.as_deref(), run.rev.del.as_deref(), self.people);
             let mut push = |x: &str| out.push_str(&format!("{open}<{w}r>{x}</{w}r>{close}", w = self.w));
             // A pasted copy (a new id) is found by where it was read from, and gets drawing ids of its own.
-            let copied = f.src.as_ref().and_then(|s| self.float_src.values().find(|(r, _)| r == s)).filter(|_| !self.float_src.contains_key(&f.id));
+            let copied = f.src().and_then(|s| self.float_src.values().find(|(r, _)| r == s)).filter(|_| !self.float_src.contains_key(&f.id));
             let Some((r, was)) = self.float_src.get(&f.id).or(copied) else {
                 if let Some(x) = self.new_float_xml(f, run) {
                     push(&x);
@@ -3857,7 +3859,7 @@ fn same_inline(x: &Inline, y: &Inline) -> bool {
         // A resized or reformatted picture is written patched (its text's content is its own container).
         (Inline::Picture(a, r), Inline::Picture(b, q)) => a.same_but_story(b) && Rc::ptr_eq(r, q),
         // A ruby whose text was formatted is written anew.
-        (Inline::Ruby(a, r), Inline::Ruby(b, q)) => (Rc::ptr_eq(a, b) || a.xml.0.as_deref() == b.xml.0.as_deref()) && Rc::ptr_eq(r, q),
+        (Inline::Ruby(a, r), Inline::Ruby(b, q)) => (Rc::ptr_eq(a, b) || a.origin_xml() == b.origin_xml()) && Rc::ptr_eq(r, q),
         _ => {
             std::mem::discriminant(x) == std::mem::discriminant(y)
                 && match (x.run(), y.run()) {
@@ -3908,7 +3910,7 @@ fn unit_keys(i: &Inline, out: &mut Vec<(u64, char)>) {
             std::mem::discriminant(other).hash(&mut h);
             match other {
                 // By its drawing as read, else its image: a resized or refilled picture is kept, patched (`Emit::seg`).
-                Inline::Picture(p, _) => match &p.src.0 {
+                Inline::Picture(p, _) => match p.origin_xml() {
                     Some(src) => (Rc::as_ptr(src) as *const u8 as usize).hash(&mut h),
                     None => p.image.hash(&mut h),
                 },
@@ -3918,10 +3920,10 @@ fn unit_keys(i: &Inline, out: &mut Vec<(u64, char)>) {
                 Inline::Sym { ch, font, .. } => (ch, font).hash(&mut h),
                 Inline::PTab(t, _) => t.hash(&mut h),
                 // A ruby by its XML: formatting its text writes it anew.
-                Inline::Ruby(r, _) => r.xml.0.as_deref().hash(&mut h),
+                Inline::Ruby(r, _) => r.origin_xml().map(|x| &**x).hash(&mut h),
                 // A field's markers by their field: editing its code keeps them; a form field's changed data is
                 // written anew.
-                Inline::FieldBegin { id, form, .. } => (id, form.as_ref().is_some_and(|f| f.data != f.read)).hash(&mut h),
+                Inline::FieldBegin { id, form, .. } => (id, form.as_ref().is_some_and(|f| f.changed())).hash(&mut h),
                 Inline::FieldSep { id, .. } | Inline::FieldEnd { id, .. } => id.hash(&mut h),
                 _ => {}
             }
@@ -4581,7 +4583,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
         let floats = |ps: &[&Paragraph]| -> Vec<(u64, Option<Range<usize>>, Run)> {
             ps.iter()
                 .flat_map(|p| p.inlines.iter())
-                .filter_map(|i| if let Inline::Float(f, r) = i { Some((f.id, f.src.clone(), r.clone())) } else { None })
+                .filter_map(|i| if let Inline::Float(f, r) = i { Some((f.id, f.src().cloned(), r.clone())) } else { None })
                 .collect()
         };
         // A float whose insertion or deletion changed is written again, in its wrappers (`moved_in`).
@@ -4602,7 +4604,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
             .iter()
             .filter_map(|a| {
                 let b = is.iter().find(|b| b.id == a.id)?;
-                let src = a.src.clone()?;
+                let src = a.src().cloned()?;
                 // A VML float's edits patch its VML (`style`, fill and stroke attributes).
                 let text = s.src_text(src.clone());
                 if drawing::is_vml(&text) {
@@ -4694,7 +4696,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                 p.inlines
                     .iter()
                     .filter_map(|i| match i {
-                        Inline::Float(f, _) if f.frame_src.is_none() && f.is_frame() => f.text_box.as_ref(),
+                        Inline::Float(f, _) if !f.read_as_frame() && f.is_frame() => f.text_box.as_ref(),
                         _ => None,
                     })
                     .map(|tb| s.nested_blocks(&tb.blocks))
@@ -5977,7 +5979,7 @@ impl Saver<'_, '_> {
         // A copy pasted into the part it came from: its source XML (its relationships are this part's), at its size now,
         // with drawing ids of its own.
         if let Inline::Picture(p, _) = i
-            && let Some(x) = p.src.0.as_deref().filter(|x| self.xml.contains(*x))
+            && let Some(x) = p.origin_xml().map(|x| &**x).filter(|x| self.xml.contains(*x))
         {
             // Its text box holding its own text.
             let own = p.text.as_ref().and_then(|t| self.nested_blocks(&t.text_box.blocks).ok());
@@ -6286,8 +6288,8 @@ fn object_xml(w: &str, i: &Inline) -> Option<String> {
         Inline::FieldBegin { lock, dirty, form, .. } => {
             let lock = if *lock { format!(" {w}fldLock=\"1\"") } else { String::new() };
             let dirty = if *dirty { format!(" {w}dirty=\"1\"") } else { String::new() };
-            let ff = form.as_ref().map(|f| match f.xml.0.as_deref() {
-                Some(x) if f.data == f.read => x.to_string(),
+            let ff = form.as_ref().map(|f| match f.src() {
+                Some(s) if f.data == s.read => s.xml.to_string(),
                 _ => f.data.xml(w),
             });
             Some(match ff {
@@ -6295,7 +6297,7 @@ fn object_xml(w: &str, i: &Inline) -> Option<String> {
                 None => format!("<{w}fldChar {w}fldCharType=\"begin\"{lock}{dirty}/>"),
             })
         }
-        Inline::Ruby(r, _) => r.xml.0.as_deref().map(str::to_string),
+        Inline::Ruby(r, _) => r.origin_xml().map(|x| x.to_string()),
         Inline::DateBlock(name, ..) => Some(format!("<{w}{name}/>")),
         Inline::FieldSep { .. } => Some(format!("<{w}fldChar {w}fldCharType=\"separate\"/>")),
         Inline::FieldEnd { .. } => Some(format!("<{w}fldChar {w}fldCharType=\"end\"/>")),

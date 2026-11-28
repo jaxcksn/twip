@@ -15,7 +15,7 @@ use super::props::esc;
 pub(super) type Edit = (Range<usize>, String);
 
 pub(super) fn changed(was: &Float, now: &Float, text: &str) -> Option<Vec<Edit>> {
-    let (Some(a), Some(b), Some(src)) = (was.shape.as_deref(), now.shape.as_deref(), was.src.as_ref()) else { return None };
+    let (Some(a), Some(b), Some(src)) = (was.shape.as_deref(), now.shape.as_deref(), was.src()) else { return None };
     let mut edits = shape_changed(a, b, src.start, text).unwrap_or_default();
     link_edits(a, b, text, &mut edits);
     (!edits.is_empty()).then_some(edits)
@@ -70,7 +70,7 @@ fn link_edits(a: &Shape, b: &Shape, text: &str, out: &mut Vec<Edit>) {
 /// in its drawing: its body properties' place.
 pub(super) fn story_added(was: &Float, now: &Float) -> Option<usize> {
     use crate::drawing::ShapeText;
-    let (a, b, src) = (was.shape.as_deref()?, now.shape.as_deref()?, was.src.as_ref()?);
+    let (a, b, src) = (was.shape.as_deref()?, now.shape.as_deref()?, was.src()?);
     let had = matches!(a.sp()?.text, ShapeText::None | ShapeText::Linked { .. });
     let added = was.text_box.is_none() && now.text_box.is_some() && had && b.sp()?.text == ShapeText::Story;
     added.then(|| a.spans.body.as_ref().map(|r| r.start - src.start)).flatten()
@@ -1225,7 +1225,12 @@ mod round_trip {
         let (f, run) =
             p.inlines.iter().find_map(|i| if let Inline::Float(f, r) = i { Some(((**f).clone(), r.clone())) } else { None }).expect("a float");
         for (k, shape) in made.iter().enumerate() {
-            let g = crate::docx::model::Float { id: 1000 + k as u64, src: None, shape: Some(Box::new(shape.clone())), ..f.clone() };
+            let g = crate::docx::model::Float {
+                id: 1000 + k as u64,
+                origin: crate::docx::Origin::NONE,
+                shape: Some(Box::new(shape.clone())),
+                ..f.clone()
+            };
             p.inlines.push(Inline::Float(Box::new(g), run.clone()));
         }
         let bytes = crate::docx::write::save(&d).expect("saves");

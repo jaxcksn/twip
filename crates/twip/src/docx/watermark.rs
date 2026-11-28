@@ -3,7 +3,7 @@
 //! Word's text and picture watermarks: a VML shape in a header, behind the text and centred on the margins, that
 //! Word's Watermark dialog finds by its id's prefix.
 
-use super::model::Float;
+use super::model::{Float, Origin};
 
 /// A text watermark's shape id prefix.
 pub const TEXT_ID: &str = "PowerPlusWaterMarkObject";
@@ -289,9 +289,8 @@ pub fn float(m: &Watermark, size: [f64; 2], spid: u32, image: Option<crate::docx
         rot_swap: false,
         vml: true,
         relative: Default::default(),
-        src: None,
+        origin: Origin::NONE,
         locked: false,
-        frame_src: None,
         in_note: false,
         parts: Vec::new(),
         shape: Some(Box::new(shape)),
