@@ -1518,7 +1518,7 @@ pub(super) fn adopt(
         .iter()
         .filter_map(|(old, new)| {
             let mut c = defs.get(old)?.clone();
-            c.props.rest.retain(|(n, _)| n != "id");
+            c.props.id = None;
             Some((*new, crate::docx::Control::new(c.props)))
         })
         .collect();

@@ -7198,19 +7198,28 @@ pub(crate) fn control_open(w: &str, id: ControlId, c: &Control) -> String {
     let p = &c.props;
     let esc = props::esc;
     let rest = |name: &str| p.rest.iter().filter(|(n, _)| n == name).map(|(_, x)| x.as_str()).collect::<String>();
-    let mut pr = rest("rPr");
+    let first = |name: &str| p.rest.iter().find(|(n, _)| n == name).map(|(_, x)| x.as_str());
+    // `w:rPr` as read while it is, else as set
+    let mut pr = match &p.run {
+        Some(r) if first("rPr") == Some(&*r.xml) => rest("rPr"),
+        Some(r) => r.xml.to_string(),
+        None => String::new(),
+    };
     if let Some(a) = &p.alias {
         pr.push_str(&format!("<{w}alias {w}val=\"{}\"/>", esc(a)));
     }
     if let Some(t) = &p.tag {
         pr.push_str(&format!("<{w}tag {w}val=\"{}\"/>", esc(t)));
     }
+    // `w:id` as read while it is (one this doesn't read too), else as set, else a new one
     let given_id = rest("id");
-    if given_id.is_empty() {
+    let read_id = first("id").and_then(controls::val).and_then(|v| v.trim().parse::<i64>().ok());
+    match p.id {
+        Some(n) if read_id == Some(n) => pr.push_str(&given_id),
+        None if !given_id.is_empty() && c.read.as_ref().is_some_and(|r| r.id.is_none()) => pr.push_str(&given_id),
+        Some(n) => pr.push_str(&format!("<{w}id {w}val=\"{n}\"/>")),
         // Word's `w:id`: a signed 32-bit number, unique in the document.
-        pr.push_str(&format!("<{w}id {w}val=\"{}\"/>", (id.0 % 0x7fff_ffff) as i64 + 1));
-    } else {
-        pr.push_str(&given_id);
+        None => pr.push_str(&format!("<{w}id {w}val=\"{}\"/>", (id.0 % 0x7fff_ffff) as i64 + 1)),
     }
     if let Some(v) = p.lock.val() {
         pr.push_str(&format!("<{w}lock {w}val=\"{v}\"/>"));
@@ -7230,12 +7239,29 @@ pub(crate) fn control_open(w: &str, id: ControlId, c: &Control) -> String {
     if let Some(x) = &p.binding {
         pr.push_str(x);
     }
+    let w15 = "http://schemas.microsoft.com/office/word/2012/wordml";
+    // `w15:appearance` and `w15:color` as read while they are, else as set, after the rest
+    let appearance = match &c.read {
+        Some(r) => r.appearance != p.appearance,
+        None => first("appearance").and_then(controls::val).as_deref().and_then(ControlAppearance::parse) != p.appearance,
+    };
+    let color = match &c.read {
+        Some(r) => r.color != p.color,
+        None => first("color").map(|x| controls::val(x).and_then(|v| u32::from_str_radix(&v, 16).ok())) != p.color,
+    };
     for (n, x) in &p.rest {
-        if !matches!(n.as_str(), "rPr" | "id" | "temporary") {
+        let set = (n == "appearance" && appearance) || (n == "color" && color);
+        if !set && !matches!(n.as_str(), "rPr" | "id" | "temporary") {
             pr.push_str(x);
         }
     }
-    let w15 = "http://schemas.microsoft.com/office/word/2012/wordml";
+    if let Some(a) = p.appearance.filter(|_| appearance) {
+        pr.push_str(&format!(r#"<w15:appearance xmlns:w15="{w15}" w15:val="{}"/>"#, a.xml()));
+    }
+    // A colour this doesn't read is never set, only kept.
+    if let Some(Some(k)) = p.color.filter(|_| color) {
+        pr.push_str(&format!(r#"<w15:color xmlns:w15="{w15}" {w}val="{k:06X}"/>"#));
+    }
     let kind = match (&p.kind_xml, &p.kind) {
         (_, ControlKind::DropDown) => list_xml(w, c),
         (Some(x), ControlKind::Other) if c.read.as_ref().is_some_and(|r| r.kept == p.kept) => x.xml.clone(),

@@ -4152,6 +4152,19 @@ fn control_props(pr: Option<Node>, xml: &str) -> ControlProps {
                 p.temporary = attr(c, "val").is_none_or(|v| v != "0" && v != "false");
                 p.rest.push((name.to_string(), raw()));
             }
+            // The first of each, typed; all kept as read.
+            "appearance" | "color" | "rPr" | "id" => {
+                if !p.rest.iter().any(|(n, _)| n == name) {
+                    let val = c.attributes().find(|a| a.name() == "val").map(|a| a.value());
+                    match name {
+                        "appearance" => p.appearance = val.and_then(ControlAppearance::parse),
+                        "color" => p.color = Some(val.and_then(|v| u32::from_str_radix(v, 16).ok())),
+                        "rPr" => p.run = Some(ControlRun { props: Rc::new(char_props::parse(c).0), xml: raw().into() }),
+                        _ => p.id = attr(c, "val").and_then(|v| v.trim().parse().ok()),
+                    }
+                }
+                p.rest.push((name.to_string(), raw()));
+            }
             _ => p.rest.push((name.to_string(), raw())),
         }
     }

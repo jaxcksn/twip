@@ -1509,6 +1509,13 @@ pub struct ListEntry {
 }
 
 impl ControlProps {
+    /// The markup it keeps as read (placeholder, binding, kind element and other children), to declare the namespaces
+    /// it uses where it is written.
+    pub fn kept_xml_mut(&mut self) -> impl Iterator<Item = &mut String> {
+        let kind = self.kind_xml.iter_mut().map(|k| &mut k.xml);
+        self.placeholder.iter_mut().chain(&mut self.binding).chain(kind).chain(self.rest.iter_mut().map(|(_, x)| x))
+    }
+
     /// A building block gallery (`w:docPartList`): `Some` of its category (`None`: any).
     pub fn gallery(&self) -> Option<Option<String>> {
         match &self.kept {
@@ -1557,8 +1564,65 @@ pub struct ControlProps {
     pub kept: Option<KeptKind>,
     /// `w:temporary`: the control goes when its content is edited, leaving the content.
     pub temporary: bool,
-    /// Every other `w:sdtPr` child (`w:rPr`, `w:id`, `w:temporary` as read, ...), by local name, in reading order.
+    /// `w15:appearance`: how it is drawn (`None`: not given, or a value this doesn't know).
+    pub appearance: Option<ControlAppearance>,
+    /// `w15:color`: `Some` of its colour (`0xRRGGBB`) when given, `Some(None)` for one this doesn't read (`auto`).
+    pub color: Option<Option<u32>>,
+    /// `w:rPr`: the formatting its content takes.
+    pub run: Option<ControlRun>,
+    /// `w:id`: its number (`None`: none, or one this doesn't read).
+    pub id: Option<i64>,
+    /// Every other `w:sdtPr` child (and `w:rPr`, `w:id`, `w:temporary`, `w15:appearance` and `w15:color` as read), by
+    /// local name, in reading order.
     pub rest: Vec<(String, String)>,
+}
+
+/// A content control's `w15:appearance`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ControlAppearance {
+    /// `boundingBox`: a box around it.
+    BoundingBox,
+    /// `tags`: start and end tags.
+    Tags,
+    /// `hidden`: nothing.
+    Hidden,
+}
+
+impl ControlAppearance {
+    /// The appearance a `w15:appearance` value names; `None` for one this doesn't know.
+    pub fn parse(v: &str) -> Option<ControlAppearance> {
+        match v {
+            "boundingBox" => Some(ControlAppearance::BoundingBox),
+            "tags" => Some(ControlAppearance::Tags),
+            "hidden" => Some(ControlAppearance::Hidden),
+            _ => None,
+        }
+    }
+
+    /// The `w15:appearance` value.
+    pub fn xml(self) -> &'static str {
+        match self {
+            ControlAppearance::BoundingBox => "boundingBox",
+            ControlAppearance::Tags => "tags",
+            ControlAppearance::Hidden => "hidden",
+        }
+    }
+}
+
+/// A content control's run properties (`w:sdtPr/w:rPr`): typed, with the `w:rPr` they are written as.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ControlRun {
+    /// The properties.
+    pub props: Rc<crate::format::CharProps>,
+    /// Their `w:rPr`.
+    pub xml: Rc<str>,
+}
+
+impl ControlRun {
+    /// As a run's authored properties, written as their `w:rPr`.
+    pub fn direct(&self) -> super::char_props::RunDirect {
+        super::char_props::RunDirect::shared(self.props.clone(), self.xml.clone())
+    }
 }
 
 /// A content control's kind element as read, and the kind it was read as.

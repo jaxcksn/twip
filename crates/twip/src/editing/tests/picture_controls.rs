@@ -368,7 +368,7 @@ fn a_selected_picture_control_shows_its_label() {
     assert!(r.e.view(0..2).regions.is_empty(), "labels off");
     r.e.control_labels = true;
     let k = r.e.doc.controls.get_mut(&c).expect("the control");
-    k.props.rest.push(("appearance".into(), r#"<w15:appearance w15:val="hidden"/>"#.into()));
+    k.props.appearance = Some(crate::docx::ControlAppearance::Hidden);
     assert!(r.e.view(0..2).regions.iter().all(|g| g.title != title), "hidden by the control");
 }
 

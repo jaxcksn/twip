@@ -726,7 +726,7 @@ impl Editor {
         if matches!(props.kind, ControlKind::RepeatingSection { fixed: true, .. }) || !props.lock.editable() || around_locked {
             return Err(locked());
         }
-        if props.binding.is_some() || props.rest.iter().any(|(n, _)| n == "dataBinding") {
+        if props.binding.is_some() {
             return Err(shape("bound repeating section"));
         }
         let want = match item {
@@ -746,7 +746,7 @@ impl Editor {
         let item_props = |e: &Editor, i: ControlId| {
             let mut p =
                 e.doc.controls.get(&i).map(|c| c.props.clone()).unwrap_or(ControlProps { kind: ControlKind::RepeatingItem, ..Default::default() });
-            p.rest.retain(|(n, _)| n != "id");
+            p.id = None;
             Control::new(p)
         };
         // The controls each copied list keeps: those around the section, the section, then the new item
@@ -863,7 +863,7 @@ impl Editor {
         let mut take = |x: ElementId| match x {
             ElementId::Control(c) => {
                 let props = &self.doc.controls.get(&c)?.props;
-                let hidden = props.rest.iter().any(|(n, xml)| n == "appearance" && xml.contains("\"hidden\""));
+                let hidden = props.appearance == Some(crate::docx::ControlAppearance::Hidden);
                 match props.kind {
                     ControlKind::RepeatingSection { .. } => Some(x),
                     ControlKind::RepeatingItem | ControlKind::Other => None,
@@ -3076,54 +3076,36 @@ impl Editor {
                 }
                 _ => return Err(Error::invalid("options for another kind of control")),
             }
-            if !matches!(
-                p.kind,
-                ControlKind::DropDown
-                    | ControlKind::Checkbox { .. }
-                    | ControlKind::Picture
-                    | ControlKind::RepeatingSection { .. }
-                    | ControlKind::Date { .. }
-                    | ControlKind::Other
-            ) {
-                p.kind_xml = None;
-            }
         }
-        // Appearance, colour, temporary and the contents' style: `w:sdtPr` children by local name.
-        let mut rest = |name: &str, xml: Option<String>| {
-            p.rest.retain(|(n, _)| n != name);
-            if let Some(x) = xml {
-                p.rest.push((name.to_string(), x));
-            }
-        };
-        let w15 = crate::docx::xml::W15;
+        // Appearance, colour, temporary and the contents' style
         if let Some(a) = set.appearance {
-            let v = match a {
-                crate::api::value::ControlAppearance::BoundingBox => "boundingBox",
-                crate::api::value::ControlAppearance::Tags => "tags",
-                crate::api::value::ControlAppearance::Hidden => "hidden",
-            };
-            rest("appearance", Some(format!(r#"<w15:appearance xmlns:w15="{w15}" w15:val="{v}"/>"#)));
+            p.appearance = Some(match a {
+                crate::api::value::ControlAppearance::BoundingBox => crate::docx::ControlAppearance::BoundingBox,
+                crate::api::value::ControlAppearance::Tags => crate::docx::ControlAppearance::Tags,
+                crate::api::value::ControlAppearance::Hidden => crate::docx::ControlAppearance::Hidden,
+            });
         }
         if let Some(c) = set.color {
-            let xml = match c {
+            p.color = match c {
                 crate::api::value::NoneOr::None => None,
-                crate::api::value::NoneOr::Value(c) => Some(format!(r#"<w15:color xmlns:w15="{w15}" {prefix}val="{:06X}"/>"#, c.0)),
+                crate::api::value::NoneOr::Value(c) => Some(Some(c.0)),
             };
-            rest("color", xml);
         }
         if let Some(t) = set.temporary {
             p.temporary = t;
         }
         if let Some(s) = &set.style {
-            let xml = match s {
+            p.run = match s {
                 crate::api::value::NoneOr::None => None,
                 crate::api::value::NoneOr::Value(id) => {
-                    let p = CharProps { style: Some(id.0.as_str().into()), ..Default::default() };
+                    let props = CharProps { style: Some(id.0.as_str().into()), ..Default::default() };
                     let colours = self.doc.resolver.as_deref().map_or_else(Default::default, |r| r.cascade().colours);
-                    Some(crate::docx::char_props::serialize(&p, &Default::default(), &colours, &self.cx()))
+                    let cx = self.cx();
+                    let xml = crate::docx::char_props::serialize(&props, &Default::default(), &colours, &cx);
+                    let read = crate::docx::char_props::RunDirect::from_xml(Some(&xml), &cx);
+                    read.props().map(|props| crate::docx::ControlRun { props: props.clone(), xml: xml.into() })
                 }
             };
-            rest("rPr", xml);
         }
         let placeholder = set.placeholder;
         let showing = p.showing_placeholder;

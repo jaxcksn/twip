@@ -1161,21 +1161,16 @@ pub fn control_kind(p: &crate::docx::ControlProps) -> ElementKind {
 
 /// A content control's look and options, from its properties as kept.
 pub fn control_info(p: &crate::docx::ControlProps) -> crate::api::state::ControlInfo {
-    let rest = |name: &str| p.rest.iter().find(|(n, _)| n == name).map(|(_, x)| x.as_str());
-    let val = |x: &str, key: &str| {
-        let at = x.find(key)? + key.len();
-        Some(x[at..at + x[at..].find('"')?].to_string())
-    };
-    let appearance = match rest("appearance").and_then(|x| val(x, "val=\"")).as_deref() {
-        Some("tags") => crate::api::value::ControlAppearance::Tags,
-        Some("hidden") => crate::api::value::ControlAppearance::Hidden,
+    let appearance = match p.appearance {
+        Some(crate::docx::ControlAppearance::Tags) => crate::api::value::ControlAppearance::Tags,
+        Some(crate::docx::ControlAppearance::Hidden) => crate::api::value::ControlAppearance::Hidden,
         _ => crate::api::value::ControlAppearance::BoundingBox,
     };
     let mut info = crate::api::state::ControlInfo {
         appearance,
-        color: rest("color").and_then(|x| val(x, "val=\"")).and_then(|v| u32::from_str_radix(&v, 16).ok()).map(Color),
+        color: p.color.flatten().map(Color),
         temporary: p.temporary,
-        style: rest("rPr").and_then(|x| val(&x[x.find("rStyle")?..], "val=\"")).map(StyleId),
+        style: p.run.as_ref().and_then(|r| r.props.style.as_deref()).map(|s| StyleId(s.to_string())),
         ..Default::default()
     };
     match &p.kind {

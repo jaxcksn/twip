@@ -391,12 +391,11 @@ pub(crate) fn tag_attrs(head: &str) -> impl Iterator<Item = (&str, &str, Range<u
 /// The run a control's content takes once it stops showing its placeholder (whose run is the placeholder's style):
 /// its own (`w:sdtPr/w:rPr`, which `resolve` resolves in its paragraph), else that of the text before its start
 /// marker (inline `start`), else its paragraph mark's.
-pub fn own_run(props: &ControlProps, inlines: &[Inline], start: usize, mark: &Run, resolve: impl FnOnce(&str) -> Option<Run>) -> Run {
+pub fn own_run(props: &ControlProps, inlines: &[Inline], start: usize, mark: &Run, resolve: impl FnOnce(&super::ControlRun) -> Option<Run>) -> Run {
     props
-        .rest
-        .iter()
-        .find(|(n, _)| n == "rPr")
-        .and_then(|(_, x)| resolve(x))
+        .run
+        .as_ref()
+        .and_then(resolve)
         .or_else(|| inlines[..start.min(inlines.len())].iter().rev().find_map(|i| i.run().cloned()))
         .unwrap_or_else(|| mark.clone())
 }

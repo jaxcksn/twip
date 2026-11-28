@@ -36,6 +36,12 @@ pub(super) fn date_xml(w: &str, p: &ControlProps) -> String {
     with_full_date(&x, full_date.as_deref()).unwrap_or(x)
 }
 
+/// The `val` attribute (any prefix) of element `x`'s start tag, unescaped.
+pub(super) fn val(x: &str) -> Option<String> {
+    let head = &x[..tag_end(x)?];
+    tag_attrs(head).find(|(name, ..)| name.rsplit(':').next() == Some("val")).map(|(_, v, _)| unescape(v))
+}
+
 /// A checkbox's `w14:checkbox` once its symbols are set (from its settings, `checked` as given; Word's font for a
 /// symbol without one): `None` while it keeps its element as read, or for a new one whose symbols weren't set.
 pub(super) fn checkbox_edited(p: &ControlProps, checked: bool) -> Option<String> {

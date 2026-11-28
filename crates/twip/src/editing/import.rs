@@ -297,9 +297,12 @@ impl Rebind {
 
     /// A pasted content control's properties.
     pub(super) fn control(&self, p: &mut crate::docx::ControlProps) {
-        let strings =
-            p.placeholder.iter_mut().chain(&mut p.binding).chain(p.kind_xml.iter_mut().map(|k| &mut k.xml)).chain(p.rest.iter_mut().map(|(_, x)| x));
-        strings.for_each(|x| self.string(x));
+        p.kept_xml_mut().for_each(|x| self.string(x));
+        if let Some(r) = &mut p.run
+            && let Some(x) = self.element(&r.xml)
+        {
+            r.xml = x.into();
+        }
     }
 
     /// Pasted `blocks` and the bodies of the notes and comments they refer to: their paragraphs', tables', rows' and
