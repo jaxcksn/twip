@@ -339,7 +339,7 @@ mod tests {
     fn body_styles_resolve_by_name_with_the_document_first() {
         let (doc, _) = super::super::read_editable(&fixture()).unwrap();
         let g = doc.glossary.as_ref().unwrap();
-        let res = doc.resolver.as_ref().unwrap();
+        let res = doc.definitions.as_ref().unwrap();
         let body = paras(&g.parts[0].body);
         // Heading 1 is in both parts: the document's (16pt), not the glossary's (24pt).
         assert_eq!(body[0].style.style_id.as_deref(), Some("Heading1"));

@@ -71,7 +71,7 @@ fn joins_and_block_edits_in_the_sub_template_flow_give_layout_their_block_delta(
 fn a_style_edit_and_its_undo_restyle_the_line_numbers() {
     let mut e = open("FX-STYLES.docx");
     e.complete(fonts());
-    let want = |e: &Editor| e.document().resolver.as_ref().map(|r| crate::docx::line_number_run(r));
+    let want = |e: &Editor| e.document().definitions.as_ref().map(|r| crate::docx::line_number_run(r));
     let same = |a: &Option<crate::docx::Run>, b: &Option<crate::docx::Run>| match (a, b) {
         (Some(a), Some(b)) => a.layout_eq(b),
         (a, b) => a.is_none() && b.is_none(),

@@ -162,7 +162,7 @@ impl Editor {
 
     /// An empty header's or footer's paragraph, in the Header or Footer style when the document has it.
     pub(super) fn empty_story_para(&self, footer: bool) -> Option<crate::docx::Paragraph> {
-        let res = self.doc.resolver.clone()?;
+        let res = self.doc.definitions.clone()?;
         let style = if footer { "Footer" } else { "Header" };
         let props = crate::format::ParaProps { style: res.has_style(style).then(|| style.into()), ..Default::default() };
         let r = crate::docx::para_xml::with(&res, crate::docx::para_props::ParaDirect::typed(std::rc::Rc::new(props)), None, None);

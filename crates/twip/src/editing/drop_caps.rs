@@ -154,7 +154,7 @@ impl Editor {
         run: &crate::docx::Run,
         fonts: &Fonts,
     ) -> Option<crate::docx::Float> {
-        let res = self.doc.resolver.clone()?;
+        let res = self.doc.definitions.clone()?;
         // One line of the paragraph's text, as layout sets it.
         let face = fonts.face(&run.ascii, None, run.bold, run.italic);
         let line = face.map_or(run.size * 1.2, |f| {

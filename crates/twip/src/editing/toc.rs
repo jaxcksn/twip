@@ -7,9 +7,9 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use crate::api::review::Body;
+use crate::docx::definitions::Definitions;
 use crate::docx::fields::{self, Shown, Switch};
 use crate::docx::props::Leader;
-use crate::docx::resolvers::Resolvers;
 use crate::docx::{Block, FieldEdge, FieldId, FieldKind, FieldView, Inline, Paragraph, Run};
 use crate::font::Fonts;
 use crate::layout::{ParaId, Unit};
@@ -720,7 +720,7 @@ impl Editor {
     /// The entries a table with options `o` collects from the body, in document order.
     pub fn toc_entries(&self, o: &TocOptions) -> Vec<TocEntry> {
         let skip = self.toc_paras();
-        let cascade = self.doc.resolver.as_ref().map(|r| r.cascade());
+        let cascade = self.doc.definitions.as_ref().map(|r| r.cascade());
         let name_of = |p: &Paragraph| -> Option<String> {
             cascade.as_ref()?.styles.get(p.style.style_id.as_deref()?).map(|s| s.name.as_deref().unwrap_or_default().to_string())
         };
@@ -1550,14 +1550,14 @@ impl Editor {
             ids.push("TOCHeading".into());
         }
         for id in ids {
-            let has = |e: &Editor| e.doc.resolver.as_ref().is_some_and(|r| r.has_style(&id));
+            let has = |e: &Editor| e.doc.definitions.as_ref().is_some_and(|r| r.has_style(&id));
             if has(self) {
                 continue;
             }
             let Some(b) = crate::services::styles::builtin::built_in(&id) else { return false };
             // TOC Heading is based on Heading 1.
             if id == "TOCHeading"
-                && !self.doc.resolver.as_ref().is_some_and(|r| r.has_style("Heading1"))
+                && !self.doc.definitions.as_ref().is_some_and(|r| r.has_style("Heading1"))
                 && let Some(h) = crate::services::styles::builtin::built_in("Heading1")
             {
                 self.add_built_in(h, fonts);
@@ -1625,7 +1625,7 @@ impl Editor {
     /// A new paragraph from its authored properties and its texts (each with its source run's direct formatting, and
     /// bold).
     pub(super) fn new_para(&self, ppr: ParaProps, texts: &[(String, Option<&Run>, bool)], container: Container, like: &Paragraph) -> Paragraph {
-        let res = self.doc.resolver.clone();
+        let res = self.doc.definitions.clone();
         let region = res.as_ref().and_then(|r| self.region_in(container, r));
         // Without styles, `like`'s.
         let (style, base) = match &res {
@@ -1668,7 +1668,7 @@ impl Editor {
 
     /// A run of a new paragraph (authored properties `ppr`, in `container`) hidden in a web view (`w:webHidden`).
     fn web_hidden(&self, ppr: &ParaProps, container: Container, run: &Run) -> Run {
-        let Some(r) = self.doc.resolver.clone() else { return run.clone() };
+        let Some(r) = self.doc.definitions.clone() else { return run.clone() };
         let cx = self.cx();
         let base = crate::docx::para_xml::resolve(&r, ppr, None, self.region_in(container, &r).as_ref()).base;
         let mut p = CharProps::default();
@@ -1677,7 +1677,7 @@ impl Editor {
     }
 
     /// The table region a paragraph in `container` takes its table style's formatting from.
-    fn region_in(&self, container: Container, r: &Resolvers) -> Option<crate::format::cascade::TableRegion> {
+    fn region_in(&self, container: Container, r: &Definitions) -> Option<crate::format::cascade::TableRegion> {
         let Container::Cell { table, row, cell } = container else { return None };
         self.index.table(&self.doc, table).map(|t| r.cascade().region_of(t, row, cell))
     }
@@ -1834,7 +1834,7 @@ impl Editor {
         }
         let code = m.code();
         let cx = self.cx();
-        let res = self.doc.resolver.clone();
+        let res = self.doc.definitions.clone();
         // Word marks entries as hidden text: the run at the caret, hidden.
         let base = self.selection.focus().and_then(|c| c.para_offset()).and_then(|(para, at)| self.run_base(para, at, res.as_ref()?, &cx));
         let id = FieldId::next();

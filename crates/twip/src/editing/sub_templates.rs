@@ -5,10 +5,10 @@ use std::rc::Rc;
 
 use crate::api::command::{ApplicationFieldTypes, ReferenceRule, SubTemplateRules, SubTemplateView};
 use crate::document::paragraph::ListId;
+use crate::docx::definitions::{Definitions, TypedDefs};
 use crate::docx::fields::{self, FieldCode};
 use crate::docx::list_xml::ListXml;
 use crate::docx::para_props::ParaXml;
-use crate::docx::resolvers::{Resolvers, TypedDefs};
 use crate::docx::{Block, Document, ElementId, FieldId, FieldKind, Gallery, Inline, Paragraph, Section};
 use crate::font::Fonts;
 use crate::layout::expansion::{Expansion, Expansions};
@@ -118,7 +118,7 @@ struct Imported {
     blocks: Vec<Block>,
     controls: Vec<(crate::docx::ControlId, crate::docx::Control)>,
     refs: super::clipboard::Refs,
-    defs: Option<Rc<crate::docx::resolvers::TypedDefs>>,
+    defs: Option<Rc<crate::docx::definitions::TypedDefs>>,
 }
 
 /// Each paragraph of `blocks`: in tables and text boxes too.
@@ -144,7 +144,7 @@ fn each_para(blocks: &mut [Block], f: &mut dyn FnMut(&mut Paragraph)) {
 }
 
 fn empty_para(doc: &Document) -> Option<Paragraph> {
-    let res = doc.resolver.as_ref()?;
+    let res = doc.definitions.as_ref()?;
     let r = crate::docx::para_xml::resolve(res, &Default::default(), None, None);
     let mark = run_xml::plain(res, &r.base);
     Some(Paragraph {
@@ -499,7 +499,7 @@ impl Editor {
         std::mem::swap(&mut s.doc.controls, &mut self.doc.controls);
         std::mem::swap(&mut s.doc.settings, &mut self.doc.settings);
         std::mem::swap(&mut s.doc.line_number_run, &mut self.doc.line_number_run);
-        s.doc.resolver = self.doc.resolver.clone();
+        s.doc.definitions = self.doc.definitions.clone();
         s.doc.theme = self.doc.theme.clone();
         s.doc.colour_map = self.doc.colour_map;
         if let Some(entry) = self.doc.sections.get(s.section)
@@ -548,7 +548,7 @@ impl Editor {
             colour_map: d.colour_map,
             settings: d.settings.clone(),
             line_number_run: d.line_number_run.clone(),
-            resolver: d.resolver.clone(),
+            definitions: d.definitions.clone(),
             people: d.people.clone(),
             ..Document::default()
         };
@@ -674,7 +674,7 @@ impl Editor {
             blocks.extend(empty_para(&self.doc).map(Block::Para));
         }
         let refs = super::clipboard::refs_of(&read, &blocks);
-        let defs = read.resolver.as_ref().map(|r| r.typed());
+        let defs = read.definitions.as_ref().map(|r| r.typed());
         Some(Imported { blocks, controls: std::mem::take(&mut read.controls).into_iter().collect(), refs, defs })
     }
 
@@ -722,7 +722,7 @@ impl Editor {
     /// The lists `im`'s paragraphs (its notes' and comments' too) name, added to the document's numbering under new
     /// ids, the paragraphs' `w:numId`s moved to them.
     fn import_lists(&mut self, tx: &mut super::Tx, im: &mut Imported) -> Result<(), &'static str> {
-        let Some(res) = self.doc.resolver.clone() else { return Ok(()) };
+        let Some(res) = self.doc.definitions.clone() else { return Ok(()) };
         let num_of = |p: &Paragraph| -> Option<i64> {
             match p.style.direct.get().list {
                 Some(crate::format::ListChoice::In(id)) => Some(id.0),
@@ -770,7 +770,7 @@ impl Editor {
         im.refs.notes.iter_mut().for_each(|n| renumber(&mut n.2));
         im.refs.comments.iter_mut().for_each(|c| renumber(&mut c.body));
         let added = self.docx.added_lists.clone();
-        self.step(tx, Step::Resolver { resolver: Some(next), added }).map(|_| ()).map_err(|_| "the lists changed meanwhile")
+        self.step(tx, Step::Definitions { definitions: Some(next), added }).map(|_| ()).map_err(|_| "the lists changed meanwhile")
     }
 
     /// The paragraphs of `stories` and `paras` formatted again in `tx`, as the document's styles and lists have them.
@@ -1139,7 +1139,7 @@ fn def_of(t: &TypedDefs, n: i64) -> Option<i64> {
 
 /// Whether list `n` of an imported document, written as `num` with its definition as `def`, is `r`'s own, as a copy of
 /// its content names it: the same list and definition, written alike, under its id here.
-fn own_list(r: &Resolvers, n: i64, num: &str, def: &str) -> bool {
+fn own_list(r: &Definitions, n: i64, num: &str, def: &str) -> bool {
     let ours = r.typed();
     ours.list_xml(n).is_some_and(|h| h == num) && def_of(&ours, n).and_then(|ha| ours.def_xml(ha)).is_some_and(|ha| ha == def)
 }
@@ -1148,7 +1148,7 @@ fn own_list(r: &Resolvers, n: i64, num: &str, def: &str) -> bool {
 /// `free` on, each definition once; a list `r` has as its own ([`own_list`], as `r` stands as each comes) stays. Each
 /// is written as read where that reads the same in this document's numbering part, else from its definition. The list
 /// and definition ids they took, by their ids there.
-fn copy_lists(r: &mut Resolvers, theirs: &TypedDefs, used: &[i64], free: (i64, i64)) -> (HashMap<i64, i64>, HashMap<i64, i64>) {
+fn copy_lists(r: &mut Definitions, theirs: &TypedDefs, used: &[i64], free: (i64, i64)) -> (HashMap<i64, i64>, HashMap<i64, i64>) {
     let (mut next_abstract, mut next_num) = free;
     let ncx = r.typed().numbering.cx();
     let (mut nums, mut abstracts) = (HashMap::new(), HashMap::new());
@@ -1209,7 +1209,14 @@ mod xml_route {
     /// [`copy_lists`] over the definitions' XML, the document's main part's namespaces `cx` reading it; with `rebind`,
     /// their own part's reading it, and each element declaring the namespaces it has there that this document's
     /// numbering part lacks.
-    fn apply(r: &mut Resolvers, theirs: &TypedDefs, used: &[i64], free: (i64, i64), cx: &Cx, rebind: bool) -> (HashMap<i64, i64>, HashMap<i64, i64>) {
+    fn apply(
+        r: &mut Definitions,
+        theirs: &TypedDefs,
+        used: &[i64],
+        free: (i64, i64),
+        cx: &Cx,
+        rebind: bool,
+    ) -> (HashMap<i64, i64>, HashMap<i64, i64>) {
         let (there, here) = (theirs.numbering.cx(), r.typed().numbering.cx());
         let cx = if rebind { &there } else { cx };
         let w = cx.w.clone();
@@ -1248,8 +1255,8 @@ mod xml_route {
     /// The copy made over the XML from `was`, the definitions before it, set against `r` and `typed`, the typed
     /// route's: the same ids taken, and each definition and list compared.
     pub(super) fn check(
-        was: Resolvers,
-        r: &Resolvers,
+        was: Definitions,
+        r: &Definitions,
         theirs: &TypedDefs,
         used: &[i64],
         free: (i64, i64),

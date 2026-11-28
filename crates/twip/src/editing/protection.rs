@@ -439,7 +439,7 @@ impl Editor {
         let p = self.enforced_protection()?;
         if p.formatting
             && let Some(s) = applied_style(command)
-            && self.doc.resolver.as_ref().is_some_and(|r| r.cascade().styles.get(&s.0).is_some_and(|st| st.meta.locked == Some(true)))
+            && self.doc.definitions.as_ref().is_some_and(|r| r.cascade().styles.get(&s.0).is_some_and(|st| st.meta.locked == Some(true)))
         {
             return Some(Error::new(ErrorCode::NotAllowed, "the style is restricted"));
         }
@@ -451,7 +451,7 @@ impl Editor {
         if p.formatting
             && references_styles(command)
                 .iter()
-                .any(|s| self.doc.resolver.as_ref().is_some_and(|r| r.cascade().styles.get(s).is_some_and(|st| st.meta.locked == Some(true))))
+                .any(|s| self.doc.definitions.as_ref().is_some_and(|r| r.cascade().styles.get(s).is_some_and(|st| st.meta.locked == Some(true))))
         {
             return Some(Error::new(ErrorCode::NotAllowed, "the style is restricted"));
         }
@@ -611,7 +611,7 @@ impl Editor {
     /// the styles the Recommended list shows (not hidden), and those the document uses; by id, sorted.
     pub fn recommended_minimum_styles(&self) -> Vec<String> {
         use crate::docx::Block;
-        let Some(res) = self.doc.resolver.as_ref() else { return Vec::new() };
+        let Some(res) = self.doc.definitions.as_ref() else { return Vec::new() };
         fn walk(blocks: &[Block], used: &mut std::collections::HashSet<String>) {
             for b in blocks {
                 match b {

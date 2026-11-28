@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use crate::docx::resolvers::Resolvers;
+use crate::docx::definitions::Definitions;
 use crate::docx::{AltContent, Block, Inline, Paragraph, VMerge};
 use crate::font::Fonts;
 
@@ -842,7 +842,7 @@ impl Editor {
                 nums = used.iter().map(|&(list, numbered)| (list, self.new_list(&mut tx, !numbered))).collect();
                 self.commit(tx, None, fonts);
             }
-            let Some(res) = self.doc.resolver.clone() else { break 'paste Outcome::Unchanged("no styles") };
+            let Some(res) = self.doc.definitions.clone() else { break 'paste Outcome::Unchanged("no styles") };
             let mut images = crate::docx::Resources::default();
             let blocks = self.html_blocks(&read, &res, &nums, &template, width, &mut images);
             // A last paragraph of a kind or alignment of its own is pasted with its mark; plain text joins the caret's.
@@ -850,8 +850,13 @@ impl Editor {
             let mut f = Fragment { id: 0, blocks, open_end, ..Default::default() };
             if !images.is_empty() {
                 // Its pictures, by their id in `images`, become this document's as another document's do.
-                let o =
-                    super::import::Origin { key: super::import::next_key(), images, resolver: None, people: Default::default(), main: String::new() };
+                let o = super::import::Origin {
+                    key: super::import::next_key(),
+                    images,
+                    definitions: None,
+                    people: Default::default(),
+                    main: String::new(),
+                };
                 f.origin = Some(std::rc::Rc::new(o));
             }
             if choice == super::paste::PasteChoice::Merge {
@@ -870,7 +875,7 @@ impl Editor {
     fn html_blocks(
         &mut self,
         blocks: &[HBlock],
-        res: &Resolvers,
+        res: &Definitions,
         nums: &[(usize, i64)],
         template: &Paragraph,
         width: f64,
@@ -1019,7 +1024,7 @@ impl Editor {
         if self.doc.alt_chunks.is_empty() {
             return;
         }
-        if self.doc.resolver.is_none() {
+        if self.doc.definitions.is_none() {
             return;
         }
         let chunks = std::mem::take(&mut self.doc.alt_chunks);
@@ -1064,7 +1069,7 @@ impl Editor {
             self.abort(tx);
         }
         // Read after the lists step: it holds their numbering.
-        let Some(res) = self.doc.resolver.clone() else {
+        let Some(res) = self.doc.definitions.clone() else {
             (self.doc.alt_chunks, self.doc.settings.track_revisions) = (chunks, tracking);
             return;
         };
@@ -1101,7 +1106,7 @@ impl Editor {
                             let o = super::import::Origin {
                                 key: super::import::next_key(),
                                 images,
-                                resolver: None,
+                                definitions: None,
                                 people: Default::default(),
                                 main: String::new(),
                             };

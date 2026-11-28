@@ -163,7 +163,7 @@ impl Editor {
 
     /// The theme's heading and body font families.
     pub fn theme_fonts(&self) -> ThemeFonts {
-        match &self.doc.resolver {
+        match &self.doc.definitions {
             Some(r) => {
                 let c = r.cascade();
                 ThemeFonts { heading: c.theme.major.clone(), body: c.theme.minor.clone() }

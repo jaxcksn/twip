@@ -569,7 +569,7 @@ mod tests {
         let mut checked = 0;
         for f in docs() {
             let Ok((doc, docx)) = super::super::read_editable(&std::fs::read(&f).expect("readable")) else { continue };
-            let (Some(_), Some(src)) = (&doc.resolver, &docx.source) else { panic!("{}: no resolver", f.display()) };
+            let (Some(_), Some(src)) = (&doc.definitions, &docx.source) else { panic!("{}: no resolver", f.display()) };
             let res = crate::docx::baseline::Baseline::as_read(&doc, &docx);
             let cx = Cx::of_xml(&src.xml);
             for s in &doc.sections {

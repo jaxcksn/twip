@@ -753,7 +753,7 @@ impl Editor {
                 (C::SelectField, _) => (true, (None, None)),
                 (C::ShrinkSelection, _) => (self.modes.extend >= 2, (None, None)),
                 (C::SelectSimilarFormatting, _) => (self.selection.focus().is_some(), (None, None)),
-                (C::SelectStyleInstances, _) => (self.doc.resolver.is_some(), (None, None)),
+                (C::SelectStyleInstances, _) => (self.doc.definitions.is_some(), (None, None)),
                 (C::ToggleCharacterCode | C::GrowFontOnePoint | C::ShrinkFontOnePoint | C::ClearAllFormatting | C::SetFitText, _) => {
                     (chars, (None, None))
                 }

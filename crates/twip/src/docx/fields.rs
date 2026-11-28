@@ -878,7 +878,7 @@ impl StyleQuery {
 
     /// What it shows from a paragraph with text `text` and list number `n` (of [`para_numbers`]): the number when it
     /// asks for one (no paragraph before it to be relative to, so `\r` is in full context), else the text.
-    pub(crate) fn shown(&self, text: String, n: Option<&ParaNumber>, r: Option<&super::resolvers::Resolvers>) -> String {
+    pub(crate) fn shown(&self, text: String, n: Option<&ParaNumber>, r: Option<&super::definitions::Definitions>) -> String {
         match (self.number, n, r) {
             (Some(cx), Some(n), Some(r)) => n.text(cx, None, None, r),
             _ => text,
@@ -894,7 +894,7 @@ impl StyleQuery {
 /// Each body paragraph's list number, by paragraph id, counted in document order as fields count them.
 pub(crate) fn para_numbers(doc: &Document) -> HashMap<u64, ParaNumber> {
     let mut out = HashMap::new();
-    let Some(r) = doc.resolver.as_deref() else { return out };
+    let Some(r) = doc.definitions.as_deref() else { return out };
     let mut counters = crate::format::counters::Counters::default();
     for s in &doc.sections {
         each_para(&s.blocks, false, &mut |p, _| {
@@ -1000,7 +1000,7 @@ pub(crate) struct FieldChange {
 pub(crate) fn field_changes(doc: &Document, file_name: Option<&str>, now: i64) -> (Vec<FieldChange>, Vec<Vec<(String, bool, String)>>) {
     let properties = doc.properties.clone();
     let variables = doc.settings.variables.clone();
-    let resolver = doc.resolver.clone();
+    let resolver = doc.definitions.clone();
     let cascade = resolver.as_ref().map(|r| r.cascade());
     let styles = cascade.as_deref().map(|c| &*c.styles);
     // The bookmarks fields read (REF, NOTEREF, a bookmark's own name, a formula's names), without case: only theirs
@@ -1216,7 +1216,7 @@ pub(crate) fn field_changes(doc: &Document, file_name: Option<&str>, now: i64) -
 /// The fields of the other stories: headers and footers number their sequences apart, footnotes and endnotes in the
 /// order the body refers to them; a header's or footer's `STYLEREF` that finds nothing in `order` shows its error.
 fn stories_fields(doc: &mut Document, order: &[Vec<(String, bool, String)>]) {
-    let cascade = doc.resolver.as_ref().map(|r| r.cascade());
+    let cascade = doc.definitions.as_ref().map(|r| r.cascade());
     let styles = cascade.as_deref().map(|c| &*c.styles);
     // Every other story (headers, footers) numbers its sequences apart; footnotes are one story, endnotes another, in
     // the order the body refers to them (those it doesn't after, by id).
@@ -1298,7 +1298,7 @@ impl NumberContext {
 
 impl ParaNumber {
     /// Paragraph `p`'s number, counting it in `counters` (read in document order), when it shows a list number.
-    fn next(p: &Paragraph, counters: &mut crate::format::counters::Counters, r: &super::resolvers::Resolvers) -> Option<ParaNumber> {
+    fn next(p: &Paragraph, counters: &mut crate::format::counters::Counters, r: &super::definitions::Definitions) -> Option<ParaNumber> {
         let ListRef { list: ListId(num_id), level: ilvl } = p.style.num?;
         p.list.as_ref()?;
         let c = r.cascade();
@@ -1311,7 +1311,7 @@ impl ParaNumber {
     /// Its number as `cx` asks: the level's own text (`n`), from the first level that differs from `near`'s (`r`), or
     /// every level's own number (`w`), without trailing periods; `suppress`: the level texts' words left out; `sep`
     /// (`\d`): in place of what the level texts put between two numbers.
-    fn text(&self, cx: NumberContext, near: Option<&ParaNumber>, sep: Option<&str>, r: &super::resolvers::Resolvers) -> String {
+    fn text(&self, cx: NumberContext, near: Option<&ParaNumber>, sep: Option<&str>, r: &super::definitions::Definitions) -> String {
         let c = r.cascade();
         let Some(levels) = c.levels(ListId(self.num_id)) else { return String::new() };
         let value = |k: usize| self.values[k].unwrap_or_else(|| levels[k].map_or(1, |l| l.start.unwrap_or(0)));

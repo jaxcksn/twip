@@ -391,7 +391,7 @@ impl Editor {
         let tabs: Vec<_> =
             para.style.tabs.iter().filter(|t| t.kind != crate::docx::props::TabKind::Clear).map(|t| super::commands::tabs::info(t, false)).collect();
         // Its list, its own or a base style's: bulleted or numbered
-        let res = self.doc.resolver.as_ref()?;
+        let res = self.doc.definitions.as_ref()?;
         let list = para.style.num.filter(|ListRef { list: ListId(n), level: _ }| *n != 0).and_then(|ListRef { list, level }| {
             res.cascade().level(list, level).map(|l| crate::docx::list_xml::format_name(l.format.as_ref()) == "bullet")
         });
@@ -417,7 +417,7 @@ impl Editor {
     /// The document's style `id` and its holder, or the built-in style it names when the document doesn't define it
     /// (`false`).
     fn style_or_built_in(&self, id: &str) -> Option<(Rc<Style>, StyleDef, bool)> {
-        let typed = self.doc.resolver.as_ref()?.typed();
+        let typed = self.doc.definitions.as_ref()?.typed();
         if let (Some(s), Some(d)) = (typed.cascade.styles.get(id), style_holder(&typed, id)) {
             return Some((s.clone(), d, true));
         }
@@ -428,7 +428,7 @@ impl Editor {
 
     /// A style of kind `kind` a change may refer to: the document's, or a built-in one it adds (`Some`).
     fn referable(&self, id: &StyleId, kind: StyleKind, what: &str) -> Result<Option<StyleDef>, Error> {
-        let typed = self.doc.resolver.as_ref().ok_or_else(|| Error::unavailable("no styles"))?.typed();
+        let typed = self.doc.definitions.as_ref().ok_or_else(|| Error::unavailable("no styles"))?.typed();
         match typed.cascade.styles.get(&id.0) {
             Some(s) if s.kind == kind => Ok(None),
             Some(_) => Err(Error::invalid(format!("the {what} is a style of another type"))),
@@ -449,7 +449,7 @@ impl Editor {
         commands: &[Command],
         fonts: &Fonts,
     ) -> Result<StyleDef, Error> {
-        self.doc.resolver.as_ref().ok_or_else(|| Error::unavailable("no styles"))?;
+        self.doc.definitions.as_ref().ok_or_else(|| Error::unavailable("no styles"))?;
         for c in commands {
             super::commands::bounds::bounds(c)?;
             let table = table_command(c)
@@ -495,7 +495,7 @@ impl Editor {
         change: &StyleChange,
         fonts: &Fonts,
     ) -> Result<(StyleDef, Written), Error> {
-        let typed = self.doc.resolver.as_ref().ok_or_else(|| Error::unavailable("no styles"))?.typed();
+        let typed = self.doc.definitions.as_ref().ok_or_else(|| Error::unavailable("no styles"))?.typed();
         let (part, styles) = (&*typed.styles, &*typed.cascade.styles);
         let holder = |id: &str| style_holder(&typed, id).ok_or_else(|| Error::invalid("not a style"));
         let mut also: Written = Vec::new();
@@ -685,7 +685,7 @@ impl Editor {
 
     /// Writes a style and the styles with it as one undo step, then a list style's levels in the same step.
     fn write_style(&mut self, label: &'static str, def: StyleDef, also: Written, kind: StyleKind, change: &StyleChange, fonts: &Fonts) -> Outcome {
-        let typed = self.doc.resolver.as_ref().map(|r| r.typed());
+        let typed = self.doc.definitions.as_ref().map(|r| r.typed());
         let id = def.get().id.to_string();
         let relabel = change.list.is_some();
         let levels = change.list_levels.clone();
@@ -735,7 +735,7 @@ impl Editor {
             Ok(x) => x,
             Err(e) => return Outcome::Refused(e),
         };
-        let same = self.doc.resolver.as_ref().is_some_and(|r| written_alike(&r.typed(), &def, &was));
+        let same = self.doc.definitions.as_ref().is_some_and(|r| written_alike(&r.typed(), &def, &was));
         if defined && same && also.is_empty() && change.list_levels.is_none() {
             return Outcome::Unchanged("the style already is so");
         }
@@ -747,7 +747,7 @@ impl Editor {
         if let Some(o) = self.refuse_style_edit() {
             return (o, None);
         }
-        let Some(res) = self.doc.resolver.clone() else { return (Outcome::Unchanged("no styles"), None) };
+        let Some(res) = self.doc.definitions.clone() else { return (Outcome::Unchanged("no styles"), None) };
         let typed = res.typed();
         let (part, styles) = (&*typed.styles, &*typed.cascade.styles);
         let name = match &new.change.name {
@@ -835,7 +835,7 @@ impl Editor {
                 _ => e.format(&super::format::Format::ParaStyle(id.clone()), fonts),
             }
         });
-        let made = self.doc.resolver.as_ref().is_some_and(|r| r.cascade().styles.styles.contains_key(id.as_str()));
+        let made = self.doc.definitions.as_ref().is_some_and(|r| r.cascade().styles.styles.contains_key(id.as_str()));
         (out, made.then(|| StyleId(id.clone())))
     }
 
@@ -843,7 +843,7 @@ impl Editor {
     /// set by it, with a table style's parts and a list style's levels. A built-in style the document doesn't define
     /// reads as it would be once used.
     pub fn style_definition(&self, id: &StyleId) -> Option<StyleDefinition> {
-        let res = self.doc.resolver.as_ref()?;
+        let res = self.doc.definitions.as_ref()?;
         let (_, def, defined) = self.style_or_built_in(&id.0)?;
         let next = if defined {
             res.clone()
@@ -922,7 +922,7 @@ impl Editor {
     }
 
     /// A table style's table formatting and its parts, read with `res` (which holds it).
-    fn table_style_definition(&self, res: &crate::docx::resolvers::Resolvers, id: &str) -> Option<TableStyleDefinition> {
+    fn table_style_definition(&self, res: &crate::docx::definitions::Definitions, id: &str) -> Option<TableStyleDefinition> {
         use crate::docx::table_props::{tbl_props, tc_props, tr_props};
         let c = res.cascade();
         let colours = &c.colours;
@@ -987,7 +987,7 @@ impl Editor {
     /// Every built-in style, with whether the document defines it and the flags style lists use: the document's own
     /// for those it defines, its latent styles' for the rest (Word's defaults when it has none).
     pub fn built_in_styles(&self) -> Vec<BuiltInStyle> {
-        let Some(res) = self.doc.resolver.as_ref() else { return Vec::new() };
+        let Some(res) = self.doc.definitions.as_ref() else { return Vec::new() };
         let c = res.cascade();
         let styles = &*c.styles;
         let none = crate::format::LatentStyles::default();
@@ -1062,7 +1062,7 @@ impl Editor {
     /// Sets the list flags of a built-in style the document doesn't define: its latent style exception, made when
     /// the document has none (with Word's exceptions for every built-in style, so the others keep theirs).
     pub(super) fn set_latent_meta(&mut self, m: &crate::api::command::StyleMetaChange, fonts: &Fonts) -> Outcome {
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let Some(b) = builtin::BUILT_IN.iter().find(|b| b.id == m.id.0) else { return Outcome::Refused(Error::unavailable("no such style")) };
         let typed = res.typed();
         let held = typed.styles.latent.as_ref();

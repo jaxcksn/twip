@@ -284,7 +284,7 @@ impl Session {
             }
         }
         v.styles = styles;
-        let res = self.editor.document().resolver.clone();
+        let res = self.editor.document().definitions.clone();
         v.description = match (&res, &v.selected) {
             (Some(r), Some(id)) => {
                 let c = r.cascade();
@@ -299,7 +299,7 @@ impl Session {
     fn defaults_dialog_values(&self) -> crate::api::command::DocumentDefaults {
         use crate::api::command::{DocumentDefaults, Indents, ParagraphSpacing};
         use crate::api::value::{AutoOr, Color, LineSpacing, Points};
-        let Some(r) = self.editor.document().resolver.as_ref() else { return DocumentDefaults::default() };
+        let Some(r) = self.editor.document().definitions.as_ref() else { return DocumentDefaults::default() };
         let c = r.cascade();
         let (rpr, ppr) =
             (&crate::docx::char_props::to_run_props(c.doc_char(), &c.colours), &crate::docx::para_props::to_para_props(c.doc_para(), &c.colours));
@@ -439,7 +439,7 @@ impl Session {
         let raw = self
             .editor
             .document()
-            .resolver
+            .definitions
             .as_ref()
             .and_then(|r| r.typed().style_xml(&id.0).map(std::borrow::Cow::into_owned))
             .ok_or_else(|| Error::unavailable("no such style"))?;

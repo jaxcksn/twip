@@ -7,13 +7,13 @@ use std::rc::Rc;
 use roxmltree::Node;
 
 use super::char_props::{self, RunDirect};
+use super::definitions::Definitions;
 use super::diagnostics::{Diagnostics, WarningCode};
 use super::model::*;
 use super::origin::{ControlSrc, EdgeSource, ParaSrc, xml_origin};
 use super::para_props::{self, ParaDirect};
 use super::para_xml;
 use super::props::*;
-use super::resolvers::Resolvers;
 use super::review::{
     AuthorId, CellMarkKind, CellRevisions, Comment, CommentId, FormatChange, GridChange, IdCounter, Identity, MarkKind, ParaChange, People,
     Permission, PreviousProps, Protection, ProtectionKind, RangeEditor, RangeKind, RangeMark, RevisionId, RevisionMark, RowRevisions, RunRevisions,
@@ -325,7 +325,7 @@ fn break_kind(kind: Option<&str>, clear: Option<&str>) -> BreakKind {
 }
 
 /// The run line numbers draw with: the document defaults and the LineNumber character style.
-pub(crate) fn line_number_run(res: &Resolvers) -> super::model::Run {
+pub(crate) fn line_number_run(res: &Definitions) -> super::model::Run {
     let c = res.cascade();
     let mut p = c.doc_char().clone();
     if c.styles.styles.contains_key("LineNumber") {
@@ -471,7 +471,7 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
     let people_part = super::comments::people(people_xml.as_deref());
 
     let font_descriptions = part_of("fontTable").and_then(|p| pkg.read_str(&p)).map(|x| super::font_table::parse(&x)).unwrap_or_default();
-    let env = super::resolvers::Surroundings {
+    let env = super::definitions::Surroundings {
         theme,
         colours,
         rules,
@@ -479,8 +479,8 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
         divisions: Rc::new(read_divs(part_of("webSettings").and_then(|p| pkg.read_str(&p)).as_deref(), &colours)),
     };
     let glossary = glossary_xml.as_ref().map(|(s, n)| (s.as_deref(), n.as_deref()));
-    let (typed, glossary_map) = super::resolvers::TypedDefs::read(styles_xml.as_deref(), numbering_xml.as_deref(), glossary, env);
-    let res = super::resolvers::Resolvers::new(typed);
+    let (typed, glossary_map) = super::definitions::TypedDefs::read(styles_xml.as_deref(), numbering_xml.as_deref(), glossary, env);
+    let res = super::definitions::Definitions::new(typed);
     let numbering_part = part_of("numbering");
     let mut r = Reader {
         res,
@@ -764,7 +764,7 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
     if cfg!(debug_assertions) {
         r.res.typed();
     }
-    doc.resolver = Some(Rc::new(r.res));
+    doc.definitions = Some(Rc::new(r.res));
     doc.font_descriptions = font_descriptions;
     let mut prop = |kind: &str| root_rels.values().find(|(k, _)| k == kind).and_then(|(_, t)| pkg.read_str(t));
     doc.properties =
@@ -772,7 +772,7 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
     super::fields::evaluate(&mut doc, None, now);
     super::frames::convert(&mut doc);
     doc.derive_image_sets();
-    let divs = doc.resolver.as_ref().map(|r| r.cascade().divisions.clone()).unwrap_or_default();
+    let divs = doc.definitions.as_ref().map(|r| r.cascade().divisions.clone()).unwrap_or_default();
     if !divs.is_empty() {
         doc.sections.iter_mut().for_each(|s| fold_divs(&mut s.blocks, &divs, false));
         doc.stories.values_mut().chain(doc.footnotes.values_mut()).chain(doc.endnotes.values_mut()).for_each(|b| fold_divs(b, &divs, false));
@@ -1301,7 +1301,7 @@ fn form_data(ff: Node) -> Option<(FieldKind, Option<String>)> {
 }
 
 struct Reader {
-    res: super::resolvers::Resolvers,
+    res: super::definitions::Definitions,
     /// The theme, for the outline widths text boxes take from their style.
     theme: Rc<crate::drawing::theme::Theme>,
     settings: Settings,

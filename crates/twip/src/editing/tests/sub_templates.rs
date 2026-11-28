@@ -800,7 +800,7 @@ fn fixture_bytes(name: &str) -> Vec<u8> {
 
 /// Each body paragraph's list format and level text, and each note reference's note text.
 fn lists_and_notes(doc: &crate::docx::Document) -> (Vec<(String, String)>, Vec<String>) {
-    let res = doc.resolver.as_ref().expect("styles");
+    let res = doc.definitions.as_ref().expect("styles");
     let mut lists = Vec::new();
     let mut notes = Vec::new();
     for b in doc.sections.iter().flat_map(|s| &s.blocks) {
@@ -878,9 +878,9 @@ fn comments_and_anchors(doc: &crate::docx::Document) -> Vec<(String, String)> {
 fn a_sub_template_from_another_docx_takes_lists_of_its_own_and_no_notes() {
     use super::super::commands::Outcome;
     let (mut e, _) = expanded();
-    let nums: Vec<i64> = e.document().resolver.as_ref().expect("styles").cascade().lists.lists.keys().map(|k| k.0).collect();
+    let nums: Vec<i64> = e.document().definitions.as_ref().expect("styles").cascade().lists.lists.keys().map(|k| k.0).collect();
     assert!(matches!(create(&mut e, "Lists", Some(fixture_bytes("FX-CUSTOM-LISTS.docx"))), Outcome::Changed(_)));
-    let res = e.document().resolver.as_ref().expect("styles");
+    let res = e.document().definitions.as_ref().expect("styles");
     let part = e.document().glossary.as_ref().expect("a glossary").parts.iter().find(|b| b.name == "Lists").expect("made");
     let used: Vec<i64> =
         part.body.iter().filter_map(|b| if let Block::Para(p) = b { p.style.num.map(|n| n.list.0) } else { None }).filter(|n| *n != 0).collect();
@@ -983,7 +983,7 @@ fn a_replaced_body_brings_the_lists_of_its_group_shapes_text() {
     let mut e = Editor::open(&numbered_package(item, "decimal"), fonts()).expect("opens");
     e.complete(fonts());
     let formats = |doc: &crate::docx::Document| -> Vec<String> {
-        let res = doc.resolver.as_ref().expect("styles");
+        let res = doc.definitions.as_ref().expect("styles");
         let mut out = Vec::new();
         for p in doc.sections.iter().flat_map(|s| &s.blocks).filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None }) {
             for i in &p.inlines {

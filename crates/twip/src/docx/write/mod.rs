@@ -1867,7 +1867,7 @@ fn gone_controls(doc: &Document, src: &Source) -> Vec<Control> {
 
 /// The theme colours `doc`'s styles resolve with.
 pub(super) fn colours_of(doc: &Document) -> ThemeColours {
-    doc.resolver.as_deref().map_or_else(ThemeColours::default, |r| r.cascade().colours)
+    doc.definitions.as_deref().map_or_else(ThemeColours::default, |r| r.cascade().colours)
 }
 
 /// Blocks with no source written from the model, for a part (new notes).

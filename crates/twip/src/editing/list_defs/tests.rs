@@ -8,9 +8,9 @@ use crate::api::value::{AutoOr, Color, HighlightColor, NoneOr, Points, StyleId, 
 use crate::document::paragraph::ListId;
 use crate::docx::char_props::RunDirect;
 use crate::docx::char_props::RunXml;
+use crate::docx::definitions::TypedDefs;
 use crate::docx::list_xml::ListXml;
 use crate::docx::props::ThemeColours;
-use crate::docx::resolvers::TypedDefs;
 use crate::docx::style_xml::StyleXml;
 use crate::docx::write::props::Cx;
 use crate::format::{CharEdit, CharProps, ListDefId, MultiLevelType, Prop, Toggle};
@@ -27,7 +27,7 @@ fn documents() -> Vec<(String, Rc<TypedDefs>)> {
         .into_iter()
         .filter_map(|path| {
             let (d, _) = crate::docx::read_editable(&std::fs::read(&path).expect("reads")).ok()?;
-            Some((path.display().to_string(), d.resolver.as_ref()?.typed()))
+            Some((path.display().to_string(), d.definitions.as_ref()?.typed()))
         })
         .collect()
 }
@@ -531,7 +531,7 @@ fn label_formatting_writes_what_the_patches_wrote() {
 /// The typed definitions of a blank document with the numbering part `xml`.
 fn numbering(xml: &str) -> Rc<TypedDefs> {
     let (blank, _) = crate::docx::read_editable(&crate::docx::blank::blank_docx()).expect("reads");
-    let mut r = (**blank.resolver.as_ref().expect("a resolver")).clone();
+    let mut r = (**blank.definitions.as_ref().expect("a resolver")).clone();
     r.set_numbering_part(xml);
     r.typed()
 }

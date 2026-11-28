@@ -506,7 +506,7 @@ impl Editor {
         if r - l <= 0.0 || b - t <= 0.0 {
             return false;
         }
-        let Some(res) = self.doc.resolver.clone() else { return false };
+        let Some(res) = self.doc.definitions.clone() else { return false };
         let props = crate::format::ParaProps { align: Some(crate::document::format::Jc::Center), ..Default::default() };
         let style = crate::docx::para_xml::with(&res, crate::docx::para_props::ParaDirect::typed(std::rc::Rc::new(props)), None, None);
         let mark = run_xml::plain(&res, &style.base);

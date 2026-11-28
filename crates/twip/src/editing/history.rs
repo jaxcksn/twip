@@ -2,8 +2,8 @@
 
 use std::collections::VecDeque;
 
+use crate::docx::definitions::Definitions;
 use crate::docx::list_xml::ListXml;
-use crate::docx::resolvers::Resolvers;
 use crate::docx::{Block, Inline};
 use crate::format::cascade::Cascade;
 use crate::format::{List, ListDef, ListLevel, Style, StyleEntry};
@@ -329,11 +329,11 @@ pub fn step_bytes(s: &Step) -> usize {
         | Step::Info(_)
         | Step::Protection(_)
         | Step::SectionBreak { .. } => 32,
-        Step::Resolver { resolver, added } => {
-            32 + resolver.as_deref().map_or(0, resolver_bytes)
+        Step::Definitions { definitions, added } => {
+            32 + definitions.as_deref().map_or(0, definitions_bytes)
                 + added.iter().map(|a| std::mem::size_of::<crate::docx::AddedList>() + a.abstract_xml.len()).sum::<usize>()
         }
-        Step::Fonts { resolver, .. } => 32 + resolver.as_deref().map_or(0, resolver_bytes),
+        Step::Fonts { definitions, .. } => 32 + definitions.as_deref().map_or(0, definitions_bytes),
         Step::PageBackground(_) => 64,
         Step::ImageData { data, .. } => 32 + data.len(),
         Step::AddImage { data, .. } => 32 + data.as_ref().map_or(0, Vec::len),
@@ -352,7 +352,7 @@ pub fn step_bytes(s: &Step) -> usize {
 
 /// What retained definitions hold: each style, definition, list and picture bullet with the XML it is written as,
 /// and the style links.
-fn resolver_bytes(r: &Resolvers) -> usize {
+fn definitions_bytes(r: &Definitions) -> usize {
     use std::mem::size_of;
     let t = r.typed();
     let (c, n) = (&*t.cascade, &*t.numbering);
@@ -373,5 +373,5 @@ fn resolver_bytes(r: &Resolvers) -> usize {
 #[test]
 fn added_lists_count_towards_the_budget() {
     let list = crate::docx::AddedList { abstract_id: 1, num_id: 1, abstract_xml: "x".repeat(10_000) };
-    assert!(step_bytes(&Step::Resolver { resolver: None, added: vec![list] }) > 10_000);
+    assert!(step_bytes(&Step::Definitions { definitions: None, added: vec![list] }) > 10_000);
 }

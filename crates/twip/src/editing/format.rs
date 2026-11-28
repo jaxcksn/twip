@@ -4,11 +4,11 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::docx::char_props::RunXml;
+use crate::docx::definitions::Definitions;
 use crate::docx::model::Compat;
 use crate::docx::para_props::ParaXml;
 use crate::docx::para_props::{self, ParaDirect};
 use crate::docx::para_xml;
-use crate::docx::resolvers::Resolvers;
 use crate::docx::write::props::Cx;
 use crate::docx::{Inline, ParaStyle, Row, Ruby, Run, RunStyle, Table};
 use crate::font::Fonts;
@@ -259,7 +259,7 @@ impl Again {
 /// indent, width and spacing, its rows' heights, splitting and header flags, and every cell's borders, shading, margins
 /// and alignment, when they changed. A table joined from several as read keeps the alignment, indent and width its
 /// first row took from them.
-fn table_again(t: &Table, res: &Resolvers) -> Option<(TableProps, Option<Vec<Row>>)> {
+fn table_again(t: &Table, res: &Definitions) -> Option<(TableProps, Option<Vec<Row>>)> {
     use crate::docx::props::Borders;
     use crate::docx::table_props::{cell_on, row_on, table_on, tbl_props};
     let c = res.cascade();
@@ -338,7 +338,7 @@ fn table_again(t: &Table, res: &Resolvers) -> Option<(TableProps, Option<Vec<Row
 /// A ruby's base and annotation text resolved again over `base` from the authored properties its XML holds, `edit`
 /// first giving the base text's runs new ones (from their own and their formatting), the annotation's too when it says
 /// so, written into the XML. `None` when it stays as it is.
-pub(super) fn ruby_again(r: &Ruby, base: &CharProps, edit: Option<(&RubyEdit, bool)>, res: &Resolvers, cx: &Cx) -> Option<Rc<Ruby>> {
+pub(super) fn ruby_again(r: &Ruby, base: &CharProps, edit: Option<(&RubyEdit, bool)>, res: &Definitions, cx: &Cx) -> Option<Rc<Ruby>> {
     use crate::docx::xml::is_w;
     let raw = &**r.origin_xml()?;
     let (mut splices, parts) = cx.parse(raw, |text, el| {
@@ -412,7 +412,7 @@ impl Editor {
         if tx.stale_tables.is_empty() && tx.stale_paras.is_empty() {
             return;
         }
-        let Some(res) = self.doc.resolver.clone() else { return };
+        let Some(res) = self.doc.definitions.clone() else { return };
         let cx = self.cx();
         for &table in &tx.stale_tables.clone() {
             let Some(t) = self.index.table(&self.doc, table) else { continue };
@@ -481,7 +481,7 @@ impl Editor {
     }
 
     pub(super) fn next_style_paragraph(&self, para: ParaId, mut second: crate::docx::Paragraph) -> Option<crate::docx::Paragraph> {
-        let res = self.doc.resolver.clone()?;
+        let res = self.doc.definitions.clone()?;
         let p = self.index.para(&self.doc, para)?;
         let id = p.style.style_id.as_deref()?;
         let c = res.cascade();
@@ -497,7 +497,7 @@ impl Editor {
 
     /// The theme colours a theme colour's value is written as.
     pub(super) fn colours(&self) -> crate::docx::props::ThemeColours {
-        self.doc.resolver.as_ref().map_or_else(Default::default, |r| r.cascade().colours)
+        self.doc.definitions.as_ref().map_or_else(Default::default, |r| r.cascade().colours)
     }
 
     pub(super) fn cx(&self) -> Cx {
@@ -508,21 +508,21 @@ impl Editor {
     /// formatted, the styles part when a style is, else the document's. Whether it declares the w14 namespace
     /// follows.
     pub(super) fn formatted_part_cx(&self) -> Cx {
-        match (&self.label_target, &self.style_target, &self.doc.resolver) {
+        match (&self.label_target, &self.style_target, &self.doc.definitions) {
             (Some(t), _, _) => t.cx.clone(),
             (None, Some(_), Some(r)) => r.typed().styles.cx(),
             _ => self.cx(),
         }
     }
 
-    pub(super) fn region_of_para(&self, para: ParaId, res: &Resolvers) -> Option<TableRegion> {
+    pub(super) fn region_of_para(&self, para: ParaId, res: &Definitions) -> Option<TableRegion> {
         let slot = self.index.para_slot(para)?;
         let Container::Cell { table, row, cell } = slot.container else { return None };
         Some(res.cascade().region_of(self.index.table(&self.doc, table)?, row, cell))
     }
 
     /// What the runs at unit `at` of `para` resolve over.
-    pub(super) fn run_base(&self, para: ParaId, at: Unit, res: &Resolvers, cx: &Cx) -> Option<CharProps> {
+    pub(super) fn run_base(&self, para: ParaId, at: Unit, res: &Definitions, cx: &Cx) -> Option<CharProps> {
         let mut again = self.para_again(para, None, res, cx)?;
         let k = again.part(at.0);
         Some(again.bases.swap_remove(k).1)
@@ -530,7 +530,7 @@ impl Editor {
 
     /// `para` resolved again from its authored properties (`direct` in place of them, when given) and, for a
     /// paragraph vanished marks joined onto its start, from those paragraphs' too, joined as reading joins them.
-    pub(super) fn para_again(&self, para: ParaId, direct: Option<ParaDirect>, res: &Resolvers, cx: &Cx) -> Option<Again> {
+    pub(super) fn para_again(&self, para: ParaId, direct: Option<ParaDirect>, res: &Definitions, cx: &Cx) -> Option<Again> {
         let p = self.index.para(&self.doc, para)?;
         let region = self.region_of_para(para, res);
         let last = para_xml::of(res, direct.as_ref().unwrap_or(&p.style.direct), region.as_ref(), cx);
@@ -658,7 +658,7 @@ impl Editor {
 
     /// The formatting text typed at the caret takes: its run's, with a typed edit of its authored properties.
     pub(super) fn pending_typed(&mut self, edit: &dyn Fn(&mut CharEdit)) {
-        let Some(res) = self.doc.resolver.clone() else { return };
+        let Some(res) = self.doc.definitions.clone() else { return };
         let cx = self.cx();
         let Some(caret) = self.caret() else { return };
         let (Some((para, at)), Some(run)) = (caret.para_offset(), self.run_at(&caret)) else { return };
@@ -709,7 +709,7 @@ impl Editor {
         if self.refuse_expanded() || self.refuse_locked_content() {
             return Outcome::Unchanged("locked");
         }
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let cx = self.cx();
         // A style separator mark keeps its flags
         let typed = |direct: &RunDirect, run: &RunStyle, base: &CharProps, mark: bool| -> RunDirect {
@@ -862,7 +862,7 @@ impl Editor {
         if self.refuse_expanded() || self.refuse_locked_content() {
             return Outcome::Unchanged("locked");
         }
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let cx = self.cx();
         let paras = self.selected_paras();
         let mut tx = self.begin(label);
@@ -987,7 +987,7 @@ impl Editor {
                 )
             }
             Format::ParaStyle(id) => {
-                let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+                let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
                 if !res.cascade().styles.get(id).is_some_and(|s| s.kind == crate::format::StyleKind::Paragraph) {
                     return Outcome::Unchanged("no such paragraph style");
                 }
@@ -1141,7 +1141,7 @@ impl Editor {
 
     /// `para`'s mark made a style separator.
     fn separator_mark(&mut self, para: ParaId, fonts: &Fonts) -> Outcome {
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let cx = self.cx();
         let (Some(again), Some(p)) = (self.para_again(para, None, &res, &cx), self.index.para(&self.doc, para)) else {
             return Outcome::Unchanged("no paragraph");

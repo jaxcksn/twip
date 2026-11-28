@@ -3,9 +3,9 @@
 use std::rc::Rc;
 
 use super::Session;
+use super::definitions::{Definitions, TypedDefs};
 use super::model::Document;
 use super::resolve::Resolver;
-use super::resolvers::{Resolvers, TypedDefs};
 use crate::format::cascade::Cascade;
 
 /// A document's typed definitions, and the XML path's resolver read from the parts the document is saved as.
@@ -13,7 +13,7 @@ pub struct Baseline {
     /// The XML path's resolver.
     pub frozen: Resolver,
     /// The document's typed definitions.
-    pub typed: Rc<Resolvers>,
+    pub typed: Rc<Definitions>,
 }
 
 impl std::ops::Deref for Baseline {
@@ -38,7 +38,7 @@ impl Baseline {
     /// `d`'s typed definitions, and the XML path's resolver of the package `bytes`.
     pub fn read(d: &Document, bytes: &[u8]) -> Baseline {
         let mut frozen = super::reader::frozen_resolver(bytes).expect("the package reads");
-        let typed = d.resolver.clone().expect("the document has definitions");
+        let typed = d.definitions.clone().expect("the document has definitions");
         // Picture bullets' images, as reading gave them
         for (id, p) in &typed.cascade().lists.pictures {
             if let Some(b) = frozen.numbering.pic_bullets.get_mut(id) {

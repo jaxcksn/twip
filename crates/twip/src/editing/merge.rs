@@ -2316,7 +2316,7 @@ impl Editor {
             Body::Text(t) => return super::comments::rich::text_inlines(t, run),
             Body::Rich(r) => r,
         };
-        let res = self.doc.resolver.clone();
+        let res = self.doc.definitions.clone();
         let cx = self.cx();
         let base = res.as_ref().and_then(|res| self.run_base(para, at, res, &cx));
         let mut out = Vec::new();
@@ -3098,7 +3098,7 @@ impl Editor {
                 crate::api::value::NoneOr::None => None,
                 crate::api::value::NoneOr::Value(id) => {
                     let props = CharProps { style: Some(id.0.as_str().into()), ..Default::default() };
-                    let colours = self.doc.resolver.as_deref().map_or_else(Default::default, |r| r.cascade().colours);
+                    let colours = self.doc.definitions.as_deref().map_or_else(Default::default, |r| r.cascade().colours);
                     let cx = self.cx();
                     let xml = crate::docx::char_props::serialize(&props, &Default::default(), &colours, &cx);
                     let read = crate::docx::char_props::RunDirect::from_xml(Some(&xml), &cx);

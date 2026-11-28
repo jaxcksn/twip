@@ -923,7 +923,7 @@ impl Editor {
     }
 
     fn raised(&self, para: crate::layout::ParaId, at: Unit, run: &crate::docx::Run) -> Option<crate::docx::Run> {
-        let res = self.doc.resolver.clone()?;
+        let res = self.doc.definitions.clone()?;
         let cx = self.cx();
         let base = self.run_base(para, at, &res, &cx)?;
         let mut e = crate::format::CharEdit::new(run.direct.props().map_or_else(crate::format::CharProps::default, |p| (**p).clone()));

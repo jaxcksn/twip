@@ -66,7 +66,7 @@ fn preview(c: &crate::format::cascade::Cascade, p: &CharProps) -> StylePreview {
 
 /// The paragraph, character, table and list styles (`kind` only, when given), by priority then name.
 pub fn list(doc: &Document, kind: Option<StyleType>, glossary: bool) -> Vec<StyleInfo> {
-    let Some(r) = doc.resolver.as_deref() else { return Vec::new() };
+    let Some(r) = doc.definitions.as_deref() else { return Vec::new() };
     let typed = r.typed();
     let c = &*typed.cascade;
     let styles = &*c.styles;
@@ -158,7 +158,7 @@ mod tests {
     fn styles() -> crate::format::StyleSheet {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-STYLES.docx");
         let (doc, _) = crate::docx::read_editable(&std::fs::read(path).expect("FX-STYLES")).expect("reads");
-        (*doc.resolver.expect("a resolver").cascade().styles).clone()
+        (*doc.definitions.expect("a resolver").cascade().styles).clone()
     }
 
     #[test]

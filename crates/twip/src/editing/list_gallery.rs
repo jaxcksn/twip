@@ -85,7 +85,7 @@ impl Editor {
             ListGallerySection { kind: ListGallerySectionKind::Library, entries: library },
             ListGallerySection { kind: ListGallerySectionKind::RecentlyUsed, entries: recent },
         ];
-        let Some(res) = self.doc.resolver.as_ref() else { return out };
+        let Some(res) = self.doc.definitions.as_ref() else { return out };
         let c = res.cascade();
         let mut nums: Vec<i64> = self.list_paras().into_iter().map(|(_, n, _)| n).collect();
         nums.dedup();
@@ -135,7 +135,7 @@ impl Editor {
                 Some((gallery_of(&levels, false), levels, Some(n)))
             }
             ("style", s, None) => {
-                let num = crate::docx::para_props::num_id(self.doc.resolver.as_ref()?.cascade().chain_para(Some(s)).list)?;
+                let num = crate::docx::para_props::num_id(self.doc.definitions.as_ref()?.cascade().chain_para(Some(s)).list)?;
                 Some((ListGalleryKind::Multilevel, self.list_levels(num)?, Some(num)))
             }
             _ => None,
@@ -200,7 +200,7 @@ impl Editor {
 
     /// A list's preview: three items at its first level, or at its first three levels.
     pub fn list_preview(&self, levels: &[ListLevel], multilevel: bool) -> Option<Vec<Block>> {
-        let res = self.doc.resolver.as_ref()?;
+        let res = self.doc.definitions.as_ref()?;
         let mut next = (**res).clone();
         let typed = next.typed();
         let (abstract_id, num_id) = typed.cascade.lists.free_ids();

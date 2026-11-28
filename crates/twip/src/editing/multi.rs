@@ -1080,12 +1080,12 @@ impl Editor {
 
     /// The document's default paragraph style.
     fn default_paragraph(&self) -> Option<std::rc::Rc<str>> {
-        self.doc.resolver.as_ref()?.cascade().styles.default_paragraph.clone()
+        self.doc.definitions.as_ref()?.cascade().styles.default_paragraph.clone()
     }
 
     /// Whether style `id` is a paragraph style (else a character style); none when the document has no such style.
     fn style_kind(&self, id: &str) -> Option<bool> {
-        match self.doc.resolver.as_ref()?.style_kind(id)? {
+        match self.doc.definitions.as_ref()?.style_kind(id)? {
             crate::format::StyleKind::Paragraph => Some(true),
             crate::format::StyleKind::Character => Some(false),
             _ => None,

@@ -3,11 +3,11 @@
 
 use std::rc::Rc;
 
+use super::definitions::Definitions;
 use super::list_xml::{format_name, jc_name, legacy_of, suffix_name};
 use super::model::ListLabel;
 use super::model::{ListId, ListJc, ListRef, ParaStyle};
 use super::para_props::ParaDirect;
-use super::resolvers::Resolvers;
 use super::review::ParaChange;
 use super::write::props::Cx;
 use crate::docx::para_props::ParaXml;
@@ -50,7 +50,7 @@ pub struct Resolved {
 /// A paragraph with authored properties `direct`, its mark's size `mark_size` (points, when its mark sets one), in
 /// `region` when it is in a cell: its style chain and the defaults typed. The effective format's authored properties
 /// are left default.
-pub fn resolve(res: &Resolvers, direct: &ParaProps, mark_size: Option<f64>, region: Option<&TableRegion>) -> Resolved {
+pub fn resolve(res: &Definitions, direct: &ParaProps, mark_size: Option<f64>, region: Option<&TableRegion>) -> Resolved {
     let c = res.cascade();
     let style_id = c.paragraph_style(direct.style.as_deref()).map(str::to_string);
     let style_ppr = c.chain_para(style_id.as_deref());
@@ -129,7 +129,7 @@ pub fn resolve(res: &Resolvers, direct: &ParaProps, mark_size: Option<f64>, regi
 
 /// A list label with text `text` at level `level`, its run the level's character properties over `under`, what its
 /// paragraph mark's levels fold to.
-pub fn label(res: &Resolvers, text: String, under: &CharProps, level: &ListLevel) -> ListLabel {
+pub fn label(res: &Definitions, text: String, under: &CharProps, level: &ListLevel) -> ListLabel {
     ListLabel {
         text,
         run: super::run_xml::label(res, under, Some(&level.char)),
@@ -141,7 +141,7 @@ pub fn label(res: &Resolvers, text: String, under: &CharProps, level: &ListLevel
 }
 
 /// A paragraph with authored properties `direct` (its mark's size `mark_size`), in `region` when it is in a cell.
-pub fn with(res: &Resolvers, direct: ParaDirect, mark_size: Option<f64>, region: Option<&TableRegion>) -> Resolved {
+pub fn with(res: &Definitions, direct: ParaDirect, mark_size: Option<f64>, region: Option<&TableRegion>) -> Resolved {
     let mut r = resolve(res, direct.get(), mark_size, region);
     r.style.direct = direct;
     r
@@ -149,7 +149,7 @@ pub fn with(res: &Resolvers, direct: ParaDirect, mark_size: Option<f64>, region:
 
 /// Authored paragraph properties `d` as the `w:pPr` written in the part `cx` describes, a theme colour's value as
 /// `res`'s theme resolves it.
-pub fn ppr<'d>(res: Option<&Resolvers>, d: &'d ParaDirect, cx: &Cx) -> Option<std::borrow::Cow<'d, str>> {
+pub fn ppr<'d>(res: Option<&Definitions>, d: &'d ParaDirect, cx: &Cx) -> Option<std::borrow::Cow<'d, str>> {
     d.xml(&res.map_or_else(Default::default, |r| r.cascade().colours), cx)
 }
 
@@ -160,13 +160,13 @@ fn mark_size_of(ppr: Option<&str>, cx: &Cx) -> Option<f64> {
 
 /// A paragraph resolved from its `w:pPr` as written (`ppr`, in the part `cx` describes), in `region` when it is in
 /// a cell: its properties parsed, the XML kept beside them.
-pub fn from_xml(res: &Resolvers, ppr: Option<&str>, region: Option<&TableRegion>, cx: &Cx) -> Resolved {
+pub fn from_xml(res: &Definitions, ppr: Option<&str>, region: Option<&TableRegion>, cx: &Cx) -> Resolved {
     with(res, ParaDirect::from_xml(ppr, cx), mark_size_of(ppr, cx), region)
 }
 
 /// `again`, a paragraph's properties resolved again in `region`, with what reading gave `was` beyond them: its
 /// tracked property change (the earlier properties resolved again too) and its place in a frame.
-pub fn again(res: &Resolvers, was: &ParaStyle, mut again: ParaStyle, region: Option<&TableRegion>, cx: &Cx) -> ParaStyle {
+pub fn again(res: &Definitions, was: &ParaStyle, mut again: ParaStyle, region: Option<&TableRegion>, cx: &Cx) -> ParaStyle {
     if was.in_frame {
         (again.frame, again.in_frame) = (None, true);
     }
@@ -189,7 +189,7 @@ pub fn again(res: &Resolvers, was: &ParaStyle, mut again: ParaStyle, region: Opt
 
 /// A paragraph resolved again from its authored properties `d`, in `region` when it is in a cell, its mark's size from
 /// the `w:rPr` the `w:pPr` they were read from holds.
-pub fn of(res: &Resolvers, d: &ParaDirect, region: Option<&TableRegion>, cx: &Cx) -> Resolved {
+pub fn of(res: &Definitions, d: &ParaDirect, region: Option<&TableRegion>, cx: &Cx) -> Resolved {
     let size = mark_size_of(d.origin_xml().map(|x| &**x), cx);
     with(res, d.clone(), size, region)
 }

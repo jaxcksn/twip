@@ -728,7 +728,7 @@ impl Editor {
             super::import::write_runs_here(blocks, &mut refs, &here);
             // Its stored XML read under this document's root
             let from = if o.main.is_empty() {
-                o.resolver.as_deref().map(|r| r.typed().styles.cx())
+                o.definitions.as_deref().map(|r| r.typed().styles.cx())
             } else {
                 Some(crate::docx::write::props::Cx::of_xml(&o.main))
             };
@@ -738,7 +738,7 @@ impl Editor {
                 controls.to_mut().values_mut().for_each(|c| r.control(&mut c.props));
             }
             if f.look == Look::Source
-                && let Some(from) = o.resolver.as_deref()
+                && let Some(from) = o.definitions.as_deref()
             {
                 self.keep_para_looks(blocks, from);
             }
@@ -1021,7 +1021,7 @@ impl Editor {
         if let Some(r) = cache.get(&Rc::as_ptr(src)) {
             return r.clone();
         }
-        let Some(res) = self.doc.resolver.clone() else { return src.clone() };
+        let Some(res) = self.doc.definitions.clone() else { return src.clone() };
         let base = base.clone();
         let mut out = Rc::new(run_xml::resolve(&res, &base, src.direct.clone(), false));
         if !out.layout_eq(src) {
@@ -1076,7 +1076,7 @@ impl Editor {
         if look == Look::Destination {
             return inlines.to_vec();
         }
-        let Some(res) = self.doc.resolver.clone() else { return inlines.to_vec() };
+        let Some(res) = self.doc.definitions.clone() else { return inlines.to_vec() };
         let cx = self.cx();
         let Some(p) = self.index.para(&self.doc, para) else { return inlines.to_vec() };
         let region = self.region_of_para(para, &res);

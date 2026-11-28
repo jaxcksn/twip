@@ -5,9 +5,9 @@ use std::rc::Rc;
 use crate::api::command::Command;
 use crate::api::error::Error;
 use crate::docx::char_props::RunXml;
+use crate::docx::definitions::{Definitions, TypedDefs};
 use crate::docx::para_props::ParaXml;
 use crate::docx::props::{Tab, TabKind};
-use crate::docx::resolvers::{Resolvers, TypedDefs};
 use crate::docx::style_xml::StyleEditError;
 use crate::docx::style_xml::StyleXml;
 use crate::docx::style_xml::{DefaultsDef, StyleDef};
@@ -475,13 +475,13 @@ impl Editor {
     /// The style a `w:style` holds, as the API carries a style being edited, its XML beside it: `None` when it isn't
     /// one, or would be based on itself.
     pub(crate) fn style_of_xml(&self, raw: &str) -> Option<StyleDef> {
-        let s = self.doc.resolver.as_ref()?.typed().styles.style_from_xml(raw)?;
+        let s = self.doc.definitions.as_ref()?.typed().styles.style_from_xml(raw)?;
         Some(StyleDef::read(s, raw.into()))
     }
 
     /// A style's `w:style`, as the API carries a style being edited.
     pub(crate) fn style_xml_of(&self, def: &StyleDef) -> String {
-        match self.doc.resolver.as_ref() {
+        match self.doc.definitions.as_ref() {
             Some(r) => def.xml(&r.colours(), &r.cx()).into_owned(),
             None => String::new(),
         }
@@ -495,7 +495,7 @@ impl Editor {
     /// A style as text in it resolves: a paragraph in it (or, for a character style, in the default paragraph style)
     /// and a run of that paragraph, from the definitions with it among them.
     pub(super) fn style_text(&self, def: &StyleDef) -> Option<(Paragraph, crate::docx::Run, Cx)> {
-        let res = self.doc.resolver.as_ref()?;
+        let res = self.doc.definitions.as_ref()?;
         let mut next = (**res).clone();
         // The defaults formatted as a style: alone, not over themselves.
         if self.defaults_target {
@@ -556,7 +556,7 @@ impl Editor {
     /// Paragraph formatting as a typed edit on paragraphs in an automatically updating style: the style changes
     /// instead, as one undo step.
     pub(super) fn format_auto_redefined_typed(&mut self, id: &str, edit: &dyn Fn(&mut ParaEdit, &Paragraph), fonts: &Fonts) -> Outcome {
-        let Some(typed) = self.doc.resolver.as_ref().map(|r| r.typed()) else { return Outcome::Unchanged("no style") };
+        let Some(typed) = self.doc.definitions.as_ref().map(|r| r.typed()) else { return Outcome::Unchanged("no style") };
         let Some(was) = style_holder(&typed, id) else { return Outcome::Unchanged("no style") };
         self.style_target = Some(StyleTarget::of(was.clone()));
         let _ = self.format_style_ppr(edit);
@@ -576,11 +576,11 @@ impl Editor {
             Some(t) => t.def(),
             None => {
                 let id = self.auto_redefined()?;
-                style_holder(&self.doc.resolver.as_ref()?.typed(), &id)?
+                style_holder(&self.doc.definitions.as_ref()?.typed(), &id)?
             }
         };
         let (para, _, _) = self.style_text(&def)?;
-        let res = self.doc.resolver.as_ref()?;
+        let res = self.doc.definitions.as_ref()?;
         let typed = res.typed();
         // Its base while it is the document's style as it is
         let base = typed
@@ -604,7 +604,7 @@ impl Editor {
     /// The selection's direct formatting, as a style takes it: its paragraph's and its first run's authored
     /// properties, without what isn't formatting (the style, list, section break, tracked changes).
     pub(super) fn selection_formatting(&self) -> (Option<ParaProps>, Option<CharProps>) {
-        if self.doc.resolver.is_none() {
+        if self.doc.definitions.is_none() {
             return (None, None);
         }
         let para = self.selection.focus().and_then(|p| p.para_offset()).and_then(|(p, _)| self.index.para(&self.doc, p));
@@ -622,7 +622,7 @@ impl Editor {
             Command::UpdateStyleToSelection(id) => (id, None),
             _ => return None,
         };
-        if self.doc.resolver.as_ref()?.has_style(&id.0) {
+        if self.doc.definitions.as_ref()?.has_style(&id.0) {
             return None;
         }
         crate::services::styles::builtin::BUILT_IN.iter().find(|b| b.id == id.0 && kind.is_none_or(|k| k == b.kind))
@@ -635,7 +635,7 @@ impl Editor {
 
     /// Adds built-in style `b` from its definition, as one undo step.
     pub(super) fn add_built_in(&mut self, b: &crate::services::styles::builtin::BuiltIn, fonts: &Fonts) -> Outcome {
-        if self.doc.resolver.is_none() {
+        if self.doc.definitions.is_none() {
             return Outcome::Unchanged("no styles");
         }
         let mut style = crate::services::styles::builtin::definition(b);
@@ -656,7 +656,7 @@ impl Editor {
 
     /// Changes a style to the selection's formatting.
     pub(super) fn update_style_to_selection(&mut self, id: &str, fonts: &Fonts) -> Outcome {
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let typed = res.typed();
         let Some(was) = style_holder(&typed, id) else { return Outcome::Refused(Error::unavailable("no such style")) };
         let character = res.style_kind(id) == Some(crate::format::StyleKind::Character);
@@ -794,7 +794,7 @@ impl Editor {
         if let Some(t) = &self.style_target
             && matches!(target, ShadingTarget::Cell | ShadingTarget::Table)
         {
-            if self.doc.resolver.is_none() || t.style().kind != crate::format::StyleKind::Table {
+            if self.doc.definitions.is_none() || t.style().kind != crate::format::StyleKind::Table {
                 return Outcome::Refused(Error::invalid("only a table style has cell or table shading"));
             }
             let shading = |was: Option<crate::format::Shading>| {
@@ -852,7 +852,7 @@ impl Editor {
 
     /// Deletes a style the document made.
     pub(super) fn delete_style(&mut self, id: &str, fonts: &Fonts) -> Outcome {
-        let Some(c) = self.doc.resolver.as_ref().map(|r| r.cascade()) else { return Outcome::Refused(Error::unavailable("no such style")) };
+        let Some(c) = self.doc.definitions.as_ref().map(|r| r.cascade()) else { return Outcome::Refused(Error::unavailable("no such style")) };
         let Some(style) = c.styles.get(id) else { return Outcome::Refused(Error::unavailable("no such style")) };
         if !style.custom.unwrap_or(false) || c.styles.default_paragraph.as_deref() == Some(id) {
             return Outcome::Refused(Error::new(crate::api::error::ErrorCode::NotAllowed, "built-in styles can't be deleted"));
@@ -862,7 +862,7 @@ impl Editor {
 
     /// The paragraphs, marks, runs (a ruby's too) and tables whose direct formatting names style `id`, with the name
     /// taken out, as stale.
-    fn drop_style_refs(&mut self, tx: &mut super::Tx, id: &str, res: &Resolvers) {
+    fn drop_style_refs(&mut self, tx: &mut super::Tx, id: &str, res: &Definitions) {
         use crate::docx::Inline;
         let cx = self.cx();
         let named = |r: &crate::docx::Run| r.style_id.as_deref() == Some(id);
@@ -941,7 +941,7 @@ impl Editor {
 
     /// Sets a style's list flags.
     pub(super) fn set_style_meta(&mut self, m: crate::api::command::StyleMetaChange, fonts: &Fonts) -> Outcome {
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let typed = res.typed();
         let Some(was) = style_holder(&typed, &m.id.0) else { return self.set_latent_meta(&m, fonts) };
         let def = meta_edited(&was, &m);
@@ -953,7 +953,7 @@ impl Editor {
 
     /// The document defaults as a paragraph style: their paragraph and character properties its own.
     fn defaults_stand_in(&self) -> Option<Style> {
-        let typed = self.doc.resolver.as_ref()?.typed();
+        let typed = self.doc.definitions.as_ref()?.typed();
         let d = typed.styles.defaults.as_ref().map(|d| (**d.get()).clone()).unwrap_or_default();
         let mut s = defaults_style();
         (s.format.para, s.format.char) = (d.para.unwrap_or_default(), d.char.unwrap_or_default());
@@ -964,7 +964,7 @@ impl Editor {
     /// defaults set themselves (the rest unavailable: the application's apply).
     pub fn document_defaults(&self) -> Option<super::style_defs::DefaultsDefinition> {
         let own = self.defaults_stand_in()?;
-        let colours = self.doc.resolver.as_ref()?.colours();
+        let colours = self.doc.definitions.as_ref()?.colours();
         // Text in a style that sets nothing: the defaults alone.
         let (character, paragraph, tabs) = self.formatting_state_of(&StyleDef::typed(Rc::new(defaults_style())))?;
         Some(super::style_defs::DefaultsDefinition {
@@ -1015,7 +1015,7 @@ impl Editor {
         if let Some(out) = self.refuse_like(&Command::SetDocumentDefaults(Default::default())) {
             return out;
         }
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let Some(stand_in) = self.defaults_stand_in() else { return Outcome::Unchanged("no styles") };
         self.defaults_target = true;
         let edited = self.format_target(StyleTarget::of(StyleDef::typed(Rc::new(stand_in))), commands, fonts);
@@ -1030,7 +1030,7 @@ impl Editor {
 
     /// The paragraph style every selected paragraph is in, when it updates automatically (`w:autoRedefine`).
     pub(super) fn auto_redefined(&mut self) -> Option<String> {
-        let res = self.doc.resolver.as_ref()?.cascade();
+        let res = self.doc.definitions.as_ref()?.cascade();
         let paras = self.selected_paras();
         let mut ids = paras.iter().map(|&p| {
             self.index
@@ -1048,7 +1048,7 @@ impl Editor {
     /// The paragraphs in one of the styles `changed`, or with a run in one: its mark, its list label, a ruby's text
     /// too.
     pub(super) fn styled_paras(&self, changed: &[String]) -> Vec<crate::layout::ParaId> {
-        let default = self.doc.resolver.as_ref().and_then(|r| r.cascade().styles.default_paragraph.clone());
+        let default = self.doc.definitions.as_ref().and_then(|r| r.cascade().styles.default_paragraph.clone());
         let changed: std::collections::HashSet<&str> = changed.iter().map(String::as_str).collect();
         let uses = |id: Option<&str>| id.or(default.as_deref()).is_some_and(|id| changed.contains(id));
         let styled = |r: &crate::docx::Run| r.style_id.as_deref().is_some_and(|s| changed.contains(s));
@@ -1074,7 +1074,7 @@ impl Editor {
     pub(crate) fn edit_styles(
         &mut self,
         label: &'static str,
-        edit: impl FnOnce(&mut crate::docx::resolvers::StyleEdits) -> Result<Vec<String>, StyleEditError>,
+        edit: impl FnOnce(&mut crate::docx::definitions::StyleEdits) -> Result<Vec<String>, StyleEditError>,
         fonts: &Fonts,
     ) -> Outcome {
         self.edit_styles_relabel(label, edit, false, fonts)
@@ -1085,11 +1085,11 @@ impl Editor {
     pub(crate) fn edit_styles_relabel(
         &mut self,
         label: &'static str,
-        edit: impl FnOnce(&mut crate::docx::resolvers::StyleEdits) -> Result<Vec<String>, StyleEditError>,
+        edit: impl FnOnce(&mut crate::docx::definitions::StyleEdits) -> Result<Vec<String>, StyleEditError>,
         relabel: bool,
         fonts: &Fonts,
     ) -> Outcome {
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let mut next = (*res).clone();
         let changed = match edit(&mut next.style_edits()) {
             Ok(c) => c,
@@ -1099,14 +1099,14 @@ impl Editor {
         };
         let mut tx = self.begin(label);
         let added = self.docx.added_lists.clone();
-        if self.step(&mut tx, Step::Resolver { resolver: Some(Rc::new(next)), added }).is_err() {
+        if self.step(&mut tx, Step::Definitions { definitions: Some(Rc::new(next)), added }).is_err() {
             self.abort(tx);
             return Outcome::Unchanged("the styles didn't change");
         }
         // The styles it deleted: the document's references to them go, untracked
         let before = res.cascade();
         let gone: Vec<&str> =
-            before.styles.styles.keys().filter(|id| !self.doc.resolver.as_ref().is_some_and(|r| r.has_style(id))).map(|id| &**id).collect();
+            before.styles.styles.keys().filter(|id| !self.doc.definitions.as_ref().is_some_and(|r| r.has_style(id))).map(|id| &**id).collect();
         let tracked = std::mem::replace(&mut tx.tracked, false);
         for id in gone {
             self.drop_style_refs(&mut tx, id, &res);

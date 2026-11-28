@@ -133,20 +133,20 @@ impl Session {
             },
             C::SetStyleMeta(m) => {
                 let built_in = crate::services::styles::builtin::BUILT_IN.iter().any(|b| b.id == m.id.0);
-                if built_in || self.editor.document().resolver.as_ref().is_some_and(|r| r.has_style(&m.id.0)) {
+                if built_in || self.editor.document().definitions.as_ref().is_some_and(|r| r.has_style(&m.id.0)) {
                     Ok(())
                 } else {
                     Err(Error::invalid(format!("no style {}", m.id.0)))
                 }
             }
-            C::SetDefaultTableStyle(Some(s)) => match self.editor.document().resolver.as_ref().and_then(|r| r.style_kind(&s.0)) {
+            C::SetDefaultTableStyle(Some(s)) => match self.editor.document().definitions.as_ref().and_then(|r| r.style_kind(&s.0)) {
                 Some(crate::format::StyleKind::Table) => Ok(()),
                 _ => Err(Error::invalid(format!("no table style {}", s.0))),
             },
             C::SetParagraphStyle(s) | C::SetTableStyle(s) => {
                 use crate::format::StyleKind as K;
                 let want = if matches!(command, C::SetTableStyle(_)) { K::Table } else { K::Paragraph };
-                match self.editor.document().resolver.as_ref().and_then(|r| r.style_kind(&s.0)) {
+                match self.editor.document().definitions.as_ref().and_then(|r| r.style_kind(&s.0)) {
                     Some(k) if k == want => Ok(()),
                     Some(_) => Err(Error::invalid(format!("{} isn't a {} style", s.0, if want == K::Table { "table" } else { "paragraph" }))),
                     None if self.editor.built_in_for(command) => Ok(()),
@@ -155,7 +155,7 @@ impl Session {
             }
             C::UpdateStyleToSelection(s) | C::DeleteStyle(s) => {
                 let built_in = !matches!(command, C::DeleteStyle(_)) && self.editor.built_in_for(command);
-                if built_in || self.editor.document().resolver.as_ref().is_some_and(|r| r.has_style(&s.0)) {
+                if built_in || self.editor.document().definitions.as_ref().is_some_and(|r| r.has_style(&s.0)) {
                     Ok(())
                 } else {
                     Err(Error::invalid(format!("no style {}", s.0)))

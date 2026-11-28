@@ -658,7 +658,7 @@ fn numbering(fmt: Option<&str>) -> Numbering {
 
 /// The name of a paragraph's style.
 fn style_name(doc: &Document, p: &Paragraph) -> Option<std::rc::Rc<str>> {
-    doc.resolver.as_ref()?.cascade().styles.get(p.style.style_id.as_deref()?)?.name.clone()
+    doc.definitions.as_ref()?.cascade().styles.get(p.style.style_id.as_deref()?)?.name.clone()
 }
 
 /// The document's title: its `title` property, else its first paragraph in the Title style, else its first heading,

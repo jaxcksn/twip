@@ -140,14 +140,14 @@ impl TextEnv {
             breaking_rules: s.policy.mode >= 14 || s.policy.apply_breaking_rules,
             dash_breaks: s.policy.mode >= 14,
             strict_kinsoku: s.strict_kinsoku,
-            default_style: doc.resolver.as_ref().and_then(|r| r.cascade().styles.default_paragraph.as_deref().map(Into::into)),
+            default_style: doc.definitions.as_ref().and_then(|r| r.cascade().styles.default_paragraph.as_deref().map(Into::into)),
             grow_autofit: s.compat() == Compat::Legacy && s.policy.grow_autofit,
             balance_spaces: s.policy.balance_single_byte_double_byte_width,
             ul_trail_space: s.policy.ul_trail_space,
             compress_punctuation: s.compress_punctuation,
             review: view.clone(),
             line_grid: None,
-            default_east_asia: doc.resolver.as_ref().and_then(|r| {
+            default_east_asia: doc.definitions.as_ref().and_then(|r| {
                 let c = r.cascade();
                 crate::format::resolve::default_east_asian(&c.theme, &c.doc_char().fonts.east_asian).map(Into::into)
             }),
@@ -285,7 +285,7 @@ impl LayoutEnv {
             line_number_run: doc.line_number_run.clone(),
             chains: chains.unwrap_or_else(|| self::chains(doc)),
             notes_like_ww8: s.compat() == Compat::Legacy && s.policy.footnote_layout_like_ww8,
-            normal: doc.resolver.as_ref().map(|r| Rc::new(crate::docx::para_xml::resolve(r, &Default::default(), None, None).style)),
+            normal: doc.definitions.as_ref().map(|r| Rc::new(crate::docx::para_xml::resolve(r, &Default::default(), None, None).style)),
         }
     }
 }

@@ -254,7 +254,7 @@ impl Editor {
     }
 
     pub(in crate::editing) fn set_table_style(&mut self, id: StyleId, fonts: &Fonts) -> Outcome {
-        match self.doc.resolver.as_ref().and_then(|r| r.style_kind(&id.0)) {
+        match self.doc.definitions.as_ref().and_then(|r| r.style_kind(&id.0)) {
             None => return Outcome::invalid("no such style"),
             Some(k) if k != crate::format::StyleKind::Table => return Outcome::invalid("not a table style"),
             Some(_) => {}

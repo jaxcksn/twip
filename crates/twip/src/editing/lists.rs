@@ -6,11 +6,11 @@ use std::rc::Rc;
 
 use crate::document::paragraph::ListJc;
 use crate::docx::char_props::RunXml;
+use crate::docx::definitions::Definitions;
 use crate::docx::list_xml::ListDefDirect;
 use crate::docx::list_xml::ListXml;
 use crate::docx::para_props::ParaXml;
 use crate::docx::props::ParaProps;
-use crate::docx::resolvers::Resolvers;
 use crate::docx::write::props::Cx;
 use crate::docx::{Block, Document, Inline, ListLabel, Paragraph};
 use crate::font::Fonts;
@@ -37,7 +37,7 @@ impl Editor {
     }
 
     pub(super) fn repara(&mut self, tx: &mut Tx, para: ParaId, edit: &dyn Fn(&mut ParaEdit)) -> bool {
-        let Some(res) = self.doc.resolver.clone() else { return false };
+        let Some(res) = self.doc.definitions.clone() else { return false };
         let cx = self.cx();
         let Some(p) = self.index.para(&self.doc, para) else { return false };
         let mut e = ParaEdit::new((**p.style.direct.get()).clone());
@@ -160,14 +160,14 @@ impl Editor {
     }
 
     pub(super) fn toggle_list(&mut self, bullet: bool, fonts: &Fonts) -> Outcome {
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let c = res.cascade();
         let paras = self.selected_paras();
         let Some(&first) = paras.first() else { return Outcome::Unchanged("no paragraph") };
         let kind = |e: &Self, para: ParaId| -> Option<(bool, (i64, i64))> {
             let p = e.index.para(&e.doc, para)?;
             let ListRef { list: ListId(id), level: ilvl } = p.style.num.filter(|ListRef { list: ListId(id), level: _ }| *id != 0)?;
-            let c = e.doc.resolver.as_ref()?.cascade();
+            let c = e.doc.definitions.as_ref()?.cascade();
             let level = c.level(ListId(id), ilvl)?;
             Some((crate::docx::list_xml::format_name(level.format.as_ref()) == "bullet", (id, ilvl)))
         };
@@ -218,7 +218,7 @@ impl Editor {
         let list_style = c.styles.styles.contains_key("ListParagraph");
         for &para in &paras {
             // A paragraph in a list keeps its level, where the list has it.
-            let defined = |l: i64| self.doc.resolver.as_ref().is_some_and(|r| r.cascade().level(ListId(num), l).is_some());
+            let defined = |l: i64| self.doc.definitions.as_ref().is_some_and(|r| r.cascade().level(ListId(num), l).is_some());
             let ilvl = kind(self, para).map(|(_, (_, own))| own.clamp(0, 8)).filter(|&own| defined(own)).unwrap_or(ilvl);
             let ok = self.repara(&mut tx, para, &|e| {
                 in_list(e, num, ilvl);
@@ -247,7 +247,7 @@ impl Editor {
 
     /// Adds a list of `levels`, returning its number id; 0 when it couldn't be added.
     fn add_new_list(&mut self, tx: &mut Tx, multi: MultiLevelType, levels: [Option<Rc<ListLevel>>; 9]) -> i64 {
-        let Some(res) = self.doc.resolver.clone() else { return 0 };
+        let Some(res) = self.doc.definitions.clone() else { return 0 };
         let lists = res.cascade().lists.clone();
         let abstract_id = lists.defs.keys().map(|k| k.0).chain(self.docx.added_lists.iter().map(|l| l.abstract_id)).max().unwrap_or(-1) + 1;
         let num_id = lists.lists.keys().map(|k| k.0).chain(self.docx.added_lists.iter().map(|l| l.num_id)).max().unwrap_or(0) + 1;
@@ -258,7 +258,7 @@ impl Editor {
         r.set_list(super::list_defs::new_list(num_id, abstract_id, &[]));
         let mut added = self.docx.added_lists.clone();
         added.push(crate::docx::AddedList { abstract_id, num_id, abstract_xml });
-        if self.step(tx, Step::Resolver { resolver: Some(Rc::new(r)), added }).is_err() {
+        if self.step(tx, Step::Definitions { definitions: Some(Rc::new(r)), added }).is_err() {
             return 0;
         }
         num_id
@@ -299,7 +299,7 @@ impl Editor {
 
     /// What paragraph `p`'s list number is formatted over, its level's own formatting aside: the paragraph's style
     /// chain and its mark's formatting.
-    pub(super) fn label_base(&self, para: ParaId, p: &Paragraph, res: &Resolvers, cx: &Cx) -> CharProps {
+    pub(super) fn label_base(&self, para: ParaId, p: &Paragraph, res: &Definitions, cx: &Cx) -> CharProps {
         let region = self.region_of_para(para, res);
         let base = crate::docx::para_xml::of(res, &p.style.direct, region.as_ref(), cx).base;
         run_xml::folded(res, &base, p.mark.direct.props().map(|m| &**m), false)
@@ -307,7 +307,7 @@ impl Editor {
 
     /// The labels that change: those whose text changed, or, for the paragraphs `full` names, any part of them.
     pub(super) fn labels_changed(&self, full: impl Fn(ParaId) -> bool) -> Vec<(ParaId, Option<ListLabel>)> {
-        let Some(res) = self.doc.resolver.clone() else { return Vec::new() };
+        let Some(res) = self.doc.definitions.clone() else { return Vec::new() };
         let c = res.cascade();
         if c.lists.lists.is_empty() {
             return Vec::new();
@@ -422,7 +422,7 @@ pub(super) fn written(p: &crate::format::ParaProps, local: &str) -> bool {
 }
 
 /// The list and level a paragraph's label counts in, when it shows one.
-pub(super) fn counted(res: &Resolvers, p: &Paragraph, uncounted: bool, cx: &Cx) -> Option<(i64, i64)> {
+pub(super) fn counted(res: &Definitions, p: &Paragraph, uncounted: bool, cx: &Cx) -> Option<(i64, i64)> {
     let ListRef { list: ListId(id), level: ilvl } = p.style.num.filter(|ListRef { list: ListId(id), level: _ }| *id != 0 && !uncounted)?;
     let from_style = !direct_num(crate::docx::para_xml::ppr(Some(res), &p.style.direct, cx).as_deref(), cx);
     res.cascade().label_shows(ListId(id), ilvl, from_style, p.style.style_id.as_deref()).then_some((id, ilvl))

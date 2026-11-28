@@ -3,9 +3,9 @@
 use crate::api::command::Command;
 use crate::docx::char_props::RunDirect;
 use crate::docx::char_props::RunXml;
+use crate::docx::definitions::Definitions;
 use crate::docx::list_xml::ListXml;
 use crate::docx::list_xml::{ListDefDirect, ListDirect};
-use crate::docx::resolvers::Resolvers;
 use crate::docx::write::props::Cx;
 use crate::docx::{Run, RunStyle};
 use crate::font::Fonts;
@@ -181,7 +181,7 @@ impl Editor {
         if self.mode == super::Mode::ReadOnly {
             return self.refuse_read_only();
         }
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let Some(p) = self.index.para(&self.doc, para) else { return Outcome::unavailable("no such paragraph") };
         let Some(ListRef { list: ListId(list), level }) = p.style.num.filter(|ListRef { list: ListId(n), level: _ }| *n != 0 && p.list.is_some())
         else {
@@ -253,7 +253,7 @@ impl Editor {
         edit: &dyn Fn(&mut CharEdit, &RunStyle),
         settle: &dyn Fn(&mut CharEdit, &RunStyle) -> bool,
     ) -> Outcome {
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let Some(t) = self.label_target.as_deref_mut() else { return Outcome::Unchanged("no list number") };
         let run = t.run(&res);
         let mut e = t.edit();
@@ -316,7 +316,7 @@ pub(super) struct LabelTarget {
 
 impl LabelTarget {
     /// The number as it draws with the level's formatting as the commands so far leave it.
-    fn run(&self, res: &Resolvers) -> Run {
+    fn run(&self, res: &Definitions) -> Run {
         crate::docx::run_xml::label(res, &self.base, self.direct.props().map(|p| &**p))
     }
 

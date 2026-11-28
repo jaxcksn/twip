@@ -66,7 +66,7 @@ fn tab(a: &AddTabStop) -> Tab {
 
 impl Editor {
     fn inherited_tabs(&self, para: ParaId) -> Vec<Tab> {
-        let (Some(res), Some(p)) = (self.doc.resolver.clone(), self.index.para(&self.doc, para)) else { return Vec::new() };
+        let (Some(res), Some(p)) = (self.doc.definitions.clone(), self.index.para(&self.doc, para)) else { return Vec::new() };
         let cx = self.cx();
         let mut e = ParaEdit::new((**p.style.direct.get()).clone());
         e.tabs.clear();

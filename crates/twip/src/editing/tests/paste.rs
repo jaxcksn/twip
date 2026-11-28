@@ -604,7 +604,7 @@ fn text_from_file_inserts_another_document_s_body_with_its_styles() {
     let out = e.insert_file(&other, fonts());
     assert!(changed(&out), "{out:?}");
     assert_eq!(texts(&e), ["afirst", "secondb"]);
-    assert!(e.document().resolver.as_ref().is_some_and(|r| r.has_style("Quote")), "its style comes");
+    assert!(e.document().definitions.as_ref().is_some_and(|r| r.has_style("Quote")), "its style comes");
     assert_eq!(e.history().next_undo(), Some("Insert File"));
     e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), ["ab"]);
@@ -1047,7 +1047,7 @@ fn a_document_without_a_resolver_keeps_its_alt_chunks_and_tracking() {
     let body = format!("<w:p>{}</w:p>{CHUNK}<w:p/>", t("x"));
     let (mut doc, docx) = crate::docx::read_editable(&with_chunk(&body, "chunk.html", b"<p>from html</p>")).expect("reads");
     doc.settings.track_revisions = true;
-    doc.resolver = None;
+    doc.definitions = None;
     let e = Editor::with_session(doc, docx, fonts());
     assert_eq!(e.document().alt_chunks.len(), 1);
     assert!(e.document().settings.track_revisions);

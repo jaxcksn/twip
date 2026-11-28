@@ -153,7 +153,7 @@ impl Editor {
 
     /// The `w:framePr` of the frame's first paragraph.
     pub(super) fn frame_pr(&self, f: FloatId) -> Option<FramePr> {
-        let res = self.doc.resolver.as_ref()?;
+        let res = self.doc.definitions.as_ref()?;
         let cx = self.cx();
         let tb = self.float_of(f)?.text_box.as_ref()?;
         tb.blocks.iter().find_map(|b| match b {
@@ -173,7 +173,7 @@ impl Editor {
     /// The frame's paragraphs with their `w:framePr` edited, and the first one's new `w:framePr`; `framed`: whether
     /// they stay in the frame.
     fn frame_paras(&self, f: FloatId, framed: bool, edit: &dyn Fn(&mut ParaEdit, Option<&FramePr>)) -> Option<(Vec<Block>, Option<FramePr>)> {
-        let res = self.doc.resolver.clone()?;
+        let res = self.doc.definitions.clone()?;
         let cx = self.cx();
         let mut first = None;
         let blocks = self
@@ -295,7 +295,7 @@ impl Editor {
     /// off).
     pub fn frame_allow_overlap(&self) -> Option<bool> {
         let f = self.frame_here()?;
-        let res = self.doc.resolver.as_ref()?;
+        let res = self.doc.definitions.as_ref()?;
         let cx = self.cx();
         let tb = self.float_of(f)?.text_box.as_ref()?;
         let apart = tb

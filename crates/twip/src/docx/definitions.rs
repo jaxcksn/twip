@@ -211,14 +211,14 @@ impl TypedDefs {
 
 /// The typed definitions a document resolves with, to read and to edit.
 #[derive(Clone, Debug)]
-pub struct Resolvers {
+pub struct Definitions {
     typed: Rc<TypedDefs>,
 }
 
-impl Resolvers {
+impl Definitions {
     /// The definitions `typed`.
-    pub fn new(typed: TypedDefs) -> Resolvers {
-        Resolvers { typed: Rc::new(typed) }
+    pub fn new(typed: TypedDefs) -> Definitions {
+        Definitions { typed: Rc::new(typed) }
     }
 
     /// The typed definitions.
@@ -298,7 +298,7 @@ impl Resolvers {
 
 // Edits
 
-impl Resolvers {
+impl Definitions {
     /// The typed definitions as `edit` leaves a copy of them, the cascade built again over them.
     fn edit_typed<T>(&mut self, edit: impl FnOnce(&mut StylesPart, &mut NumberingXml, &mut Lists) -> T) -> T {
         let typed = &self.typed;
@@ -482,7 +482,7 @@ impl Resolvers {
 
     /// These definitions with the style `raw` (a `w:style`) holds set among them, and its id: `None` when it isn't
     /// one, or would be based on itself.
-    pub fn with_style_xml(&self, raw: &str) -> Option<(Resolvers, Rc<str>)> {
+    pub fn with_style_xml(&self, raw: &str) -> Option<(Definitions, Rc<str>)> {
         let id = self.typed.styles.style_from_xml(raw)?.id;
         let mut next = self.clone();
         next.set_style_xml(raw.to_string()).ok()?;
@@ -520,7 +520,7 @@ impl Resolvers {
 
     /// These definitions with nothing as read: each style, the defaults, the latent styles, each definition, list and
     /// picture bullet written from its typed value, in parts whose roots are `styles_root` and `numbering_root`.
-    pub fn unanchored(&self, styles_root: Rc<str>, numbering_root: String) -> Resolvers {
+    pub fn unanchored(&self, styles_root: Rc<str>, numbering_root: String) -> Definitions {
         let t = &self.typed;
         let mut part = (*t.styles).clone();
         part.root = styles_root;
@@ -541,7 +541,7 @@ impl Resolvers {
             *d = PictureDirect::typed(d.get().clone());
         }
         let defs = TypedDefs { styles: Rc::new(part), numbering: Rc::new(numbering), ..(**t).clone() };
-        Resolvers { typed: Rc::new(defs) }
+        Definitions { typed: Rc::new(defs) }
     }
 
     /// The styles, to edit.
@@ -556,20 +556,20 @@ impl Resolvers {
 }
 
 /// A document's styles being edited.
-pub struct StyleEdits<'a>(&'a mut Resolvers);
+pub struct StyleEdits<'a>(&'a mut Definitions);
 
 impl StyleEdits<'_> {
-    /// [`Resolvers::set_style`].
+    /// [`Definitions::set_style`].
     pub fn set(&mut self, def: StyleDef) -> Result<Vec<String>, crate::docx::style_xml::StyleEditError> {
         self.0.set_style(def)
     }
 
-    /// [`Resolvers::set_defaults`].
+    /// [`Definitions::set_defaults`].
     pub fn set_defaults(&mut self, def: DefaultsDef) -> Result<Vec<String>, crate::docx::style_xml::StyleEditError> {
         self.0.set_defaults(def)
     }
 
-    /// [`Resolvers::set_latent`].
+    /// [`Definitions::set_latent`].
     pub fn set_latent(&mut self, def: LatentDef) -> Result<(), crate::docx::style_xml::StyleEditError> {
         self.0.set_latent(def)
     }
@@ -579,24 +579,24 @@ impl StyleEdits<'_> {
         self.0.typed()
     }
 
-    /// [`Resolvers::set_style_xml`].
+    /// [`Definitions::set_style_xml`].
     #[cfg(test)]
     pub fn set_xml(&mut self, raw: String) -> Result<Vec<String>, crate::docx::style_xml::StyleEditError> {
         self.0.set_style_xml(raw)
     }
 
-    /// [`Resolvers::delete_style`].
+    /// [`Definitions::delete_style`].
     pub fn delete(&mut self, id: &str) -> Result<Vec<String>, crate::docx::style_xml::StyleEditError> {
         self.0.delete_style(id)
     }
 
-    /// [`Resolvers::set_defaults_xml`].
+    /// [`Definitions::set_defaults_xml`].
     #[cfg(test)]
     pub fn set_defaults_xml(&mut self, raw: String) -> Result<Vec<String>, crate::docx::style_xml::StyleEditError> {
         self.0.set_defaults_xml(raw)
     }
 
-    /// [`Resolvers::set_latent_xml`].
+    /// [`Definitions::set_latent_xml`].
     #[cfg(test)]
     pub fn set_latent_xml(&mut self, raw: String) -> Result<(), crate::docx::style_xml::StyleEditError> {
         self.0.set_latent_xml(raw)
@@ -604,15 +604,15 @@ impl StyleEdits<'_> {
 }
 
 /// A document's numbering being edited, as [`StyleEdits`].
-pub struct NumberingEdits<'a>(&'a mut Resolvers);
+pub struct NumberingEdits<'a>(&'a mut Definitions);
 
 impl NumberingEdits<'_> {
-    /// [`Resolvers::set_list_def`].
+    /// [`Definitions::set_list_def`].
     pub fn set_list_def(&mut self, d: ListDefDirect) -> ListDefId {
         self.0.set_list_def(d)
     }
 
-    /// [`Resolvers::set_list`].
+    /// [`Definitions::set_list`].
     pub fn set_list(&mut self, d: ListDirect) -> ListId {
         self.0.set_list(d)
     }
@@ -622,19 +622,19 @@ impl NumberingEdits<'_> {
         self.0.typed()
     }
 
-    /// [`Resolvers::set_abstract_xml`].
+    /// [`Definitions::set_abstract_xml`].
     #[cfg(test)]
     pub fn set_abstract_xml(&mut self, raw: String, _colours: &super::props::ThemeColours) -> Option<i64> {
         self.0.set_abstract_xml(raw)
     }
 
-    /// [`Resolvers::set_num_xml`].
+    /// [`Definitions::set_num_xml`].
     #[cfg(test)]
     pub fn set_num_xml(&mut self, raw: String, _colours: &super::props::ThemeColours) -> Option<i64> {
         self.0.set_num_xml(raw)
     }
 
-    /// [`Resolvers::add_picture`].
+    /// [`Definitions::add_picture`].
     pub fn add_picture(&mut self, id: i64, raw: String, rel: String, image: crate::docx::ResourceId) {
         self.0.add_picture(id, raw, rel, image);
     }

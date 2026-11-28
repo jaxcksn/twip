@@ -23,7 +23,7 @@ impl Editor {
     /// inside lines and shading.
     pub fn table_part_borders(&self, raw: &str, region: Option<&str>) -> Option<BordersShadingDialog> {
         use crate::docx::table_props::{tbl_props, tc_props};
-        let (next, id) = self.doc.resolver.as_ref()?.with_style_xml(raw)?;
+        let (next, id) = self.doc.definitions.as_ref()?.with_style_xml(raw)?;
         let c = next.cascade();
         let f = c.table_region(Some(&id), &crate::docx::style_xml::region_kinds(region)).format;
         let (tbl, tc) = (tbl_props(&f.table, &c.colours), tc_props(&f.cell, &c.colours));
@@ -111,7 +111,7 @@ impl Editor {
 
     /// A cell's shading as written: its table style's for the cell's region, under its own.
     pub(super) fn cell_shd(&self, t: &crate::docx::Table, (r, k): (usize, usize), cell: &crate::docx::Cell) -> Option<crate::docx::props::Shd> {
-        let res = self.doc.resolver.as_ref();
+        let res = self.doc.definitions.as_ref();
         let flat = || {
             cell.shading.map(|f| crate::docx::props::Shd {
                 pattern: crate::docx::props::ShadingPattern::Clear,

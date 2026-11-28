@@ -10,10 +10,10 @@ use crate::api::command::{
 use crate::api::value::{AutoOr, Color, HighlightColor, NoneOr, Points, StyleId, UnderlineStyle};
 use crate::document::format::{Leader, TabKind};
 use crate::document::paragraph::{ListJc, ListSuffix};
+use crate::docx::definitions::{Definitions, TypedDefs};
 use crate::docx::list_xml::ListXml;
 use crate::docx::list_xml::{ListDefDirect, ListDirect};
 use crate::docx::props::ThemeColours;
-use crate::docx::resolvers::{Resolvers, TypedDefs};
 use crate::docx::style_xml::StyleDef;
 use crate::docx::style_xml::StyleXml;
 use crate::docx::write::props::Cx;
@@ -475,7 +475,7 @@ impl Editor {
 
     /// The nine levels of `num` in full, with their picture bullets.
     pub fn list_level_definitions(&self, num: i64) -> Option<Vec<LevelDefinition>> {
-        let c = self.doc.resolver.as_ref()?.cascade();
+        let c = self.doc.definitions.as_ref()?.cascade();
         let levels = c.levels(ListId(num))?;
         Some(
             levels
@@ -506,7 +506,7 @@ impl Editor {
 
     /// List `num` in full, with `ilvl` its level shown as current.
     pub fn list_definition_of(&self, num: i64, ilvl: i64) -> Option<ListDefinition> {
-        let c = self.doc.resolver.as_ref()?.cascade();
+        let c = self.doc.definitions.as_ref()?.cascade();
         let abs = c.lists.defs.get(&c.abstract_of(ListId(num))?)?;
         let own = c.lists.defs.get(&c.lists.lists.get(&ListId(num))?.def.unwrap_or(crate::format::ListDefId(-1)));
         let levels = self.list_levels(num)?;
@@ -539,7 +539,7 @@ impl Editor {
     pub(super) fn edit_numbering(
         &mut self,
         label: &'static str,
-        edit: impl FnOnce(&mut crate::docx::resolvers::NumberingEdits, &Cx, &ThemeColours) -> Option<()>,
+        edit: impl FnOnce(&mut crate::docx::definitions::NumberingEdits, &Cx, &ThemeColours) -> Option<()>,
         assign: &[(ParaId, i64)],
         fresh: bool,
         fonts: &Fonts,
@@ -561,19 +561,19 @@ impl Editor {
     fn edit_lists(
         &mut self,
         label: &'static str,
-        edit: impl FnOnce(&mut Resolvers, &Cx) -> Option<Vec<String>>,
+        edit: impl FnOnce(&mut Definitions, &Cx) -> Option<Vec<String>>,
         assign: &[(ParaId, i64)],
         fresh: bool,
         fonts: &Fonts,
     ) -> Outcome {
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let list_style = fresh && res.cascade().styles.styles.contains_key("ListParagraph");
         let mut next = (*res).clone();
         let cx = next.typed().numbering.cx();
         let Some(styles) = edit(&mut next, &cx) else { return Outcome::Unchanged("the list didn't change") };
         let mut tx = self.begin(label);
         let added = self.docx.added_lists.clone();
-        if self.step(&mut tx, Step::Resolver { resolver: Some(Rc::new(next)), added }).is_err() {
+        if self.step(&mut tx, Step::Definitions { definitions: Some(Rc::new(next)), added }).is_err() {
             self.abort(tx);
             return Outcome::Unchanged("the list didn't change");
         }
@@ -616,7 +616,7 @@ impl Editor {
     /// their ids and images (new images queued with the transaction).
     fn picture_changes(&mut self, levels: &[ListLevel], num: Option<i64>) -> (Vec<PicChange>, Vec<(i64, crate::docx::ResourceId)>) {
         let now = num.and_then(|n| self.list_levels(n)).unwrap_or_default();
-        let mut next_id = self.doc.resolver.as_ref().and_then(|r| r.cascade().lists.pictures.keys().max().copied()).map_or(0, |m| m + 1);
+        let mut next_id = self.doc.definitions.as_ref().and_then(|r| r.cascade().lists.pictures.keys().max().copied()).map_or(0, |m| m + 1);
         let mut add = Vec::new();
         let changes = levels
             .iter()
@@ -662,7 +662,7 @@ impl Editor {
         if let Some(out) = self.refuse_like(&crate::api::command::Command::SetListDefinition(Default::default())) {
             return out;
         }
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let mut defs = change.levels;
         defs.truncate(9);
         let mut d = ListDefinitionChange { levels: defs.iter().map(|l| l.level.clone()).collect(), apply_to: change.apply_to, name: change.name };
@@ -784,7 +784,7 @@ impl Editor {
     }
 
     pub(super) fn set_numbering_value(&mut self, v: NumberingValue, fonts: &Fonts) -> Outcome {
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let Some((first, num, ilvl)) = self.selection_list() else { return Outcome::unavailable("the selection isn't in a list") };
         let c = res.cascade();
         let Some(abstract_id) = c.abstract_of(ListId(num)).map(|a| a.0) else { return Outcome::Unchanged("no list") };
@@ -850,7 +850,7 @@ impl Editor {
 }
 
 /// Adds picture bullets: each a picture bullet of its image, which the writer gives its part.
-fn add_pictures(n: &mut crate::docx::resolvers::NumberingEdits, pics: &[(i64, crate::docx::ResourceId)], cx: &Cx) {
+fn add_pictures(n: &mut crate::docx::definitions::NumberingEdits, pics: &[(i64, crate::docx::ResourceId)], cx: &Cx) {
     for &(id, image) in pics {
         let rel = format!("{}{}", crate::docx::write::NEW_IMAGE, image.0);
         n.add_picture(id, crate::docx::list_xml::new_picture_xml(id, &rel, cx), rel, image);
@@ -931,7 +931,7 @@ pub(super) fn linkable(styles: &crate::format::StyleSheet, id: &str) -> Option<S
 
 /// Makes and ends the style links of the list `abstract_id`: a linked style is numbered with its level, and no other
 /// level of any list links to it; an unlinked one numbered with the list no longer is. Answers the styles changed.
-fn link_styles(r: &mut Resolvers, links: &[Link], abstract_id: i64) -> Option<Vec<String>> {
+fn link_styles(r: &mut Definitions, links: &[Link], abstract_id: i64) -> Option<Vec<String>> {
     let mut changed = Vec::new();
     for (id, to) in links {
         let typed = r.typed();

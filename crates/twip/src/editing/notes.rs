@@ -4,9 +4,9 @@ use std::rc::Rc;
 
 use crate::docx::char_props::RunDirect;
 use crate::docx::char_props::RunXml;
+use crate::docx::definitions::Definitions;
 use crate::docx::para_props::ParaDirect;
 use crate::docx::para_props::ParaXml;
-use crate::docx::resolvers::Resolvers;
 use crate::docx::write::props::Cx;
 use crate::docx::{Block, Inline, NoteKind, Paragraph, Run};
 use crate::font::Fonts;
@@ -45,7 +45,7 @@ fn note_styles(kind: NoteKind) -> (&'static str, &'static str) {
 }
 
 /// `run` in `to`'s reference style (superscript where the document has none), when it is in `from`'s.
-fn restyled_ref(res: &Resolvers, base: &crate::format::CharProps, run: &Run, from: NoteKind, to: NoteKind) -> Option<Run> {
+fn restyled_ref(res: &Definitions, base: &crate::format::CharProps, run: &Run, from: NoteKind, to: NoteKind) -> Option<Run> {
     let (old, new) = (note_styles(from).0, note_styles(to).0);
     let mut e = run_xml::edit_of(run);
     if e.style.as_deref() != Some(old) {
@@ -64,7 +64,7 @@ fn restyled_ref(res: &Resolvers, base: &crate::format::CharProps, run: &Run, fro
 
 /// A converted note's paragraph in `to`'s text style when it is in `from`'s, and its marks in `to`'s reference
 /// style; whether it changed.
-fn restyle_note_para(res: &Resolvers, cx: &Cx, p: &mut Paragraph, from: NoteKind, to: NoteKind) -> bool {
+fn restyle_note_para(res: &Definitions, cx: &Cx, p: &mut Paragraph, from: NoteKind, to: NoteKind) -> bool {
     let (old, new) = (note_styles(from).1, note_styles(to).1);
     let mut changed = false;
     if p.style.style_id.as_deref() == Some(old) {
@@ -146,7 +146,7 @@ impl Editor {
         if !self.takes_notes() {
             return Outcome::unavailable("notes are inserted in the body");
         }
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let cx = self.cx();
         let (ref_style, text_style) = note_styles(kind);
         let has = |s: &str| res.has_style(s);
@@ -435,7 +435,7 @@ impl Editor {
             let (para, offset) = f.para_offset()?;
             Some((story(other(kind), *map.get(&(kind, id))?), para, offset))
         });
-        let res = self.doc.resolver.clone();
+        let res = self.doc.definitions.clone();
         let cx = self.cx();
         let mut tx = self.begin("Convert Notes");
         for (from, id, _, _) in &moves {

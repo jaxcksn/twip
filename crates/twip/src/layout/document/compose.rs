@@ -59,7 +59,7 @@ mod scanned {
 
     pub(super) fn style_refs(cx: &PassCx, pages: &[PageRecord], i: usize) -> Vec<(String, String)> {
         let on = |k: usize| pages.get(k).map(|p| &p.effects.paras[..]).unwrap_or(&[]);
-        let resolver = cx.doc.resolver.as_deref();
+        let resolver = cx.doc.definitions.as_deref();
         cx.facts
             .wanted
             .iter()
@@ -120,7 +120,7 @@ impl Found {
 
 /// A heading's level and chapter number: a "heading N" paragraph numbered through its style, its label without the
 /// level text's literal text before the first and after the last number.
-fn chapter_of(r: &crate::docx::resolvers::Resolvers, p: &Paragraph) -> Option<(i64, String)> {
+fn chapter_of(r: &crate::docx::definitions::Definitions, p: &Paragraph) -> Option<(i64, String)> {
     let (label, ListRef { list: ListId(num), level: ilvl }, id) = (p.list.as_ref()?, p.style.num?, p.style.style_id.as_deref()?);
     let c = r.cascade();
     let level = c.styles.get(id)?.name.as_deref()?.to_lowercase().strip_prefix("heading ")?.parse().ok()?;
@@ -139,7 +139,7 @@ fn chapter_of(r: &crate::docx::resolvers::Resolvers, p: &Paragraph) -> Option<(i
 }
 
 pub(super) fn chapters(doc: &Document) -> Chapters {
-    let Some(r) = doc.resolver.as_deref().filter(|_| doc.sections.iter().any(|s| s.chapter.is_some())) else { return Chapters::default() };
+    let Some(r) = doc.definitions.as_deref().filter(|_| doc.sections.iter().any(|s| s.chapter.is_some())) else { return Chapters::default() };
     fn walk<'a>(blocks: &'a [Block], si: usize, out: &mut Vec<(usize, &'a Paragraph)>) {
         for b in blocks {
             match b {
@@ -357,7 +357,7 @@ pub(crate) fn finish_page(pg: &PageRecord, section_page: usize) -> (Rc<PageFragm
 fn style_refs(cx: &PassCx, run: &PassRun, i: usize) -> Vec<(String, String)> {
     let pages = &run.pages;
     let on = |k: usize| pages.get(k).map(|p| &p.effects.paras[..]).unwrap_or(&[]);
-    let resolver = cx.doc.resolver.as_deref();
+    let resolver = cx.doc.definitions.as_deref();
     cx.facts
         .wanted
         .iter()

@@ -216,7 +216,7 @@ impl Editor {
     /// `p`'s formatting without its numbering, re-resolved: the cells after a numbered paragraph's first.
     fn unnumbered(&self, p: &Paragraph) -> Option<std::rc::Rc<ParaStyle>> {
         p.style.num.filter(|&ListRef { list: ListId(id), level: _ }| id != 0)?;
-        let res = self.doc.resolver.clone()?;
+        let res = self.doc.definitions.clone()?;
         let cx = self.cx();
         let c = res.cascade();
         let styled = matches!(c.chain_para(c.paragraph_style(p.style.style_id.as_deref())).list, Some(crate::format::ListChoice::In(n)) if n.0 != 0);

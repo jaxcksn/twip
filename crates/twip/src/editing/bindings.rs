@@ -278,7 +278,7 @@ impl Editor {
     pub(super) fn control_own_run(&self, c: ControlId, para: ParaId, start: usize) -> Option<crate::docx::Run> {
         let (ctl, p) = (self.doc.controls.get(&c)?, self.index.para(&self.doc, para)?);
         Some(binding::own_run(&ctl.props, &p.inlines, start, &p.mark, |r| {
-            let res = self.doc.resolver.as_deref()?;
+            let res = self.doc.definitions.as_deref()?;
             let cx = self.cx();
             let at = crate::layout::Unit(p.inlines[..start.min(p.inlines.len())].iter().map(|i| i.units() as u32).sum());
             let base = self.run_base(para, at, res, &cx)?;

@@ -63,14 +63,14 @@ fn section(blocks: Vec<Block>) -> Section {
 }
 
 /// A resolver with no styles, numbering or theme part: the application defaults.
-fn bare_resolver() -> crate::docx::resolvers::Resolvers {
-    let env = crate::docx::resolvers::Surroundings { theme: ThemeFonts::parse(None), ..Default::default() };
-    crate::docx::resolvers::Resolvers::new(crate::docx::resolvers::TypedDefs::read(None, None, None, env).0)
+fn bare_resolver() -> crate::docx::definitions::Definitions {
+    let env = crate::docx::definitions::Surroundings { theme: ThemeFonts::parse(None), ..Default::default() };
+    crate::docx::definitions::Definitions::new(crate::docx::definitions::TypedDefs::read(None, None, None, env).0)
 }
 
 /// A paragraph from authored properties alone; the XML path's resolver of the styles `defs` writes gives the
 /// effective formatting.
-fn paragraph(defs: &crate::docx::resolvers::Resolvers, ppr: &ParaProps, runs: &[(&str, RunProps)], id: u64) -> Paragraph {
+fn paragraph(defs: &crate::docx::definitions::Definitions, ppr: &ParaProps, runs: &[(&str, RunProps)], id: u64) -> Paragraph {
     let t = defs.typed();
     let (cx, colours) = (t.styles.cx(), defs.colours());
     let root =
@@ -94,8 +94,8 @@ fn paragraph(defs: &crate::docx::resolvers::Resolvers, ppr: &ParaProps, runs: &[
     }
 }
 
-fn sourceless(paras: Vec<Paragraph>, res: &crate::docx::resolvers::Resolvers) -> Document {
-    Document { sections: vec![section(paras.into_iter().map(Block::Para).collect())], resolver: Some(Rc::new(res.clone())), ..Default::default() }
+fn sourceless(paras: Vec<Paragraph>, res: &crate::docx::definitions::Definitions) -> Document {
+    Document { sections: vec![section(paras.into_iter().map(Block::Para).collect())], definitions: Some(Rc::new(res.clone())), ..Default::default() }
 }
 
 fn runs(d: &Document, para: usize) -> Vec<(String, Run)> {
@@ -523,12 +523,12 @@ enum Piece {
 }
 
 /// A paragraph in paragraph style `style` whose runs carry typed authored properties alone, resolved over its base.
-fn typed(res: &crate::docx::resolvers::Resolvers, style: Option<&str>, pieces: Vec<(Piece, CharProps)>) -> Paragraph {
+fn typed(res: &crate::docx::definitions::Definitions, style: Option<&str>, pieces: Vec<(Piece, CharProps)>) -> Paragraph {
     typed_para(res, crate::format::ParaProps { style: style.map(Into::into), ..Default::default() }, pieces)
 }
 
 /// A paragraph with typed authored properties `props` whose runs carry typed authored properties alone.
-fn typed_para(res: &crate::docx::resolvers::Resolvers, props: crate::format::ParaProps, pieces: Vec<(Piece, CharProps)>) -> Paragraph {
+fn typed_para(res: &crate::docx::definitions::Definitions, props: crate::format::ParaProps, pieces: Vec<(Piece, CharProps)>) -> Paragraph {
     let p = crate::docx::para_xml::with(res, crate::docx::para_props::ParaDirect::typed(Rc::new(props)), None, None);
     let run = |props: CharProps| {
         let own = (props != CharProps::default()).then(|| Rc::new(props));
@@ -572,7 +572,7 @@ fn built() -> Document {
     use crate::document::paragraph::ListId;
     use crate::format::{ListChoice, ParaBorders, ParaFlag, ParaProps as Typed, Shading, TabStop, TextBorder};
     let new = crate::docx::read(&with_strong_style("<w:p/>")).expect("reads");
-    let mut res = (**new.resolver.as_ref().expect("styles")).clone();
+    let mut res = (**new.definitions.as_ref().expect("styles")).clone();
     res.set_numbering_part(NUMBERING);
     let res = Rc::new(res);
     let mut flags = crate::format::ParaFlags::default();
@@ -628,7 +628,7 @@ fn built() -> Document {
     ];
     Document {
         sections: vec![section(paras.into_iter().map(Block::Para).collect())],
-        resolver: Some(res),
+        definitions: Some(res),
         settings: new.settings,
         ..Default::default()
     }
@@ -716,7 +716,7 @@ fn a_document_built_from_typed_properties_generates_a_package_that_reads_back_th
 #[test]
 fn typed_paragraph_formatting_with_no_xml_survives_a_paragraph_command() {
     let fonts = fonts();
-    let res = built().resolver.expect("styles");
+    let res = built().definitions.expect("styles");
     let indented = crate::format::ParaProps { indent_left: Some(36.0), ..Default::default() };
     let p = typed_para(&res, indented, vec![(Piece::Text("Indented"), CharProps::default())]);
     let doc = Document { sections: vec![section(vec![Block::Para(p)])], ..built() };
@@ -758,7 +758,7 @@ fn a_built_table_and_page_setup_generate_a_package_that_reads_back_the_same() {
     let fonts = fonts();
     let mut doc = built();
     // The line numbers' run, as reading derives it
-    doc.line_number_run = doc.resolver.as_deref().map(crate::docx::line_number_run);
+    doc.line_number_run = doc.definitions.as_deref().map(crate::docx::line_number_run);
     let mut e = labelled(doc, fonts);
     e.complete(fonts);
     let run = |e: &mut Editor, v: serde_json::Value| {
@@ -831,14 +831,14 @@ fn generating_names_what_it_cannot_write() {
 
     // A picture bullet's image isn't written
     let mut doc = built();
-    let mut res = (**doc.resolver.as_ref().expect("styles")).clone();
+    let mut res = (**doc.definitions.as_ref().expect("styles")).clone();
     let xml = crate::docx::list_xml::new_picture_xml(0, "rId99", &res.typed().numbering.cx());
     res.add_picture(0, xml, "rId99".into(), crate::docx::ResourceId(0));
-    doc.resolver = Some(Rc::new(res));
+    doc.definitions = Some(Rc::new(res));
     assert_eq!(unsupported(&doc), GenerateError::Unsupported("a picture bullet"));
 
     // Formatting with nothing authored behind it: a centred paragraph, a bold run.
-    let res = doc.resolver.clone().expect("styles");
+    let res = doc.definitions.clone().expect("styles");
     let centred = paragraph(&res, &ParaProps { jc: Some(Jc::Center), ..Default::default() }, &[("centred", RunProps::default())], next_para_id());
     let doc = Document { sections: vec![section(vec![Block::Para(centred)])], ..built() };
     assert_eq!(unsupported(&doc), GenerateError::Unsupported("paragraph formatting that is not its own"));
@@ -853,7 +853,7 @@ fn a_document_with_no_styles_generates_the_application_defaults() {
     let fonts = fonts();
     let new = built();
     let mut res = bare_resolver();
-    res.set_rules(new.resolver.as_ref().expect("styles").cascade().rules);
+    res.set_rules(new.definitions.as_ref().expect("styles").cascade().rules);
     let mut doc = sourceless(vec![typed(&res, None, vec![(Piece::Text("Bold at the defaults"), on(Toggle::BOLD))])], &res);
     doc.settings = new.settings;
     let mut e = Editor::with_document(doc, fonts);

@@ -138,7 +138,7 @@ impl Editor {
     }
 
     pub(in crate::editing) fn set_paragraph_style(&mut self, id: StyleId, fonts: &Fonts) -> Outcome {
-        let kind = self.doc.resolver.as_ref().and_then(|r| r.cascade().styles.get(&id.0).map(|s| s.kind));
+        let kind = self.doc.definitions.as_ref().and_then(|r| r.cascade().styles.get(&id.0).map(|s| s.kind));
         match kind {
             None => return Outcome::invalid("no such style"),
             Some(crate::format::StyleKind::Character) => return Outcome::invalid("a character style; applyCharacterStyle applies it"),
@@ -151,7 +151,7 @@ impl Editor {
     pub(crate) fn para_list(&self, para: ParaId) -> Option<bool> {
         let p = self.index.para(&self.doc, para)?;
         let ListRef { list: ListId(id), level: ilvl } = p.style.num.filter(|ListRef { list: ListId(id), level: _ }| *id != 0)?;
-        let c = self.doc.resolver.as_ref()?.cascade();
+        let c = self.doc.definitions.as_ref()?.cascade();
         Some(crate::docx::list_xml::format_name(c.level(ListId(id), ilvl)?.format.as_ref()) == "bullet")
     }
 

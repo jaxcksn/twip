@@ -45,7 +45,7 @@ impl Editor {
     pub fn table_style_preview(&self, raw: &str) -> Option<Vec<Block>> {
         use crate::docx::model::{Cell, Row, Table, VMerge};
         use crate::docx::table_props::{tbl_props, tc_props};
-        let (next, id) = self.doc.resolver.as_ref()?.with_style_xml(raw)?;
+        let (next, id) = self.doc.definitions.as_ref()?.with_style_xml(raw)?;
         let c = next.cascade();
         let look = crate::docx::props::Look { first_row: true, last_row: true, first_col: true, last_col: true, no_h_band: false, no_v_band: false };
         let whole = tbl_props(&c.table_region(Some(&id), &[]).format.table, &c.colours);
@@ -149,7 +149,7 @@ impl Editor {
 
     /// A character in a font, for a symbol picker's tile.
     pub fn character_preview(&self, family: &str, c: char) -> Option<Vec<Block>> {
-        let res = self.doc.resolver.as_ref()?;
+        let res = self.doc.definitions.as_ref()?;
         let para = crate::docx::para_xml::with(res, Default::default(), None, None);
         let base = run_xml::plain(res, &para.base);
         let run = Rc::new(RunStyle { ascii: family.to_string(), h_ansi: family.to_string(), cs: family.to_string(), ..(*base).clone() });
@@ -159,7 +159,7 @@ impl Editor {
     /// What a style's preview shows: its gallery tile (`tile`), or the style dialog's preview box: a greyed previous
     /// paragraph, text in the style, a greyed following paragraph.
     pub fn style_preview(&self, raw: &str, tile: bool) -> Option<Vec<Block>> {
-        let (next, id) = self.doc.resolver.as_ref()?.with_style_xml(raw)?;
+        let (next, id) = self.doc.definitions.as_ref()?.with_style_xml(raw)?;
         let kind = next.style_kind(&id)?;
         let (ppr, direct) = match kind {
             StyleKind::Character => {

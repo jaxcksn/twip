@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::docx::char_props::RunXml;
+use crate::docx::definitions::{Definitions, TypedDefs};
 use crate::docx::para_props::ParaXml;
-use crate::docx::resolvers::{Resolvers, TypedDefs};
 use crate::docx::{Block, Inline, Paragraph, Run, RunStyle};
 use crate::font::Fonts;
 
@@ -274,7 +274,7 @@ impl Editor {
     /// Where content `f` was copied from.
     pub fn paste_from(&self, f: &Fragment) -> PasteFrom {
         let Some(o) = f.origin.as_deref().filter(|o| o.key != self.key) else { return PasteFrom::Within };
-        let (Some(from), Some(here)) = (o.resolver.as_deref(), self.doc.resolver.as_deref()) else { return PasteFrom::Between };
+        let (Some(from), Some(here)) = (o.definitions.as_deref(), self.doc.definitions.as_deref()) else { return PasteFrom::Between };
         let mut ids: Vec<&str> = Vec::new();
         each_para(&f.blocks, &mut |p| {
             ids.extend(p.style.style_id.as_deref());
@@ -708,7 +708,7 @@ impl Editor {
     /// properties (its own list kept), each run the formatting at the caret with the bold, italic and underline
     /// applied to only part of `f` kept; hyperlinks keep their style. Its structure, pictures and fields stay.
     pub(super) fn merged(&self, f: &Fragment) -> Option<Fragment> {
-        let res = self.doc.resolver.clone()?;
+        let res = self.doc.definitions.clone()?;
         let caret = self.selection.ordered(&self.index).map(|(a, _)| a)?;
         let (para, _) = caret.para_offset()?;
         let dest = self.index.para(&self.doc, para)?;
@@ -759,7 +759,7 @@ impl Editor {
     /// The list items of `blocks` (not those in cells) made items of list `num`, each at its level: Merge Pasted
     /// Lists with Surrounding Lists, for a paste landing in an item of `num`.
     pub(super) fn join_list(&self, blocks: &mut [Block], num: i64) {
-        let Some(res) = self.doc.resolver.clone() else { return };
+        let Some(res) = self.doc.definitions.clone() else { return };
         let cx = self.cx();
         for b in blocks {
             let Block::Para(p) = b else { continue };
@@ -959,7 +959,7 @@ impl Editor {
             _ => return None,
         };
         // Where it lands on the line is cut away: what it draws is what's kept.
-        let style = crate::docx::para_xml::resolve(self.doc.resolver.as_ref()?, &Default::default(), None, None).style;
+        let style = crate::docx::para_xml::resolve(self.doc.definitions.as_ref()?, &Default::default(), None, None).style;
         let para = Paragraph {
             style: Rc::new(style),
             mark: run,
@@ -1002,8 +1002,8 @@ impl Editor {
 
     /// Pasted paragraphs from another document whose style differs here (`from`'s of the same name) given their own
     /// look as formatting applied directly, as Keep Source Formatting gives it: what they showed there, they show here.
-    pub(super) fn keep_para_looks(&self, blocks: &mut [Block], from: &Resolvers) {
-        let Some(res) = self.doc.resolver.clone() else { return };
+    pub(super) fn keep_para_looks(&self, blocks: &mut [Block], from: &Definitions) {
+        let Some(res) = self.doc.definitions.clone() else { return };
         let cx = self.cx();
         let (theirs, ours) = (from.typed(), res.typed());
         // A style this document lacks comes with the paste, its look with it.
@@ -1130,7 +1130,7 @@ fn para_look(src: &crate::docx::ParaStyle, here: &crate::docx::ParaStyle, e: &mu
 /// A run of pasted text merged into where it lands: the formatting at the caret (`at`), with `src`'s bold, italic and
 /// underline unless all of the text had it (`all`), and its Hyperlink style.
 fn merged_run(
-    res: &Resolvers,
+    res: &Definitions,
     base: &crate::format::CharProps,
     at: &Run,
     src: &Run,

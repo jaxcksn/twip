@@ -6,11 +6,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::document::paragraph::ListId;
 use crate::docx::char_props::RunXml;
+use crate::docx::definitions::{Definitions, TypedDefs};
 use crate::docx::list_xml::ListXml;
 use crate::docx::list_xml::{ListDefDirect, ListDirect};
 use crate::docx::para_props::ParaDirect;
 use crate::docx::para_props::ParaXml;
-use crate::docx::resolvers::{Resolvers, TypedDefs};
 use crate::docx::review::{AuthorId, FormatChange, People, RevisionMark, TableChange};
 use crate::docx::style_xml::StyleDef;
 use crate::docx::style_xml::StyleEditError;
@@ -35,7 +35,7 @@ pub struct Origin {
     /// Each image the fragment shows, by its id there.
     pub images: Resources,
     /// Its styles and lists.
-    pub resolver: Option<Rc<crate::docx::resolvers::Resolvers>>,
+    pub definitions: Option<Rc<crate::docx::definitions::Definitions>>,
     /// Its people.
     pub people: People,
     /// Its main part's root start tag, whose namespace declarations its paragraphs' XML is written under (empty for a
@@ -48,7 +48,7 @@ impl Origin {
     pub(super) fn of_document(mut doc: crate::docx::Document, src: Option<&crate::docx::Source>, f: &mut Fragment) -> Rc<Origin> {
         let images = used_images(f).into_iter().filter_map(|k| Some((k, doc.images.remove(k)?))).collect();
         let main = root_tag(src);
-        Rc::new(Origin { key: next_key(), images, resolver: doc.resolver, people: doc.people, main })
+        Rc::new(Origin { key: next_key(), images, definitions: doc.definitions, people: doc.people, main })
     }
 }
 
@@ -507,7 +507,7 @@ impl Editor {
         Rc::new(Origin {
             key: self.key,
             images,
-            resolver: self.doc.resolver.clone(),
+            definitions: self.doc.definitions.clone(),
             people: self.doc.people.clone(),
             main: root_tag(self.docx.source.as_deref()),
         })
@@ -557,7 +557,7 @@ impl Editor {
             }
         });
         self.import_people(blocks, refs, &origin.people);
-        if let Some(from) = &origin.resolver {
+        if let Some(from) = &origin.definitions {
             let main = (!origin.main.is_empty()).then(|| Cx::of_xml(&origin.main));
             self.import_styles(tx, blocks, refs, from, main.as_ref(), lists);
         }
@@ -591,8 +591,8 @@ impl Editor {
     /// it is based on, linked to and followed by, a list's definitions under new ids (its paragraphs and styles
     /// renumbered). A style this document has keeps its own definition, as Word's default (destination styles) does.
     /// `main`: how the paragraphs' own XML is written there (`None`: as its styles are).
-    fn import_styles(&mut self, tx: &mut Tx, blocks: &mut [Block], refs: &mut Refs, from: &Resolvers, main: Option<&Cx>, brought: &mut Lists) {
-        let Some(res) = self.doc.resolver.clone() else { return };
+    fn import_styles(&mut self, tx: &mut Tx, blocks: &mut [Block], refs: &mut Refs, from: &Definitions, main: Option<&Cx>, brought: &mut Lists) {
+        let Some(res) = self.doc.definitions.clone() else { return };
         let theirs = from.typed();
         let scx = theirs.styles.cx();
         let (their_styles, their_lists) = (&theirs.cascade.styles, &theirs.cascade.lists);
@@ -661,7 +661,7 @@ impl Editor {
         xml_route::check(&copy, was, &next, brought);
         renumber_blocks(blocks, refs, pcx, &brought.nums);
         let added = self.docx.added_lists.clone();
-        if self.step(tx, Step::Resolver { resolver: Some(Rc::new(next)), added }).is_ok() {
+        if self.step(tx, Step::Definitions { definitions: Some(Rc::new(next)), added }).is_ok() {
             tx.stale_paras.extend(paras);
             tx.stale_tables.extend(tables);
         }
@@ -723,7 +723,7 @@ impl Copied<'_> {
     /// kind's default (this document's stays); one based on itself through its chain comes without its base. Each is
     /// written as read where that reads the same in this document's part, else from its definition. `brought` takes
     /// each list's and definition's id here (a list's 0 when it couldn't come).
-    fn apply(&self, next: &mut Resolvers, brought: &mut Lists) {
+    fn apply(&self, next: &mut Definitions, brought: &mut Lists) {
         let (mut free_abstract, mut free_num) = self.free;
         let ncx = next.typed().numbering.cx();
         let (theirs, their) = (self.theirs, &self.theirs.cascade.lists);
@@ -931,7 +931,7 @@ pub(super) mod xml_route {
     /// [`Copied::apply`] over the definitions' XML: each element as written there rewritten and set from its XML;
     /// with `rebind`, a definition's and a list's declaring the namespaces they have there that this document's
     /// numbering part lacks, as a style's do.
-    fn apply(c: &Copied, next: &mut Resolvers, brought: &mut Lists, rebind: bool) {
+    fn apply(c: &Copied, next: &mut Definitions, brought: &mut Lists, rebind: bool) {
         let theirs = c.theirs;
         let (scx, ncx) = (theirs.styles.cx(), theirs.numbering.cx());
         let here = next.typed().numbering.cx();
@@ -1000,7 +1000,7 @@ pub(super) mod xml_route {
     /// The copy `c` made over the XML from `was` (the definitions before it, and the lists brought before it) set
     /// against `next` and `brought`, the typed route's: the same lists each style names, the same ids taken, and
     /// each copied element compared.
-    pub(super) fn check(c: &Copied, was: (Resolvers, Lists), next: &Resolvers, brought: &Lists) {
+    pub(super) fn check(c: &Copied, was: (Definitions, Lists), next: &Definitions, brought: &Lists) {
         let (mut old, mut old_brought) = was;
         let theirs = c.theirs;
         let context = CONTEXT.with(|c| c.borrow().clone());
@@ -1050,7 +1050,7 @@ pub(super) mod xml_route {
 
     /// The styles `styles`, the definitions `abstracts` maps to and the lists `nums` maps to compared between `old` and
     /// `next`.
-    pub fn compare_parts(old: &Resolvers, next: &Resolvers, styles: &[String], nums: &HashMap<i64, i64>, abstracts: &HashMap<i64, i64>) {
+    pub fn compare_parts(old: &Definitions, next: &Definitions, styles: &[String], nums: &HashMap<i64, i64>, abstracts: &HashMap<i64, i64>) {
         let (a, b) = (old.typed(), next.typed());
         let colours = next.colours();
         let (scx, ncx) = (b.styles.cx(), b.numbering.cx());
@@ -1109,7 +1109,7 @@ mod tests {
 
     /// The numbered paragraphs of the body whose list is defined, with a definition, in the document.
     fn numbered(e: &Editor) -> usize {
-        let lists = e.document().resolver.as_ref().expect("a resolver").cascade().lists.clone();
+        let lists = e.document().definitions.as_ref().expect("a resolver").cascade().lists.clone();
         let defined = |n: ListId| lists.lists.get(&n).and_then(|l| l.def).is_some_and(|d| lists.defs.contains_key(&d));
         body(e).iter().filter(|p| p.list.is_some() && p.style.num.is_some_and(|r| defined(r.list))).count()
     }
@@ -1151,7 +1151,7 @@ mod tests {
         e.select_range(first, crate::layout::Unit(0), crate::layout::Unit(1), fonts());
         e.execute(C::SetList(Some(ListKind::Numbered)), fonts());
         e.execute(crate::editing::sub_templates::rules("SUBTEMPLATE", "Sub-templates"), fonts());
-        let defs = |e: &Editor| e.document().resolver.as_ref().expect("a resolver").typed();
+        let defs = |e: &Editor| e.document().definitions.as_ref().expect("a resolver").typed();
         let before = defs(&e);
         let own: Vec<(ListDefId, String)> = before.numbering.defs.keys().map(|k| (*k, before.def_xml(k.0).expect("written").into_owned())).collect();
         assert!(!own.is_empty(), "a list of its own");
@@ -1178,7 +1178,7 @@ mod tests {
         src.execute(crate::editing::sub_templates::rules("SUBTEMPLATE", "Sub-templates"), fonts());
         src.execute(C::EditSubTemplate(SubTemplateName { name: "FeeRow".into(), category: None }), fonts());
         let (e, frag) = paste_whole(&mut src, &blank_body("<w:p/>"));
-        let res = e.document().resolver.as_ref().expect("a resolver");
+        let res = e.document().definitions.as_ref().expect("a resolver");
         let mut styled = Vec::new();
         each_block(&mut frag.blocks.clone(), &mut |b| {
             if let Block::Para(p) = b {
@@ -1233,7 +1233,7 @@ mod tests {
         paths.retain(|p| !p.ends_with("FX-REVIEW-STORIES.docx"));
         let seen = par_map(&paths, |path| {
             let bytes = std::fs::read(path).expect("reads");
-            if crate::docx::read_editable(&bytes).ok().and_then(|(d, _)| d.resolver).is_none() {
+            if crate::docx::read_editable(&bytes).ok().and_then(|(d, _)| d.definitions).is_none() {
                 return (0, Vec::new());
             }
             let name = path.strip_prefix(crate::layout::tests::output::root()).unwrap_or(path).display().to_string();

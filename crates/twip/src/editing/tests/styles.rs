@@ -42,7 +42,7 @@ fn read_again(e: &Editor) -> Editor {
 fn a_style_edit_formats_its_users_as_a_fresh_read_does_and_undoes_in_one_step() {
     let mut e = fixture();
     let before = formatting(&e);
-    let h1 = e.document().resolver.as_ref().expect("styles").style_xml("Heading1").expect("Heading 1");
+    let h1 = e.document().definitions.as_ref().expect("styles").style_xml("Heading1").expect("Heading 1");
     let bigger = h1.replace("<w:sz w:val=\"32\"/>", "<w:sz w:val=\"40\"/>").replace("<w:b/>", "<w:b/><w:color w:val=\"C00000\"/>");
     let out = e.edit_styles("Modify Style", |s| s.set_xml(bigger), fonts());
     assert!(matches!(out, super::super::commands::Outcome::Changed(_)), "{out:?}");
@@ -81,7 +81,7 @@ fn formatting_commands_edit_a_style_and_leave_the_document_alone() {
     use crate::api::value::{Alignment, Points};
     let mut e = fixture();
     let (revision, before) = (e.revision(), formatting(&e));
-    let raw = e.document().resolver.as_ref().expect("styles").style_xml("Heading1").expect("Heading 1");
+    let raw = e.document().definitions.as_ref().expect("styles").style_xml("Heading1").expect("Heading 1");
     let commands = vec![
         C::SetFontSize(Points(20.0)),
         C::SetItalic(true),
@@ -112,7 +112,7 @@ fn formatting_commands_edit_a_style_and_leave_the_document_alone() {
 fn a_character_style_takes_character_formatting() {
     use crate::api::command::Command as C;
     let mut e = fixture();
-    let raw = e.document().resolver.as_ref().expect("styles").style_xml("Emph").expect("Emph");
+    let raw = e.document().definitions.as_ref().expect("styles").style_xml("Emph").expect("Emph");
     let xml = e.format_style_xml(&raw, vec![C::SetBold(true), C::SetItalic(false)], fonts()).expect("formats it");
     assert!(xml.contains("<w:b/>") && xml.contains("<w:i w:val=\"0\"/>"), "{xml}");
 }

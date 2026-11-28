@@ -429,7 +429,7 @@ impl Editor {
         if targets.is_empty() {
             return Outcome::Unchanged("nothing to change");
         }
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let cx = self.cx();
         // What each paragraph's level goes in
         let mut plan: Vec<(ParaId, Target)> = Vec::with_capacity(targets.len());
@@ -450,7 +450,7 @@ impl Editor {
         let mut styles: [Option<String>; 9] = Default::default();
         for n in wanted {
             let id = format!("Heading{n}");
-            let found = |e: &Editor| e.doc.resolver.as_ref().and_then(|r| super::list_defs::linkable(&r.cascade().styles, &id));
+            let found = |e: &Editor| e.doc.definitions.as_ref().and_then(|r| super::list_defs::linkable(&r.cascade().styles, &id));
             if found(self).is_none()
                 && let Some(b) = crate::services::styles::builtin::built_in(&id)
             {
@@ -462,7 +462,7 @@ impl Editor {
                 return Outcome::Unchanged("the heading style couldn't be added");
             }
         }
-        let res = self.doc.resolver.clone().unwrap_or(res);
+        let res = self.doc.definitions.clone().unwrap_or(res);
         let body = res.cascade().styles.default_paragraph.as_deref().map(str::to_string);
         let mut tx = self.begin(label);
         for (para, t) in plan {

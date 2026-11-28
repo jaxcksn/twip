@@ -3,8 +3,8 @@
 use std::rc::Rc;
 
 use crate::docx::char_props::RunDirect;
+use crate::docx::definitions::Definitions;
 use crate::docx::para_props::ParaDirect;
-use crate::docx::resolvers::Resolvers;
 use crate::docx::run_xml;
 use crate::docx::{Block, BreakKind, Inline, Paragraph, Run};
 use crate::format::{CharProps, ParaProps};
@@ -49,7 +49,7 @@ impl RichText {
         self.paragraphs.iter().map(|p| p.runs.iter().map(|r| r.text.as_str()).collect::<String>()).collect::<Vec<_>>().join("\n")
     }
 
-    pub fn to_blocks(&self, res: &Resolvers) -> Vec<Block> {
+    pub fn to_blocks(&self, res: &Definitions) -> Vec<Block> {
         let props = ParaProps { style: res.has_style("CommentText").then(|| "CommentText".into()), ..ParaProps::default() };
         let para = crate::docx::para_xml::with(res, ParaDirect::typed(Rc::new(props)), None, None);
         let style = Rc::new(para.style);

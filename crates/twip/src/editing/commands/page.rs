@@ -477,7 +477,7 @@ impl Editor {
         if self.refuse_replacing() {
             return Outcome::Unchanged("locked");
         }
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let Some(caret) = self.selection.focus() else { return Outcome::Unchanged("no caret") };
         let Some((para, _)) = caret.para_offset() else { return Outcome::Unchanged("caret at a row end") };
         if matches!(caret.story, crate::editing::position::StoryId::TextBox(_)) {

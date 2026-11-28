@@ -3075,7 +3075,7 @@ fn the_list_dialogs_open_on_the_selections_list_and_apply_their_commands() {
         .dialog_update(m, DialogPatch::DefineMultilevelList(DefineMultilevelPatch { list_name: Some("Legal".into()), ..Default::default() }))
         .expect("updates");
     s.dialog_apply(m).expect("applies");
-    let res = s.editor.document().resolver.clone().expect("lists");
+    let res = s.editor.document().definitions.clone().expect("lists");
     assert!(res.cascade().lists.defs.values().any(|a| a.name.as_deref() == Some("Legal")));
     // Define New Bullet outside a list makes one.
     caret(s, 0);
@@ -3217,7 +3217,7 @@ fn table_styles_format_their_parts_and_relay_the_tables_using_them() {
     assert_eq!(header_fill(s), Some(0xD9E2F3), "the table takes the new style");
     let saved = s.export(&ExportOptions::Docx).expect("saves").bytes.0;
     let (doc, _) = crate::docx::read_editable(&saved).expect("reads again");
-    let st = doc.resolver.as_ref().expect("styles").style_xml("GridAccent2").expect("the new style");
+    let st = doc.definitions.as_ref().expect("styles").style_xml("GridAccent2").expect("the new style");
     assert!(st.contains("w:type=\"table\"") && st.contains("firstRow") && st.contains("D9E2F3") && st.contains("band1Horz"), "{st}");
 }
 
@@ -3265,7 +3265,7 @@ fn list_styles_define_their_list_and_number_the_paragraphs() {
     assert_eq!(label(s).as_deref(), Some("Step A:"));
     let saved = s.export(&ExportOptions::Docx).expect("saves").bytes.0;
     let (doc, _) = crate::docx::read_editable(&saved).expect("reads again");
-    let res = doc.resolver.as_ref().expect("styles");
+    let res = doc.definitions.as_ref().expect("styles");
     assert!(res.cascade().lists.defs.values().any(|a| a.style_link.as_deref() == Some("OutlineSteps")), "the definition is the style's");
 }
 

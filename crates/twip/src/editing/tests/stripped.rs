@@ -13,7 +13,7 @@ use super::fonts;
 /// definitions with nothing as read.
 fn stripped(d: &crate::docx::Document) -> crate::docx::Document {
     let mut d = d.clone();
-    d.resolver = d.resolver.map(|r| {
+    d.definitions = d.definitions.map(|r| {
         let t = r.typed();
         std::rc::Rc::new(r.unanchored(t.styles.root.clone(), t.numbering.root.clone()))
     });

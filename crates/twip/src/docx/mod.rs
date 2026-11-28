@@ -8,6 +8,7 @@ pub mod binding;
 pub mod blank;
 pub mod char_props;
 pub mod comments;
+pub mod definitions;
 pub mod diagnostics;
 pub mod drawing;
 pub mod fields;
@@ -35,7 +36,6 @@ pub mod props;
 mod reader;
 #[cfg(test)]
 pub mod resolve;
-pub mod resolvers;
 pub mod review;
 pub mod run_xml;
 pub mod section;

@@ -17,7 +17,7 @@ const STYLES_TYPE: &str = "application/vnd.openxmlformats-officedocument.wordpro
 /// were, deleted ones spliced out and new ones added at the end; `w:latentStyles` and `w:docDefaults` the same.
 pub(super) fn styles(doc: &Document, session: &Session, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
     let src = session.source.as_ref().ok_or("the document was not read for editing")?;
-    let Some(res) = doc.resolver.as_ref() else { return Ok(()) };
+    let Some(res) = doc.definitions.as_ref() else { return Ok(()) };
     let typed = res.typed();
     let part = &typed.styles;
     let (colours, cx) = (typed.cascade.colours, part.cx());

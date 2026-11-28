@@ -223,7 +223,7 @@ impl Editor {
 
     /// A paragraph a new empty text box story holds.
     fn empty_story(&self) -> Option<crate::docx::Paragraph> {
-        let res = self.doc.resolver.clone()?;
+        let res = self.doc.definitions.clone()?;
         let r = crate::docx::para_xml::with(&res, Default::default(), None, None);
         let mark = std::rc::Rc::new(run_xml::resolve(&res, &r.base, Default::default(), false));
         Some(crate::docx::Paragraph {

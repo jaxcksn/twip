@@ -201,7 +201,7 @@ impl FindFormat {
 
     fn style_kind(&self, e: &Editor) -> Option<StyleKind> {
         let id = self.style.as_ref()?;
-        Some(e.document().resolver.as_ref().and_then(|r| r.style_kind(&id.0)).unwrap_or(StyleKind::Paragraph))
+        Some(e.document().definitions.as_ref().and_then(|r| r.style_kind(&id.0)).unwrap_or(StyleKind::Paragraph))
     }
 
     fn asks_characters(&self, e: &Editor) -> bool {

@@ -6,7 +6,7 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-use crate::docx::resolvers::Resolvers;
+use crate::docx::definitions::Definitions;
 use crate::docx::review::{Comment, CommentId, RangeKind, RangeMark, Timestamp};
 use crate::docx::write::props::Cx;
 use crate::docx::{Block, Inline, Paragraph, Raw, Run};
@@ -504,7 +504,7 @@ impl Editor {
         Some(Step::Text { para, range: Unit(at)..Unit(at), with, edges: Edges { under, ..Edges::default() } })
     }
 
-    fn new_comment(&mut self, id: CommentId, parent: Option<CommentId>, body: &RichText, author: &str, res: &Resolvers) -> Comment {
+    fn new_comment(&mut self, id: CommentId, parent: Option<CommentId>, body: &RichText, author: &str, res: &Definitions) -> Comment {
         let who = self.doc.people.author(author, None);
         let initials = self.doc.people.get(who).and_then(|p| p.initials.clone()).unwrap_or_else(|| initials(author).into());
         let secs = crate::clock::unix_secs();
@@ -524,7 +524,7 @@ impl Editor {
         }
     }
 
-    fn reference_run(&self, para: ParaId, at: Unit, res: &Resolvers, cx: &Cx) -> Option<Run> {
+    fn reference_run(&self, para: ParaId, at: Unit, res: &Definitions, cx: &Cx) -> Option<Run> {
         if res.has_style("CommentReference") {
             let base = self.run_base(para, at, res, cx)?;
             let p = crate::format::CharProps { style: Some("CommentReference".into()), ..Default::default() };
@@ -541,7 +541,7 @@ impl Editor {
         }
         let (Some((pa, oa)), Some((pb, ob))) = (a.para_offset(), b.para_offset()) else { return self.comment_refused("no text range") };
         let (oa, ob) = if a.same_place(&b) { self.word_around(pa, oa) } else { (oa, ob) };
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let cx = self.cx();
         let Some(run) = self.reference_run(pb, ob, &res, &cx) else { return Outcome::Unchanged("no paragraph") };
         let id = CommentId(self.doc.review_ids.next_revision_id());
@@ -581,7 +581,7 @@ impl Editor {
             return self.comment_refused("no such comment");
         }
         let root = self.doc.comments.root(to);
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let cx = self.cx();
         let id = CommentId(self.doc.review_ids.next_revision_id());
         let mut reply = self.new_comment(id, Some(root), body, author, &res);
@@ -602,7 +602,7 @@ impl Editor {
         out
     }
 
-    fn reply_markers(&mut self, tx: &mut Tx, root: CommentId, id: CommentId, res: &Resolvers, cx: &Cx) -> Result<(), StepError> {
+    fn reply_markers(&mut self, tx: &mut Tx, root: CommentId, id: CommentId, res: &Definitions, cx: &Cx) -> Result<(), StepError> {
         let m = self.comment_marks().get(&root).copied().unwrap_or_default();
         let ranged = m.start.is_some() && m.end.is_some();
         if let Some(after) = m.reference.or(m.end) {
@@ -627,7 +627,7 @@ impl Editor {
     }
 
     pub fn edit_comment(&mut self, id: CommentId, body: &RichText, fonts: &Fonts) -> Outcome {
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let Some(mut c) = self.doc.comments.by_id.get(&id).cloned() else { return self.comment_refused("no such comment") };
         c.body = body.to_blocks(&res);
         let mut tx = self.begin("Edit Comment");

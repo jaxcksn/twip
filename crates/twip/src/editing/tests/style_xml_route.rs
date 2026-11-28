@@ -35,7 +35,7 @@ fn over_fixtures(test: &str, check: impl Fn(&str, &Document, &Session, &mut Diff
     let found = super::par_map(&paths, |path| {
         let mut diffs = Differences::default();
         if let Ok((d, dx)) = crate::docx::read_editable(&std::fs::read(path).expect("reads"))
-            && d.resolver.is_some()
+            && d.definitions.is_some()
             && dx.source.is_some()
         {
             let name = path.file_name().map_or_else(String::new, |n| n.to_string_lossy().into_owned());
@@ -52,7 +52,7 @@ fn over_fixtures(test: &str, check: impl Fn(&str, &Document, &Session, &mut Diff
 
 /// Each fixture's styles, in order, at most `n` of them.
 fn styles_of(d: &Document, n: usize) -> Vec<StyleDef> {
-    let typed = d.resolver.as_ref().expect("a resolver").typed();
+    let typed = d.definitions.as_ref().expect("a resolver").typed();
     let mut ids: Vec<&Rc<str>> = typed.styles.styles.keys().collect();
     ids.sort();
     ids.into_iter().take(n).map(|id| typed.styles.styles[id].clone()).collect()
@@ -503,7 +503,7 @@ fn regions(def: &StyleDef) -> Vec<Option<RegionKind>> {
 fn formatting_a_style_writes_as_its_xml_patch_did() {
     over_fixtures("formatting a style", |path, d, _, diffs| {
         let (chars, paras) = (char_edits(), para_edits());
-        let typed = d.resolver.as_ref().expect("a resolver").typed();
+        let typed = d.definitions.as_ref().expect("a resolver").typed();
         let (cx, colours) = (typed.styles.cx(), typed.cascade.colours);
         for def in styles_of(d, 60) {
             let raw = def.xml(&colours, &cx).into_owned();
@@ -694,7 +694,7 @@ fn table_commands() -> Vec<Command> {
 fn a_table_style_s_table_commands_write_as_its_xml_patch_did() {
     over_fixtures("table commands on a table style", |path, d, dx, diffs| {
         let e = Editor::with_session(d.clone(), dx.clone(), fonts());
-        let typed = d.resolver.as_ref().expect("a resolver").typed();
+        let typed = d.definitions.as_ref().expect("a resolver").typed();
         let (cx, colours) = (typed.styles.cx(), typed.cascade.colours);
         for def in styles_of(d, usize::MAX).into_iter().filter(|s| s.get().kind == StyleKind::Table).take(30) {
             let raw = def.xml(&colours, &cx).into_owned();
@@ -760,7 +760,7 @@ fn meta_changes() -> Vec<StyleMetaChange> {
 #[test]
 fn a_style_s_list_flags_write_as_their_xml_patch_did() {
     over_fixtures("a style's list flags", |path, d, _, diffs| {
-        let typed = d.resolver.as_ref().expect("a resolver").typed();
+        let typed = d.definitions.as_ref().expect("a resolver").typed();
         let (cx, colours) = (typed.styles.cx(), typed.cascade.colours);
         for def in styles_of(d, usize::MAX) {
             let raw = def.xml(&colours, &cx).into_owned();
@@ -782,7 +782,7 @@ fn a_style_s_list_flags_write_as_their_xml_patch_did() {
 fn xml_selection(
     p: &crate::docx::Paragraph,
     run: Option<&crate::docx::Run>,
-    res: &crate::docx::resolvers::Resolvers,
+    res: &crate::docx::definitions::Definitions,
     main: &Cx,
 ) -> (Option<String>, Option<String>) {
     let cx = res.cx();
@@ -838,7 +838,7 @@ fn xml_updated(was: &str, ppr: Option<String>, rpr: Option<String>, character: b
 #[test]
 fn a_style_updated_to_the_selection_writes_as_its_xml_patch_did() {
     over_fixtures("a style updated to the selection", |path, d, dx, diffs| {
-        let res = d.resolver.as_deref().expect("a resolver");
+        let res = d.definitions.as_deref().expect("a resolver");
         let typed = res.typed();
         let (cx, colours) = (typed.styles.cx(), typed.cascade.colours);
         let main = Cx::of_xml(&dx.source.as_ref().expect("a source").xml);
@@ -920,7 +920,7 @@ fn xml_defaults(defaults: &str, edited: &str, cx: &Cx) -> Option<String> {
 fn the_document_defaults_write_as_their_xml_patch_did() {
     over_fixtures("the document defaults", |path, d, _, diffs| {
         let (chars, paras) = (char_edits(), para_edits());
-        let typed = d.resolver.as_ref().expect("a resolver").typed();
+        let typed = d.definitions.as_ref().expect("a resolver").typed();
         let (cx, colours) = (typed.styles.cx(), typed.cascade.colours);
         let empty = DefaultsDef::typed(Rc::default());
         for was in [typed.styles.defaults.as_ref(), None] {
@@ -1048,7 +1048,7 @@ fn xml_latent(held: Option<String>, b: &crate::services::styles::builtin::BuiltI
 fn the_latent_styles_write_as_their_xml_patch_did() {
     use crate::services::styles::builtin::BUILT_IN;
     over_fixtures("the latent styles", |path, d, _, diffs| {
-        let typed = d.resolver.as_ref().expect("a resolver").typed();
+        let typed = d.definitions.as_ref().expect("a resolver").typed();
         let (cx, colours) = (typed.styles.cx(), typed.cascade.colours);
         let held = typed.styles.latent.as_ref();
         for b in [&BUILT_IN[0], &BUILT_IN[2], &BUILT_IN[150], &BUILT_IN[BUILT_IN.len() - 1]] {
@@ -1222,7 +1222,7 @@ fn built_in_styles_are_their_xml() {
 /// Formatting commands run on a style as the XML route ran them: its table commands; the character and paragraph
 /// formatting commands are [`formatting_a_style_writes_as_its_xml_patch_did`]'s.
 fn xml_format_style_with(e: &Editor, raw: String, kind: StyleKind, region: Option<&'static str>, commands: &[Command]) -> Result<String, Error> {
-    let cx = e.doc.resolver.as_ref().ok_or_else(|| Error::unavailable("no styles"))?.typed().styles.cx();
+    let cx = e.doc.definitions.as_ref().ok_or_else(|| Error::unavailable("no styles"))?.typed().styles.cx();
     for c in commands {
         super::super::commands::bounds::bounds(c)?;
         if kind != StyleKind::Table {
@@ -1238,7 +1238,7 @@ fn xml_format_style_with(e: &Editor, raw: String, kind: StyleKind, region: Optio
 
 fn xml_referable(e: &Editor, id: &StyleId, kind: StyleKind, what: &str) -> Result<Option<String>, Error> {
     use crate::services::styles::builtin;
-    let typed = e.doc.resolver.as_ref().ok_or_else(|| Error::unavailable("no styles"))?.typed();
+    let typed = e.doc.definitions.as_ref().ok_or_else(|| Error::unavailable("no styles"))?.typed();
     match typed.cascade.styles.get(&id.0) {
         Some(s) if s.kind == kind => Ok(None),
         Some(_) => Err(Error::invalid(format!("the {what} is a style of another type"))),
@@ -1252,7 +1252,7 @@ fn xml_referable(e: &Editor, id: &StyleId, kind: StyleKind, what: &str) -> Resul
 /// A style's XML with `change` written into it, as the XML route wrote it, with the other styles to write with it.
 fn xml_changed_style(e: &Editor, raw: String, kind: StyleKind, change: &StyleChange) -> Result<(String, Vec<String>), Error> {
     use crate::services::styles::{check_name, describe};
-    let typed = e.doc.resolver.as_ref().ok_or_else(|| Error::unavailable("no styles"))?.typed();
+    let typed = e.doc.definitions.as_ref().ok_or_else(|| Error::unavailable("no styles"))?.typed();
     let (part, styles) = (&*typed.styles, &*typed.cascade.styles);
     let xml = |id: &str| typed.style_xml(id).map(std::borrow::Cow::into_owned).unwrap_or_default();
     let cx = part.cx();
@@ -1464,7 +1464,7 @@ fn style_changes(kind: StyleKind, others: &crate::format::StyleSheet, list: Opti
 fn a_style_s_changes_write_as_their_xml_patch_did() {
     over_fixtures("a style's changes", |path, d, dx, diffs| {
         let mut e = Editor::with_session(d.clone(), dx.clone(), fonts());
-        let typed = d.resolver.as_ref().expect("a resolver").typed();
+        let typed = d.definitions.as_ref().expect("a resolver").typed();
         let (cx, colours) = (typed.styles.cx(), typed.cascade.colours);
         let list = typed.cascade.lists.lists.keys().map(|l| l.0).filter(|n| *n != 0).min();
         for def in styles_of(d, 40) {
@@ -1500,7 +1500,7 @@ fn a_style_s_changes_write_as_their_xml_patch_did() {
 #[test]
 fn a_new_style_writes_as_its_xml_did() {
     over_fixtures("a new style", |path, d, dx, diffs| {
-        let res = d.resolver.as_deref().expect("a resolver");
+        let res = d.definitions.as_deref().expect("a resolver");
         let typed = res.typed();
         let (cx, colours) = (typed.styles.cx(), typed.cascade.colours);
         let main = Cx::of_xml(&dx.source.as_ref().expect("a source").xml);
@@ -1699,7 +1699,7 @@ fn dialog_changes(v: &StyleDialog) -> Vec<StyleDialog> {
 fn the_style_dialog_writes_as_its_xml_patch_did() {
     over_fixtures("the style dialog", |path, d, dx, diffs| {
         let e = Editor::with_session(d.clone(), dx.clone(), fonts());
-        let typed = d.resolver.as_ref().expect("a resolver").typed();
+        let typed = d.definitions.as_ref().expect("a resolver").typed();
         let (cx, colours) = (typed.styles.cx(), typed.cascade.colours);
         let mut opened: Vec<StyleDialog> =
             styles_of(d, 25).iter().filter_map(|s| e.style_dialog_open(StyleOpen::Modify(StyleId(s.get().id.to_string()))).ok()).collect();
@@ -1973,14 +1973,14 @@ fn a_style_from_formatting_under_another_prefix_keeps_it() {
         let (out, id) = e.create_style(new, fonts());
         assert!(matches!(out, super::super::commands::Outcome::Changed(_)), "{out:?}");
         let id = id.expect("its id").0;
-        let typed = e.document().resolver.as_ref().expect("styles").typed();
+        let typed = e.document().definitions.as_ref().expect("styles").typed();
         let (cx, colours) = (typed.styles.cx(), typed.cascade.colours);
         let xml = typed.styles.styles[id.as_str()].xml(&colours, &cx).into_owned();
         assert!(xml.contains(&format!("<w:pPr><w:jc w:val=\"{jc}\"/></w:pPr><w:rPr>{run}</w:rPr>")), "paragraph {k}: {xml}");
         // The XML route's copy: the paragraph's properties as the main part writes them, which the styles part
         // doesn't read
         let d = e.document();
-        let res = d.resolver.as_deref().expect("styles");
+        let res = d.definitions.as_deref().expect("styles");
         let p = d.sections.iter().flat_map(|s| &s.blocks).filter_map(|b| if let crate::docx::Block::Para(p) = b { Some(p) } else { None }).nth(k);
         let p = p.expect("the paragraph");
         let (ppr, rpr) = xml_selection(p, p.inlines.iter().find_map(|i| i.run()), res, &Cx::of_xml(&e.docx().source.as_ref().expect("a source").xml));
@@ -1996,14 +1996,14 @@ fn a_table_part_emptied_and_edited_again_keeps_its_type() {
     let formatting = vec![Command::SetCellShading(None), Command::SetCellAlignment(CellAlignment::Center)];
     let change =
         StyleChange { parts: vec![TablePartFormatting { part: TableStylePart::OddBandedRows, clear: false, formatting }], ..Default::default() };
-    let typed = e.document().resolver.as_ref().expect("styles").typed();
+    let typed = e.document().definitions.as_ref().expect("styles").typed();
     let (cx, colours) = (typed.styles.cx(), typed.cascade.colours);
     let raw = typed.styles.styles["BandedGrid"].xml(&colours, &cx).into_owned();
     let (old, _) = xml_changed_style(&e, raw, StyleKind::Table, &change).expect("the XML route writes it");
     assert!(old.contains("<w:tblStylePr><w:tcPr><w:vAlign w:val=\"center\"/></w:tcPr></w:tblStylePr>"), "the XML route: {old}");
     let out = e.modify_style(&StyleId("BandedGrid".into()), change, fonts());
     assert!(matches!(out, super::super::commands::Outcome::Changed(_)), "{out:?}");
-    let typed = e.document().resolver.as_ref().expect("styles").typed();
+    let typed = e.document().definitions.as_ref().expect("styles").typed();
     let xml = typed.styles.styles["BandedGrid"].xml(&colours, &cx).into_owned();
     assert_eq!(xml.matches("<w:tblStylePr").count(), xml.matches("<w:tblStylePr w:type=").count(), "{xml}");
     assert!(xml.contains("<w:tblStylePr w:type=\"band1Horz\"><w:tcPr><w:vAlign w:val=\"center\"/></w:tcPr></w:tblStylePr>"), "{xml}");

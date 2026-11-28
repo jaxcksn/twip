@@ -963,7 +963,7 @@ impl Editor {
             color_theme: None,
         });
         // The document's default table style, else Table Grid.
-        let has = |id: &str| self.doc.resolver.as_ref().is_some_and(|r| r.has_style(id));
+        let has = |id: &str| self.doc.definitions.as_ref().is_some_and(|r| r.has_style(id));
         let style = self.doc.settings.default_table_style.clone().filter(|s| has(s)).or_else(|| has("TableGrid").then(|| "TableGrid".to_string()));
         let grid_style = style.is_some();
         let cell = |w: f64, blocks: Vec<Block>| Cell {

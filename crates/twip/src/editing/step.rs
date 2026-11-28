@@ -116,13 +116,13 @@ pub enum Step {
         data: Option<Vec<u8>>,
     },
     /// The styles and numbering tables, and the lists added since reading.
-    Resolver {
-        resolver: Option<Rc<crate::docx::resolvers::Resolvers>>,
+    Definitions {
+        definitions: Option<Rc<crate::docx::definitions::Definitions>>,
         added: Vec<crate::docx::AddedList>,
     },
     /// The style, numbering and theme tables with a family renamed, and the renames the save applies.
     Fonts {
-        resolver: Option<Rc<crate::docx::resolvers::Resolvers>>,
+        definitions: Option<Rc<crate::docx::definitions::Definitions>>,
         renames: Vec<crate::docx::font_table::FontRename>,
     },
     DefaultTab(f64),
@@ -287,7 +287,12 @@ impl Step {
     pub fn lays_out(&self) -> bool {
         !matches!(
             self,
-            Step::Control { .. } | Step::DataPart { .. } | Step::Comment { .. } | Step::AddImage { .. } | Step::Resolver { .. } | Step::Fonts { .. }
+            Step::Control { .. }
+                | Step::DataPart { .. }
+                | Step::Comment { .. }
+                | Step::AddImage { .. }
+                | Step::Definitions { .. }
+                | Step::Fonts { .. }
         )
     }
 }
@@ -719,7 +724,7 @@ fn units_of(inlines: &[Inline]) -> u32 {
 
 /// The line numbers' run, from the styles now in place.
 fn refresh_line_number_run(doc: &mut Document) {
-    if let Some(res) = &doc.resolver {
+    if let Some(res) = &doc.definitions {
         doc.line_number_run = Some(crate::docx::line_number_run(res));
     }
 }
@@ -1034,19 +1039,19 @@ impl Step {
                 let data = Some(doc.images.remove(image).ok_or(StepError::Missing)?);
                 Ok(Applied { inverse: Step::AddImage { image, data }, map: Map::Same, hint: None })
             }
-            Step::Resolver { resolver, added } => {
-                let resolver = std::mem::replace(&mut doc.resolver, resolver);
+            Step::Definitions { definitions, added } => {
+                let definitions = std::mem::replace(&mut doc.definitions, definitions);
                 in_step(doc);
                 let added = std::mem::replace(&mut docx.added_lists, added);
                 refresh_line_number_run(doc);
-                Ok(Applied { inverse: Step::Resolver { resolver, added }, map: Map::Same, hint: None })
+                Ok(Applied { inverse: Step::Definitions { definitions, added }, map: Map::Same, hint: None })
             }
-            Step::Fonts { resolver, renames } => {
-                let resolver = std::mem::replace(&mut doc.resolver, resolver);
+            Step::Fonts { definitions, renames } => {
+                let definitions = std::mem::replace(&mut doc.definitions, definitions);
                 in_step(doc);
                 let renames = std::mem::replace(&mut docx.font_renames, renames);
                 refresh_line_number_run(doc);
-                Ok(Applied { inverse: Step::Fonts { resolver, renames }, map: Map::Same, hint: None })
+                Ok(Applied { inverse: Step::Fonts { definitions, renames }, map: Map::Same, hint: None })
             }
             Step::DefaultTab(v) => {
                 let old = std::mem::replace(&mut doc.settings.default_tab, v);
@@ -1364,7 +1369,7 @@ fn join_sections(doc: &mut Document, docx: &mut Session, section: usize, count: 
 /// In a debug build, the document's typed definitions brought in step with its resolver, which checks they agree.
 fn in_step(doc: &Document) {
     if cfg!(debug_assertions)
-        && let Some(r) = &doc.resolver
+        && let Some(r) = &doc.definitions
     {
         r.typed();
     }

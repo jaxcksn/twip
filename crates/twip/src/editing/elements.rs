@@ -477,7 +477,7 @@ pub fn touched(inverses: &[super::step::Step]) -> Touched {
             }
             Step::Para { para, .. } | Step::FieldViews { para, .. } => paras.push(*para),
             Step::AddImage { .. }
-            | Step::Resolver { .. }
+            | Step::Definitions { .. }
             | Step::DefaultTab(_)
             | Step::Hyphenation(_)
             | Step::PageSettings(_)

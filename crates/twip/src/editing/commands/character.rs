@@ -247,7 +247,7 @@ impl Editor {
             e.whole(Prop::Style);
         };
         let Some(id) = id else { return self.format_runs_typed("Style", &unstyle, fonts) };
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         // A linked paragraph style's character half.
         let c = res.cascade();
         let id = match c.styles.get(&id.0) {
@@ -661,7 +661,7 @@ impl Editor {
     /// Holds the selection's formatting: its first character's (the caret's, collapsed), and its paragraph's when it
     /// holds a whole paragraph or is collapsed, as Word's format painter does.
     pub(in crate::editing) fn copy_formatting(&mut self) -> Outcome {
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::unavailable("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::unavailable("no styles") };
         let typed = res.typed();
         let cx = typed.styles.cx();
         let ranges = self.selected_ranges();
@@ -735,7 +735,7 @@ impl Editor {
     /// paragraphs' when the painter took a paragraph's. One undo step.
     pub(in crate::editing) fn paste_formatting(&mut self, fonts: &Fonts) -> Outcome {
         let Some((held, held_ppr)) = self.painter.clone() else { return Outcome::unavailable("no formatting held") };
-        if self.doc.resolver.is_none() {
+        if self.doc.definitions.is_none() {
             return Outcome::unavailable("no styles");
         }
         self.joined("Paste Formatting", fonts, |e| {
@@ -753,7 +753,7 @@ impl Editor {
 /// Paragraph style `style`'s character formatting under the direct formatting `own`: its linked character style, else
 /// the run properties of it and its bases.
 fn paragraph_style_props(
-    typed: &crate::docx::resolvers::TypedDefs,
+    typed: &crate::docx::definitions::TypedDefs,
     style: Option<&str>,
     own: CharProps,
     cx: &crate::docx::write::props::Cx,

@@ -1292,7 +1292,7 @@ mod tests {
     fn editing_a_style_while_tracking_records_no_revision() {
         let mut e = open("FX-STYLES.docx");
         e.complete(fonts());
-        let h1 = e.document().resolver.as_ref().expect("styles").style_xml("Heading1").expect("Heading 1");
+        let h1 = e.document().definitions.as_ref().expect("styles").style_xml("Heading1").expect("Heading 1");
         let bigger = h1.replace("<w:sz w:val=\"32\"/>", "<w:sz w:val=\"40\"/>").replace("<w:b/>", "<w:b/><w:color w:val=\"C00000\"/>");
         assert_ne!(bigger, h1, "the style changes");
         e.set_author("Author A", None);

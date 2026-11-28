@@ -16,7 +16,7 @@ impl Editor {
     fn list_here(&mut self) -> Option<(i64, usize, Vec<ListLevel>, String, u32)> {
         let (para, num, ilvl) = self.selection_list()?;
         let levels = self.list_levels(num)?;
-        let c = self.doc.resolver.as_ref()?.cascade();
+        let c = self.doc.definitions.as_ref()?.cascade();
         let name =
             c.abstract_of(ListId(num)).and_then(|a| c.lists.defs.get(&a)).and_then(|a| a.name.as_deref().map(str::to_string)).unwrap_or_default();
         let value = self.list_value(para).unwrap_or(1);
@@ -25,7 +25,7 @@ impl Editor {
 
     /// The number of a list paragraph, counted as the labels are.
     fn list_value(&self, para: crate::layout::ParaId) -> Option<u32> {
-        let res = self.doc.resolver.as_ref()?;
+        let res = self.doc.definitions.as_ref()?;
         let cx = self.cx();
         let c = res.cascade();
         let mut counters = crate::format::counters::Counters::default();
@@ -161,7 +161,7 @@ impl Editor {
 
     /// Makes a list of `levels` (one undo step), for a style to number with; its `numId`.
     pub fn add_list(&mut self, levels: &[ListLevel], fonts: &crate::font::Fonts) -> (super::commands::Outcome, i64) {
-        let Some(res) = self.doc.resolver.clone() else { return (super::commands::Outcome::Unchanged("no styles"), 0) };
+        let Some(res) = self.doc.definitions.clone() else { return (super::commands::Outcome::Unchanged("no styles"), 0) };
         let (abstract_id, num_id) = res.cascade().lists.free_ids();
         let (abstract_id, num_id) = (abstract_id.0, num_id.0);
         let levels = list_defs::complete(levels);
@@ -183,7 +183,7 @@ impl Editor {
     /// numbers with when it has none.
     pub(super) fn define_style_list(&mut self, id: &str, levels: &[ListLevel], fonts: &crate::font::Fonts) -> super::commands::Outcome {
         use super::commands::Outcome;
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let typed = res.typed();
         let c = &*typed.cascade;
         let num = crate::docx::para_props::num_id(c.chain_para(Some(id)).list).filter(|n| *n != 0 && c.lists.lists.contains_key(&ListId(*n)));
@@ -227,7 +227,7 @@ impl Editor {
                 if matches!(out, Outcome::Refused(_) | Outcome::Unchanged(_)) {
                     return out;
                 }
-                let typed = self.doc.resolver.as_ref().map(|r| r.typed());
+                let typed = self.doc.definitions.as_ref().map(|r| r.typed());
                 let Some(style) = typed.as_ref().and_then(|t| list_defs::style_holder(t, id)) else { return out };
                 self.edit_styles("New Style", |s| s.set(list_defs::style_numbered(&style, Some((num_id, 0)))), fonts)
             }

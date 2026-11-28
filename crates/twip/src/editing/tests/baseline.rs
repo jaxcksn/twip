@@ -577,7 +577,7 @@ fn fixtures() -> impl Iterator<Item = (std::path::PathBuf, Document, Session)> {
     crate::layout::tests::output::fixtures(&crate::layout::tests::output::root().join("fixtures"), &mut paths);
     paths.into_iter().filter_map(|path| {
         let (d, dx) = crate::docx::read_editable(&std::fs::read(&path).expect("reads")).ok()?;
-        (d.resolver.is_some() && dx.source.is_some()).then_some((path, d, dx))
+        (d.definitions.is_some() && dx.source.is_some()).then_some((path, d, dx))
     })
 }
 

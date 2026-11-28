@@ -366,7 +366,7 @@ impl Editor {
             v
         };
         let cx = self.cx();
-        let theme = self.doc.resolver.as_deref().map_or_else(crate::docx::props::ThemeColours::default, |r| r.cascade().colours);
+        let theme = self.doc.definitions.as_deref().map_or_else(crate::docx::props::ThemeColours::default, |r| r.cascade().colours);
         let mut tx = self.begin("Page Borders");
         let mut changed = false;
         for section in 0..self.doc.sections.len() {

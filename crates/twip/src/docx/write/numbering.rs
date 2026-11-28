@@ -17,7 +17,7 @@ const NUMBERING_TYPE: &str = "application/vnd.openxmlformats-officedocument.word
 /// has them (picture bullets first, then the definitions, then the `w:num`s).
 pub(super) fn numbering(doc: &Document, session: &Session, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
     let src = session.source.as_ref().ok_or("the document was not read for editing")?;
-    let Some(res) = doc.resolver.as_ref() else { return Ok(()) };
+    let Some(res) = doc.definitions.as_ref() else { return Ok(()) };
     let typed = res.typed();
     let n = &typed.numbering;
     let (colours, cx) = (typed.cascade.colours, n.cx());

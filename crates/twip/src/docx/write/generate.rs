@@ -1,7 +1,7 @@
 //! A package from the model alone: the writer against a new document's package, every node unanchored
 
 use crate::docx::char_props::RunXml;
-use crate::docx::resolvers::Resolvers;
+use crate::docx::definitions::Definitions;
 use crate::docx::table_props::TableXml;
 use std::fmt;
 use std::rc::Rc;
@@ -42,10 +42,10 @@ impl std::error::Error for GenerateError {}
 /// that names it; nothing is left out.
 pub fn generate(doc: &Document) -> Result<Vec<u8>, GenerateError> {
     let (blank, blank_session) = super::super::read_editable(&super::super::blank::blank_docx()).map_err(GenerateError::Write)?;
-    let (Some(src), Some(new_res)) = (blank_session.source, blank.resolver.as_deref()) else {
+    let (Some(src), Some(new_res)) = (blank_session.source, blank.definitions.as_deref()) else {
         return Err(GenerateError::Write("the blank package reads without its source".into()));
     };
-    let res = doc.resolver.as_deref().ok_or(GenerateError::Unsupported("a document without styles"))?;
+    let res = doc.definitions.as_deref().ok_or(GenerateError::Unsupported("a document without styles"))?;
     covered(doc, &blank, res, new_res)?;
     let cx = Cx::of(&src);
     let section = page(&doc.sections[0], &blank.sections[0], blocks(&doc.sections[0].blocks, res, &cx, None)?)?;
@@ -63,19 +63,19 @@ pub fn generate(doc: &Document) -> Result<Vec<u8>, GenerateError> {
         sections: vec![section],
         properties: doc.properties.clone(),
         settings: doc.settings.clone(),
-        resolver: Some(Rc::new(res)),
+        definitions: Some(Rc::new(res)),
         ..Default::default()
     };
     let session = Session { source: Some(src), edited_sections: if edited { [0].into() } else { Default::default() }, ..Default::default() };
     let bytes = super::save(&out, &session).map_err(GenerateError::Write)?;
     let (back, _) = super::super::read_editable(&bytes).map_err(GenerateError::Write)?;
     reads_back(&out.sections[0], &back)?;
-    definitions_read_back(out.resolver.as_deref(), back.resolver.as_deref())?;
+    definitions_read_back(out.definitions.as_deref(), back.definitions.as_deref())?;
     Ok(bytes)
 }
 
 /// Body content unanchored: paragraphs (in `region` when they are in a cell) and tables.
-fn blocks(blocks: &[Block], res: &Resolvers, cx: &Cx, region: Option<&TableRegion>) -> Result<Vec<Block>, GenerateError> {
+fn blocks(blocks: &[Block], res: &Definitions, cx: &Cx, region: Option<&TableRegion>) -> Result<Vec<Block>, GenerateError> {
     blocks
         .iter()
         .map(|b| match b {
@@ -88,7 +88,7 @@ fn blocks(blocks: &[Block], res: &Resolvers, cx: &Cx, region: Option<&TableRegio
 /// `t` unanchored: its table style reference among its own properties, which the writer writes, as it does a new
 /// table's, from its resolved properties; its rows' properties, exceptions and cells' properties as their typed
 /// properties write them; its cells' content in their table style regions.
-fn table(t: &Table, res: &Resolvers, cx: &Cx) -> Result<Table, GenerateError> {
+fn table(t: &Table, res: &Definitions, cx: &Cx) -> Result<Table, GenerateError> {
     let fail = |what| Err(GenerateError::Unsupported(what));
     if t.change.is_some() || t.grid_change.is_some() {
         return fail("a tracked change");
@@ -180,7 +180,7 @@ fn reads_back(s: &Section, back: &Document) -> Result<(), GenerateError> {
 /// the list definitions and lists, and the style links the paragraph styles' order decides, so text resolves as it
 /// did. The styles' order in the part is the writer's (new ones after the part's own, by id), which nothing resolves
 /// by but those links.
-fn definitions_read_back(ours: Option<&Resolvers>, back: Option<&Resolvers>) -> Result<(), GenerateError> {
+fn definitions_read_back(ours: Option<&Definitions>, back: Option<&Definitions>) -> Result<(), GenerateError> {
     let (Some(ours), Some(back)) = (ours, back) else { return Err(GenerateError::Write("the package reads back without its styles".into())) };
     let (a, b) = (ours.cascade(), back.cascade());
     let (x, y) = (&*a.styles, &*b.styles);
@@ -228,7 +228,7 @@ fn same_tables(a: &[Block], b: &[Block]) -> bool {
 
 /// The document-wide state generating writes, or keeps as a new document has it: one section, with no headers or
 /// footers, and nothing outside the body.
-fn covered(doc: &Document, blank: &Document, res: &Resolvers, new_res: &Resolvers) -> Result<(), GenerateError> {
+fn covered(doc: &Document, blank: &Document, res: &Definitions, new_res: &Definitions) -> Result<(), GenerateError> {
     let fail = |what| Err(GenerateError::Unsupported(what));
     let [s] = doc.sections.as_slice() else { return fail("more than one section") };
     if s.headers.iter().chain(&s.footers).any(Option::is_some) || !doc.stories.is_empty() {
@@ -274,7 +274,7 @@ fn covered(doc: &Document, blank: &Document, res: &Resolvers, new_res: &Resolver
 
 /// `p` unanchored (in `region` when it is in a cell), its style reference written as direct formatting, once its
 /// formatting is known to follow from what is written.
-fn paragraph(p: &Paragraph, res: &Resolvers, cx: &Cx, region: Option<&TableRegion>) -> Result<Paragraph, GenerateError> {
+fn paragraph(p: &Paragraph, res: &Definitions, cx: &Cx, region: Option<&TableRegion>) -> Result<Paragraph, GenerateError> {
     let fail = |what| Err(GenerateError::Unsupported(what));
     let c = res.cascade();
     if p.style.num.is_some_and(|n| !c.lists.lists.contains_key(&n.list)) {
@@ -330,7 +330,7 @@ fn paragraph(p: &Paragraph, res: &Resolvers, cx: &Cx, region: Option<&TableRegio
 
 /// `r` with its authored properties written where `cx` describes, once its formatting is known to follow from them
 /// over `base`.
-fn run(r: &Run, res: &Resolvers, base: &crate::format::CharProps, cx: &Cx) -> Result<Run, GenerateError> {
+fn run(r: &Run, res: &Definitions, base: &crate::format::CharProps, cx: &Cx) -> Result<Run, GenerateError> {
     if !r.rev.is_empty() {
         return Err(GenerateError::Unsupported("a tracked change"));
     }

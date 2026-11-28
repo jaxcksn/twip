@@ -8,7 +8,7 @@ use crate::api::services::{StyleDialog, StyleDialogType, StyleOpen, TableStylePa
 use crate::api::state::{CharacterFormatting, ParagraphFormatting, Tri};
 use crate::api::value::{AutoOr, NoneOr, StyleId};
 use crate::document::format::{Jc, ShadingPattern, Width};
-use crate::docx::resolvers::TypedDefs;
+use crate::docx::definitions::TypedDefs;
 use crate::docx::style_xml::StyleDef;
 use crate::docx::style_xml::StyleXml;
 use crate::font::Fonts;
@@ -221,7 +221,7 @@ impl Editor {
 
     /// Opens the style dialog: on a style, or on a new style from the selection's formatting.
     pub fn style_dialog_open(&self, open: StyleOpen) -> Result<StyleDialog, Error> {
-        let res = self.doc.resolver.as_ref().ok_or_else(|| Error::unavailable("no styles"))?;
+        let res = self.doc.definitions.as_ref().ok_or_else(|| Error::unavailable("no styles"))?;
         let typed = res.typed();
         let styles = &*typed.cascade.styles;
         let pending = match &open {
@@ -248,7 +248,7 @@ impl Editor {
     /// description.
     fn style_values(&self, pending: &StyleDef, open: StyleOpen, part: TableStylePart) -> Result<StyleDialog, Error> {
         use crate::docx::table_props::{tbl_props, tc_props};
-        let res = self.doc.resolver.as_ref().ok_or_else(|| Error::unavailable("no styles"))?;
+        let res = self.doc.definitions.as_ref().ok_or_else(|| Error::unavailable("no styles"))?;
         let mut next = (**res).clone();
         next.set_style(pending.clone()).map_err(|_| Error::invalid("not a style"))?;
         let id = pending.get().id.clone();
@@ -337,7 +337,7 @@ impl Editor {
     /// The style dialog after the user changed `now` from `was`: the formatting it shows set on the style, the
     /// name, base, following style and flags written into it, and the values read again.
     pub fn style_dialog_update(&mut self, was: &StyleDialog, now: StyleDialog, fonts: &Fonts) -> Result<StyleDialog, Error> {
-        let res = self.doc.resolver.clone().ok_or_else(|| Error::unavailable("no styles"))?;
+        let res = self.doc.definitions.clone().ok_or_else(|| Error::unavailable("no styles"))?;
         let typed = res.typed();
         if now.border != was.border {
             super::commands::bounds::border(now.border.as_ref())?;
@@ -428,7 +428,7 @@ impl Editor {
     /// Applies the style dialog: the style added or changed (a new paragraph or linked style applied to the selected
     /// paragraphs, a character style to the selected text), as one undo step.
     pub fn style_dialog_apply(&mut self, v: StyleDialog, fonts: &Fonts) -> Outcome {
-        let Some(mut res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(mut res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         if let StyleOpen::Modify(id) = &v.open
             && let Some(def) = built_in_definition(&res.typed(), &id.0)
         {
@@ -584,7 +584,7 @@ impl Editor {
         let formatted = self.format_style(&start, commands, fonts);
         self.style_part = None;
         let pending = formatted?;
-        self.doc.resolver.as_ref().ok_or_else(|| Error::unavailable("no styles"))?;
+        self.doc.definitions.as_ref().ok_or_else(|| Error::unavailable("no styles"))?;
         let mut out = self.style_values(&pending, v.open.clone(), v.table_part)?;
         (out.short_form, out.kind, out.name) = (v.short_form, v.kind, v.name.clone());
         if v.kind == StyleDialogType::List && !v.list_levels.is_empty() {
@@ -595,7 +595,7 @@ impl Editor {
 
     /// The style dialog with its style's paragraphs in list `num`, or in none.
     pub fn style_dialog_numbering(&mut self, v: &StyleDialog, num: Option<i64>) -> Result<StyleDialog, Error> {
-        self.doc.resolver.as_ref().ok_or_else(|| Error::unavailable("no styles"))?;
+        self.doc.definitions.as_ref().ok_or_else(|| Error::unavailable("no styles"))?;
         let pending = numbered(&self.pending(v)?, num);
         let mut out = self.style_values(&pending, v.open.clone(), v.table_part)?;
         (out.short_form, out.kind, out.name) = (v.short_form, v.kind, v.name.clone());
@@ -610,7 +610,7 @@ impl Editor {
     ) -> Option<(crate::docx::props::TblProps, crate::docx::props::TcProps, crate::docx::props::TrProps)> {
         use crate::docx::table_props::{tbl_props, tc_props, tr_props};
         let def = self.style_of_xml(raw)?;
-        let mut next = (**self.doc.resolver.as_ref()?).clone();
+        let mut next = (**self.doc.definitions.as_ref()?).clone();
         next.set_style(def.clone()).ok()?;
         let c = next.cascade();
         let f = c.table_region(Some(&def.get().id), &part.into_iter().collect::<Vec<_>>()).format;
@@ -667,7 +667,7 @@ impl Editor {
         start: &crate::api::services::DialogValues,
         now: &crate::api::services::DialogValues,
     ) -> Result<StyleDialog, Error> {
-        self.doc.resolver.as_ref().ok_or_else(|| Error::unavailable("no styles"))?;
+        self.doc.definitions.as_ref().ok_or_else(|| Error::unavailable("no styles"))?;
         let def = table_format_edits(self.pending(v)?, region(v.table_part), start, now)?;
         let mut out = self.style_values(&def, v.open.clone(), v.table_part)?;
         (out.short_form, out.kind, out.name) = (v.short_form, v.kind, v.name.clone());

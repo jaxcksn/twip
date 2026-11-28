@@ -509,7 +509,7 @@ impl Editor {
     pub fn table_band_sizes(&self) -> Option<TableBands> {
         let tg = self.table_target()?;
         let t = self.index.table(&self.doc, tg.table)?;
-        let res = self.doc.resolver.as_ref()?;
+        let res = self.doc.definitions.as_ref()?;
         let _ = res;
         let own = t.direct.get();
         let size = |v: i64| v.clamp(1, u32::MAX as i64) as u32;
@@ -757,7 +757,7 @@ impl Editor {
                 }
             }
             TableFormat::RowProps { hidden, exceptions } => {
-                let style_jc = match (exceptions, &self.doc.resolver) {
+                let style_jc = match (exceptions, &self.doc.definitions) {
                     (Some(x), Some(res)) if x.reset => res.cascade().table_region(t.style_id.as_deref(), &[]).format.row.align,
                     _ => None,
                 };
@@ -860,7 +860,7 @@ impl Editor {
                 grid = Some(gr);
             }
             TableFormat::Bands(rows_n, cols_n) => {
-                let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+                let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
                 edit_table(&mut props, |e| {
                     if let Some(n) = rows_n {
                         e.row_band = n.map(i64::from);
@@ -884,7 +884,7 @@ impl Editor {
             TableFormat::TableAlign(j) => props.jc = *j,
             TableFormat::TableIndent(v) => (props.ind, props.ind_pct, props.ind_set) = ((v * 20.0).round() / 20.0, None, true),
             TableFormat::TableStyle(_) | TableFormat::TableLook(_) => {
-                let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+                let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
                 if let TableFormat::TableStyle(id) = f {
                     if res.style_kind(id) != Some(crate::format::StyleKind::Table) {
                         return Outcome::Unchanged("no such table style");

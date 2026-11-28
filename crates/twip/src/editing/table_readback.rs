@@ -310,7 +310,7 @@ impl Editor {
             diagonal_up: fold(cells.iter().map(|&(r, k, ..)| line(&cell(r, k).diagonals.as_deref().and_then(|d| d[1].clone())))),
         };
         let margin = |side: usize| fold(cells.iter().map(|&(r, k, ..)| Points(cell(r, k).margins[side])));
-        let res = self.doc.resolver.as_ref();
+        let res = self.doc.definitions.as_ref();
         let parse_tbl = |p: &crate::format::TableProps| -> TblProps {
             res.map_or_else(TblProps::default, |res| crate::docx::table_props::tbl_props(p, &res.cascade().colours))
         };

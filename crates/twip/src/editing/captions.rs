@@ -250,7 +250,7 @@ impl Editor {
         let Some(item) = item.or_else(|| self.caption_item()) else { return Outcome::unavailable("nothing to caption") };
         let position = c.position.unwrap_or(if matches!(item, Item::Table(_)) { CaptionPosition::Above } else { CaptionPosition::Below });
         self.begin_batch(Some("Insert Caption".into()));
-        if !self.doc.resolver.as_ref().is_some_and(|r| r.has_style("Caption"))
+        if !self.doc.definitions.as_ref().is_some_and(|r| r.has_style("Caption"))
             && let Some(b) = crate::services::styles::builtin::built_in("Caption")
         {
             self.add_built_in(b, fonts);
@@ -353,7 +353,7 @@ impl Editor {
         // Below a picture, the picture keeps with its caption.
         if position == CaptionPosition::Below
             && let Some(pic) = keep_with
-            && let (Some(res), Some(q)) = (self.doc.resolver.clone(), self.index.para(&self.doc, pic))
+            && let (Some(res), Some(q)) = (self.doc.definitions.clone(), self.index.para(&self.doc, pic))
             && !q.style.keep_next
         {
             let cx = self.cx();

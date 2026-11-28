@@ -2322,7 +2322,7 @@ pub struct Document {
     pub line_number_run: Option<Run>,
     /// The styles, numbering and theme it resolves with. `Rc`: clipboard fragments carry their source
     /// document's resolver to resolve pasted formatting.
-    pub resolver: Option<Rc<super::resolvers::Resolvers>>,
+    pub definitions: Option<Rc<super::definitions::Definitions>>,
     /// The font table's description of each family, by lowercase name: what a resolver is told about a missing one.
     pub font_descriptions: HashMap<String, super::font_table::FontDescription>,
     /// Who made the document's revisions and comments.

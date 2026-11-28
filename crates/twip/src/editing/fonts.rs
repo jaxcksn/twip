@@ -97,7 +97,7 @@ impl Editor {
     }
 
     fn replace_font_in_document(&mut self, r: &ReplaceFont, filtered: bool, fonts: &Fonts) -> Outcome {
-        let Some(res) = self.doc.resolver.clone() else { return Outcome::Unchanged("no styles") };
+        let Some(res) = self.doc.definitions.clone() else { return Outcome::Unchanged("no styles") };
         let cx = self.cx();
         let (mut changed, mut skipped) = (0u32, 0u32);
         let mut steps: Vec<Step> = Vec::new();
@@ -184,7 +184,7 @@ impl Editor {
                 changed += n;
                 let mut renames = self.docx.font_renames.clone();
                 renames.push(rename);
-                steps.push(Step::Fonts { resolver: Some(std::rc::Rc::new(renamed)), renames });
+                steps.push(Step::Fonts { definitions: Some(std::rc::Rc::new(renamed)), renames });
             }
         }
         self.made = Some(CommandResult::FontReplaced { changed, skipped });
