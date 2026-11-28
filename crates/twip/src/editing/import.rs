@@ -695,7 +695,7 @@ pub(super) fn copied_def(theirs: &TypedDefs, a: i64, id: i64, cx: &Cx) -> Option
     let held = theirs.numbering.defs.get(&ListDefId(a)).cloned().unwrap_or_else(|| ListDefDirect::typed(d.clone()));
     let held = held.moved_to(cx).unwrap_or(held);
     let mut v = (**held.get()).clone();
-    (v.id, v.origin) = (ListDefId(id), crate::format::Origin::Document);
+    (v.id, v.origin) = (ListDefId(id), crate::format::DefinedIn::Document);
     Some((held, v))
 }
 
@@ -705,7 +705,7 @@ pub(super) fn copied_list(theirs: &TypedDefs, n: i64, id: i64, def: i64, cx: &Cx
     let held = theirs.numbering.lists.get(&ListId(n)).cloned().unwrap_or_else(|| ListDirect::typed(l.clone()));
     let held = held.moved_to(cx).unwrap_or(held);
     let mut v = (**held.get()).clone();
-    (v.id, v.origin) = (ListId(id), crate::format::Origin::Document);
+    (v.id, v.origin) = (ListId(id), crate::format::DefinedIn::Document);
     let set: &[ListProp] = if v.def == Some(ListDefId(def)) { &[] } else { &[ListProp::Def] };
     v.def = Some(ListDefId(def));
     Some(held.edited(v, set))
@@ -1015,7 +1015,7 @@ pub(super) mod xml_route {
             let cx = theirs.styles.cx();
             let from_xml: Vec<i64> = num_ids(&x, &cx).into_iter().filter(|n| *n != 0).collect();
             let named = StyleDef::from_xml(&x, &cx).get().id.clone();
-            if e.origin == crate::format::Origin::Glossary && (*named != **id || from_xml != style_lists(&e.style).collect::<Vec<_>>()) {
+            if e.origin == crate::format::DefinedIn::Glossary && (*named != **id || from_xml != style_lists(&e.style).collect::<Vec<_>>()) {
                 let typed = next.style_xml(id).unwrap_or_default();
                 SEEN.with(|s| {
                     s.borrow_mut().1.push(Difference { what: format!("{context}: glossary style {id} as {named}"), xml: x.into_owned(), typed })

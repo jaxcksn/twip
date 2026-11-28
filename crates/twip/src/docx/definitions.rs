@@ -14,7 +14,7 @@ use crate::document::paragraph::ListId;
 use crate::docx::list_xml::ListXml;
 use crate::docx::style_xml::StyleXml;
 use crate::format::cascade::{Cascade, Rules};
-use crate::format::{ListDefId, Lists, Origin, StyleSheet};
+use crate::format::{DefinedIn, ListDefId, Lists, StyleSheet};
 
 /// The glossary's styles, definitions and lists as read, by the ids the document's definitions hold them under.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -32,7 +32,7 @@ impl GlossaryXml {
         let mut out = GlossaryXml::default();
         for (id, d) in &styles.styles {
             let view: Rc<str> = map.styles.view(&id.to_string()).into();
-            if sheet.styles.get(&view).is_some_and(|e| e.origin == Origin::Glossary)
+            if sheet.styles.get(&view).is_some_and(|e| e.origin == DefinedIn::Glossary)
                 && let Some(x) = xml(d.origin_xml())
             {
                 out.styles.insert(view, x);

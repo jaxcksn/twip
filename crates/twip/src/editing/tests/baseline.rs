@@ -1285,7 +1285,7 @@ fn definitions_match(res: &Baseline, c: &Cascade, numbering: &NumberingXml, as_r
         assert_eq!(c.paragraph_style(id), res.styles.paragraph_style(id), "{what}: {id:?}: as a paragraph style");
         assert_eq!(c.table_style(id), res.styles.table_style(id), "{what}: {id:?}: as a table style");
         let (e, f) = (&c.styles.styles[key], &res.styles.by_id[key]);
-        let origin = matches!(e.origin, crate::format::Origin::Glossary) == (f.origin == crate::docx::styles::StyleOrigin::Glossary);
+        let origin = matches!(e.origin, crate::format::DefinedIn::Glossary) == (f.origin == crate::docx::styles::StyleOrigin::Glossary);
         // A style's place in the part as read: an edited document's is the part it was read from, the XML path's the
         // part it is saved as
         let placed = !as_read || e.order == f.order;

@@ -26,7 +26,7 @@ use crate::docx::model::{TextEffects, ThemeColourRef};
 /// Which part of the source a definition was read from: the document's, or its glossary's (a style or list only a
 /// building block uses, kept beside the document's under an id that doesn't collide).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Origin {
+pub enum DefinedIn {
     /// The document's.
     #[default]
     Document,

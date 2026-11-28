@@ -80,7 +80,7 @@ pub fn list(doc: &Document, kind: Option<StyleType>, glossary: bool) -> Vec<Styl
                 return None;
             }
             // A style only a sub-template's glossary defines is offered while that sub-template is edited.
-            if e.origin == crate::format::Origin::Glossary && !glossary {
+            if e.origin == crate::format::DefinedIn::Glossary && !glossary {
                 return None;
             }
             // A run with no direct formatting under the document defaults and this style's chain, as text resolves.

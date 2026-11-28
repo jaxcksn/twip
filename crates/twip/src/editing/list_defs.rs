@@ -19,8 +19,8 @@ use crate::docx::style_xml::StyleXml;
 use crate::docx::write::props::Cx;
 use crate::font::Fonts;
 use crate::format::{
-    CharProps, FontHint, FontRef, LevelOverride, LevelProp, List, ListChoice, ListDef, ListDefId, ListDefProp, ListLevel as Level, ListProp, Literal,
-    MultiLevelType, Origin, OverrideProp, ParaProp, ParaProps, ParaSet, Prop, ScriptClass, ScriptFonts, Set, StyleSet, TabStop, Toggle,
+    CharProps, DefinedIn, FontHint, FontRef, LevelOverride, LevelProp, List, ListChoice, ListDef, ListDefId, ListDefProp, ListLevel as Level,
+    ListProp, Literal, MultiLevelType, OverrideProp, ParaProp, ParaProps, ParaSet, Prop, ScriptClass, ScriptFonts, Set, StyleSet, TabStop, Toggle,
     UnderlineProps,
 };
 use crate::layout::ParaId;
@@ -370,7 +370,7 @@ pub(super) fn definition(
     let mut d = old.map_or_else(new, |o| (**o.get()).clone());
     // A copy has the new id and is a new list: its nsid goes, and it isn't a list style's definition.
     let copy = old.is_some_and(|o| o.get().id.0 != id);
-    (d.id, d.origin) = (ListDefId(id), Origin::Document);
+    (d.id, d.origin) = (ListDefId(id), DefinedIn::Document);
     if copy {
         (d.nsid, d.template, d.style_link) = (None, None, None);
     }
@@ -429,7 +429,7 @@ fn overridden(old: &ListDirect, levels: Levels, pics: &[PicChange], over: &[Over
 /// A new list `id` numbered with definition `def`, each `(level, value)` of `starts` a level's start.
 pub(super) fn new_list(id: i64, def: i64, starts: &[(i64, i64)]) -> ListDirect {
     let overrides = starts.iter().map(|&(level, start)| LevelOverride { level, start: Some(start), def: None, foreign: None }).collect();
-    ListDirect::typed(Rc::new(List { id: ListId(id), def: Some(ListDefId(def)), overrides, origin: Origin::Document, foreign: None }))
+    ListDirect::typed(Rc::new(List { id: ListId(id), def: Some(ListDefId(def)), overrides, origin: DefinedIn::Document, foreign: None }))
 }
 
 /// The holder of definition `id`: the document's, else (a glossary one) its typed definition.

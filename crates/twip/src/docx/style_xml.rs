@@ -41,7 +41,7 @@ use super::xml::{W, attr, child, children, is_w, on_off, on_off_str, val};
 use crate::document::authored::Authored;
 use crate::docx::table_props::TableXml;
 use crate::format::{
-    CellSet, CharProps, Defaults, DefaultsSet, ForeignChild, ForeignProps, LatentStyle, LatentStyles, Origin, ParaProps, ParaSet, QName, Region,
+    CellSet, CharProps, Defaults, DefaultsSet, DefinedIn, ForeignChild, ForeignProps, LatentStyle, LatentStyles, ParaProps, ParaSet, QName, Region,
     RegionKind, RowSet, Set, Style, StyleEntry, StyleFormat, StyleKind, StyleProp, StyleSet, StyleSheet, TableSet,
 };
 
@@ -1527,7 +1527,7 @@ impl StylesPart {
             .iter()
             .map(|(id, (k, _))| {
                 let style = part.styles[id].get().clone();
-                (id.clone(), StyleEntry { style, order: Some(*k), origin: Origin::Document, frozen: false, word_run_defaults: false })
+                (id.clone(), StyleEntry { style, order: Some(*k), origin: DefinedIn::Document, frozen: false, word_run_defaults: false })
             })
             .collect();
         finish(&mut part.sheet, None, &mut |id, f| {
@@ -1600,7 +1600,7 @@ impl StylesPart {
 
     fn put(&mut self, def: StyleDef) {
         let id = def.get().id.clone();
-        let (order, origin) = self.sheet.styles.get(&id).map_or((None, Origin::Document), |e| (e.order, e.origin));
+        let (order, origin) = self.sheet.styles.get(&id).map_or((None, DefinedIn::Document), |e| (e.order, e.origin));
         let entry = StyleEntry { style: def.get().clone(), order, origin, frozen: false, word_run_defaults: false };
         self.sheet.styles.insert(id.clone(), entry);
         self.styles.insert(id, def);
@@ -1663,10 +1663,10 @@ impl StylesPart {
 /// on first reading, else the styles just set on working it out again; `xml_of` gives each table style's element.
 fn finish(sheet: &mut StyleSheet, fresh: Option<&[&str]>, xml_of: &mut dyn FnMut(&str, &mut dyn FnMut(Node))) {
     let mut ids: Vec<(Option<u32>, Rc<str>)> =
-        sheet.styles.values().filter(|e| e.origin == Origin::Document).map(|e| (e.order, e.style.id.clone())).collect();
+        sheet.styles.values().filter(|e| e.origin == DefinedIn::Document).map(|e| (e.order, e.style.id.clone())).collect();
     ids.sort_unstable_by(|a, b| (a.0.is_none(), a.0, &a.1).cmp(&(b.0.is_none(), b.0, &b.1)));
     let glossary: Vec<Rc<str>> =
-        sheet.paragraph_order.iter().filter(|id| sheet.styles.get(*id).is_some_and(|e| e.origin == Origin::Glossary)).cloned().collect();
+        sheet.paragraph_order.iter().filter(|id| sheet.styles.get(*id).is_some_and(|e| e.origin == DefinedIn::Glossary)).cloned().collect();
     let mut expansions = Expansions::default();
     let (mut order, mut paragraph, mut table, mut character, mut numbering) = (Vec::new(), None, None, None, None);
     for (_, id) in &ids {
@@ -1846,8 +1846,8 @@ pub fn frozen_style(e: &StyleEntry, raw: &str, colours: &ThemeColours) -> styles
         base,
         regions,
         origin: match e.origin {
-            Origin::Document => styles::StyleOrigin::Document,
-            Origin::Glossary => styles::StyleOrigin::Glossary,
+            DefinedIn::Document => styles::StyleOrigin::Document,
+            DefinedIn::Glossary => styles::StyleOrigin::Glossary,
         },
         raw: raw.to_string(),
         frozen: e.frozen,

@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::{
-    CellProps, CellSet, CharProps, FontRef, ForeignProps, Origin, ParaProps, ParaSet, RowProps, RowSet, ScriptFonts, Set, TableProps, TableSet,
+    CellProps, CellSet, CharProps, DefinedIn, FontRef, ForeignProps, ParaProps, ParaSet, RowProps, RowSet, ScriptFonts, Set, TableProps, TableSet,
 };
 use crate::document::authored::Empty;
 use crate::document::format::LineRule;
@@ -234,7 +234,7 @@ pub struct StyleEntry {
     /// Its place in the styles part as read; `None` for one made since, which comes after them by id.
     pub order: Option<u32>,
     /// Which styles part it came from.
-    pub origin: Origin,
+    pub origin: DefinedIn,
     /// A table style whose properties start from Word's defaults, not its base: it was worked out before its base
     /// was read and kept what it had then.
     pub frozen: bool,

@@ -37,8 +37,8 @@ use super::xml::{R, W, attr, attr_twips, child, children, int, on_off, on_off_st
 use crate::document::authored::Authored;
 use crate::document::paragraph::{ListId, ListSuffix};
 use crate::format::{
-    CharProps, FORMATS, ForeignChild, ForeignProps, JCS, LegacyLabel, LevelOverride, LevelProp, List, ListDef, ListDefId, ListDefProp, ListLevel,
-    ListProp, Lists, Literal, MultiLevelType, Origin, OverrideProp, ParaProps, ParaSet, PictureBullet, QName, Set, literal_name,
+    CharProps, DefinedIn, FORMATS, ForeignChild, ForeignProps, JCS, LegacyLabel, LevelOverride, LevelProp, List, ListDef, ListDefId, ListDefProp,
+    ListLevel, ListProp, Lists, Literal, MultiLevelType, OverrideProp, ParaProps, ParaSet, PictureBullet, QName, Set, literal_name,
 };
 pub use crate::format::{format_name, jc_name};
 
@@ -581,7 +581,7 @@ impl Overrides<'_, '_> {
 }
 
 fn empty_list() -> List {
-    List { id: ListId(0), def: None, overrides: Vec::new(), origin: Origin::Document, foreign: None }
+    List { id: ListId(0), def: None, overrides: Vec::new(), origin: DefinedIn::Document, foreign: None }
 }
 
 /// A `w:num` as a typed list; `None` without a `w:numId`.
@@ -1439,10 +1439,10 @@ impl NumberingXml {
 // Conversion to the XML path's numbering
 
 #[cfg(test)]
-fn origin_of(o: Origin) -> StyleOrigin {
+fn origin_of(o: DefinedIn) -> StyleOrigin {
     match o {
-        Origin::Document => StyleOrigin::Document,
-        Origin::Glossary => StyleOrigin::Glossary,
+        DefinedIn::Document => StyleOrigin::Document,
+        DefinedIn::Glossary => StyleOrigin::Glossary,
     }
 }
 

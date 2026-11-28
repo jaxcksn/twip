@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 
-use super::{CharProps, ForeignProps, Origin, ParaProps, ParaSet, Set};
+use super::{CharProps, DefinedIn, ForeignProps, ParaProps, ParaSet, Set};
 use crate::document::paragraph::{ListId, ListJc, ListSuffix};
 
 /// A list definition, by the id its source format gives it.
@@ -253,7 +253,7 @@ pub struct ListDef {
     /// Its levels, by index; `None`: no such level.
     pub levels: [Option<Rc<ListLevel>>; 9],
     /// The part it was read from.
-    pub origin: Origin,
+    pub origin: DefinedIn,
     /// What the source format wrote that this struct does not model. Owned by the adapter that read it.
     pub foreign: Option<Rc<ForeignProps>>,
 }
@@ -281,7 +281,7 @@ pub struct List {
     /// What it overrides, one per level, in level order.
     pub overrides: Vec<LevelOverride>,
     /// The part it was read from.
-    pub origin: Origin,
+    pub origin: DefinedIn,
     /// What the source format wrote that this struct does not model. Owned by the adapter that read it.
     pub foreign: Option<Rc<ForeignProps>>,
 }

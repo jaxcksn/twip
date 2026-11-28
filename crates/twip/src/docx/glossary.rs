@@ -19,7 +19,7 @@ use super::props::{ParaProps, RunProps};
 use super::styles::{StyleKind, StyleOrigin, Styles};
 use super::xml::*;
 use crate::document::paragraph::ListId;
-use crate::format::{ListChoice, ListDefId, Lists, Origin, StyleSheet};
+use crate::format::{DefinedIn, ListChoice, ListDefId, Lists, StyleSheet};
 use std::rc::Rc;
 
 mod data;
@@ -201,7 +201,7 @@ pub fn merge_definitions(styles: &mut StyleSheet, lists: &mut Lists, glossary_st
             n.0 = map.nums.view(&n.0);
         }
         s.format.char.style = s.format.char.style.as_ref().map(style);
-        e.origin = Origin::Glossary;
+        e.origin = DefinedIn::Glossary;
         if s.kind == crate::format::StyleKind::Paragraph {
             styles.paragraph_order.push(s.id.clone());
         }
@@ -216,14 +216,14 @@ pub fn merge_definitions(styles: &mut StyleSheet, lists: &mut Lists, glossary_st
             }
         }
         d.num_style_link = d.num_style_link.as_ref().map(style);
-        d.origin = Origin::Glossary;
+        d.origin = DefinedIn::Glossary;
         d.id = ListDefId(map.abstracts.view(&g.0));
         lists.defs.insert(d.id, Rc::new(d));
     }
     for (g, n) in &glossary_lists.lists {
         let mut n = (**n).clone();
         n.def = n.def.map(|d| ListDefId(map.abstracts.view(&d.0)));
-        n.origin = Origin::Glossary;
+        n.origin = DefinedIn::Glossary;
         n.id = ListId(map.nums.view(&g.0));
         lists.lists.insert(n.id, Rc::new(n));
     }
@@ -309,8 +309,8 @@ mod tests {
         assert_eq!(body[1].style.style_id.as_deref(), Some("Notice"));
         assert!(first_run(body[1]).italic);
         let sheet = &res.cascade().styles;
-        assert_eq!(sheet.styles["Notice"].origin, crate::format::Origin::Glossary);
-        assert_eq!(sheet.styles["Heading1"].origin, crate::format::Origin::Document);
+        assert_eq!(sheet.styles["Notice"].origin, crate::format::DefinedIn::Glossary);
+        assert_eq!(sheet.styles["Heading1"].origin, crate::format::DefinedIn::Document);
         // The glossary's Header is another style than the document's Header: it moves to a free id.
         assert_eq!(g.map.styles.view(&"Header".to_string()), "~g~Header");
         assert_eq!(g.map.styles.glossary(&"~g~Header".to_string()), "Header");

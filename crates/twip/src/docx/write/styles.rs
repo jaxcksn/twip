@@ -8,7 +8,7 @@ use super::super::package;
 use super::super::xml::{attr, is_w};
 use super::Splice;
 use crate::docx::style_xml::StyleXml;
-use crate::format::Origin;
+use crate::format::DefinedIn;
 
 const STYLES_REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles";
 const STYLES_TYPE: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml";
@@ -26,7 +26,7 @@ pub(super) fn styles(doc: &Document, session: &Session, parts: &mut Vec<(String,
         .sheet
         .styles
         .values()
-        .filter(|e| e.origin == Origin::Document)
+        .filter(|e| e.origin == DefinedIn::Document)
         .filter_map(|e| Some((&*e.style.id, part.styles.get(&e.style.id)?.xml(&colours, &cx).into_owned())))
         .collect();
     let defaults_raw = part.defaults.as_ref().map(|d| d.xml(&colours, &cx).into_owned());
