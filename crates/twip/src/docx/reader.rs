@@ -23,7 +23,7 @@ use super::review::{
 };
 use super::run_xml;
 use super::session::Session;
-use super::styles::ThemeFonts;
+use super::styles::theme_fonts;
 use super::table_props::{self, CellDirect, ExceptionsDirect, PreviousDirect, RowDirect, TableDirect};
 use super::xml::*;
 use crate::docx::char_props::RunXml;
@@ -361,7 +361,7 @@ pub fn frozen_resolver(bytes: &[u8]) -> Option<super::resolve::Resolver> {
     let rels = pkg.rels(&main);
     let part_of = |kind: &str| rels.values().find(|(k, _)| k == kind).map(|(_, t)| t.clone());
     let theme_xml = part_of("theme").and_then(|p| pkg.read_str(&p));
-    let theme = ThemeFonts::parse(theme_xml.as_deref());
+    let theme = theme_fonts(theme_xml.as_deref());
     let drawing_theme = crate::docx::drawing::theme::theme(theme_xml.as_deref());
     let settings_xml = part_of("settings").and_then(|p| pkg.read_str(&p));
     let settings = read_settings(settings_xml.as_deref());
@@ -427,7 +427,7 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
     let part_of = |kind: &str| rels.values().find(|(k, _)| k == kind).map(|(_, t)| t.clone());
 
     let theme_xml = part_of("theme").and_then(|p| pkg.read_str(&p));
-    let theme = ThemeFonts::parse(theme_xml.as_deref());
+    let theme = theme_fonts(theme_xml.as_deref());
     let drawing_theme = Rc::new(crate::docx::drawing::theme::theme(theme_xml.as_deref()));
     let settings_xml = part_of("settings").and_then(|p| pkg.read_str(&p));
     let settings = read_settings(settings_xml.as_deref());
@@ -569,7 +569,7 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
         let dom = roxmltree::Document::parse(&xml).map_err(|e| e.to_string())?;
         let body = child(dom.root_element(), "body").ok_or("no body")?;
         if let Some(b) = child(dom.root_element(), "background") {
-            doc.page_colour = colours.colour(b, "color", "themeColor", "themeTint", "themeShade");
+            doc.page_colour = colour(&colours, b, "color", "themeColor", "themeTint", "themeShade");
             doc.page_colour_theme = crate::docx::props::theme_ref(b, "themeColor", "themeTint", "themeShade");
             let mut src = DrawingSource { reader: &mut r, pkg: &mut *pkg };
             doc.page_fill =
@@ -886,7 +886,7 @@ fn read_divs(xml: Option<&str>, colours: &ThemeColours) -> HashMap<i64, Division
             let Some(id) = int(attr(d, "id")) else { continue };
             let m = |name: &str| child(d, name).and_then(|e| twips(val(e))).unwrap_or(0.0);
             let bdr = child(d, "divBdr");
-            let b = |name: &str| bdr.and_then(|x| child(x, name)).map(|e| Border::parse(e, colours)).filter(|b| b.visible());
+            let b = |name: &str| bdr.and_then(|x| child(x, name)).map(|e| border(e, colours)).filter(|b| b.visible());
             out.insert(
                 id,
                 Division {

@@ -15,7 +15,7 @@ use roxmltree::Node;
 use super::as_read::AsRead;
 use super::model::{PageBorders, Section, SectionPage};
 use super::prop_xml::{Compare, Out, Sink, border, border_attrs, foreign_child, push_esc};
-use super::props::{Border, ThemeColours};
+use super::props::ThemeColours;
 use super::review::SectionChange;
 use super::write::props::Cx;
 use super::xml::{W, attr, child};
@@ -96,7 +96,7 @@ pub fn same_section(a: &Section, b: &Section) -> bool {
 /// The page borders `b` (a `w:pgBorders`) draw, their colours as `colours` resolve them, around the header and the
 /// footer as given.
 pub fn effective(b: Node, colours: &ThemeColours, surround_header: bool, surround_footer: bool) -> PageBorders {
-    let side = |n| child(b, n).map(|n| Border::parse(n, colours));
+    let side = |n| child(b, n).map(|n| super::props::border(n, colours));
     PageBorders {
         top: side("top"),
         left: side("left"),

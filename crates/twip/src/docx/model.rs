@@ -3,6 +3,7 @@
 pub use crate::document::anchor::{FloatWrap, HorizontalAlign, HorizontalRelation, VerticalAlign, VerticalRelation, WrapText};
 pub use crate::document::content::{BreakKind, NoteKind};
 pub use crate::document::foreign::{Foreign, FormatId};
+pub use crate::document::format::{TextEffects, ThemeColourRef};
 pub use crate::document::ident::{ControlId, FieldId, HeaderFooterId, ResourceId, next_para_id};
 pub use crate::document::line::Underline;
 pub use crate::document::origin::Origin;
@@ -274,62 +275,6 @@ pub struct Typography {
     pub number_spacing: u32,
     /// Bit n − 1 for stylistic set n.
     pub stylistic_sets: u32,
-}
-
-/// A run's Word 2010 text effects (`w14:textFill`, `w14:textOutline`, `w14:shadow`, `w14:glow`, `w14:reflection`),
-/// each as DrawingML reads it. Each is set or not on its own, and a style chain's levels override one at a time.
-/// `w14:scene3d` and `w14:props3d` stay in the source XML: they are kept, and drawn flat.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct TextEffects {
-    /// The letters' fill in place of the text colour: none, a solid or a gradient.
-    pub fill: Option<crate::drawing::paint::Fill>,
-    pub outline: Option<crate::drawing::paint::Line>,
-    pub shadow: Option<crate::drawing::paint::OuterShadow>,
-    pub glow: Option<crate::drawing::paint::Glow>,
-    pub reflection: Option<crate::drawing::paint::Reflection>,
-}
-
-impl TextEffects {
-    pub fn is_empty(&self) -> bool {
-        *self == TextEffects::default()
-    }
-
-    /// The effects that show: without those written as off (a glow of no radius, a shadow or reflection of no size,
-    /// an outline with no fill), which is how a run turns off its style's. `None` when none shows.
-    pub fn shown(e: &Rc<TextEffects>) -> Option<Rc<TextEffects>> {
-        use crate::drawing::paint::Fill;
-        let glow = e.glow.as_ref().is_some_and(|g| g.radius.0 == 0);
-        let shadow = e.shadow.as_ref().is_some_and(|s| s.sx.0 == 0 || s.sy.0 == 0);
-        let reflection = e.reflection.as_ref().is_some_and(|r| r.sx.0 == 0 || r.sy.0 == 0);
-        let outline = e.outline.as_ref().is_some_and(|l| matches!(l.fill, None | Some(Fill::None)));
-        let shown = if glow || shadow || reflection || outline {
-            let mut s = (**e).clone();
-            if glow {
-                s.glow = None;
-            }
-            if shadow {
-                s.shadow = None;
-            }
-            if reflection {
-                s.reflection = None;
-            }
-            if outline {
-                s.outline = None;
-            }
-            Rc::new(s)
-        } else {
-            e.clone()
-        };
-        (!shown.is_empty()).then_some(shown)
-    }
-
-    /// Each effect `o` sets, over this one's.
-    pub fn merge(&mut self, o: &TextEffects) {
-        macro_rules! take {
-            ($($f:ident),*) => { $( if o.$f.is_some() { self.$f = o.$f.clone(); } )* };
-        }
-        take!(fill, outline, shadow, glow, reflection);
-    }
 }
 
 /// Source XML carried for saving (a run's `w:rPr`, a paragraph's `w:pPr`). Never part of equality: formatting
@@ -2227,15 +2172,6 @@ pub struct Settings {
     pub display_background_shape: bool,
 }
 
-/// A theme colour a WordprocessingML colour names (`w:themeColor`), lightened (`w:themeTint`) or darkened
-/// (`w:themeShade`) by a byte: the fraction of the colour's luminance kept.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ThemeColourRef {
-    pub slot: crate::drawing::colour::SchemeSlot,
-    pub tint: Option<u8>,
-    pub shade: Option<u8>,
-}
-
 impl Document {
     /// The page background as it shows: its colour and fill, both `None` when Word doesn't display it.
     pub fn shown_background(&self) -> (Option<u32>, Option<&crate::drawing::paint::Fill>) {
@@ -2463,11 +2399,5 @@ impl Inline {
             Inline::Foreign(_) => 0,
             _ => 1,
         }
-    }
-}
-
-impl Tab {
-    pub fn is_clear(&self) -> bool {
-        self.kind == TabKind::Clear
     }
 }

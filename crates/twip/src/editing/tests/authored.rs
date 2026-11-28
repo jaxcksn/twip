@@ -17,7 +17,7 @@ use crate::docx::para_props::ParaXml;
 use crate::docx::props::{Jc, ParaProps, RunProps, toggle};
 use crate::docx::resolve::Resolver;
 use crate::docx::style_xml::StyleXml;
-use crate::docx::styles::{Styles, ThemeFonts};
+use crate::docx::styles::{Styles, theme_fonts};
 use crate::docx::write::GenerateError;
 use crate::docx::{Block, BreakKind, Columns, Document, Inline, Paragraph, Run, Section, SectionBreak, next_para_id};
 use crate::drawing::colour::SchemeSlot;
@@ -64,7 +64,7 @@ fn section(blocks: Vec<Block>) -> Section {
 
 /// A resolver with no styles, numbering or theme part: the application defaults.
 fn bare_resolver() -> crate::docx::definitions::Definitions {
-    let env = crate::docx::definitions::Surroundings { theme: ThemeFonts::parse(None), ..Default::default() };
+    let env = crate::docx::definitions::Surroundings { theme: theme_fonts(None), ..Default::default() };
     crate::docx::definitions::Definitions::new(crate::docx::definitions::TypedDefs::read(None, None, None, env).0)
 }
 
