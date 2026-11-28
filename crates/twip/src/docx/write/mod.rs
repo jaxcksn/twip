@@ -21,6 +21,7 @@ use super::review::{CommentId, People, RangeKind, RangeMark, RevisionMark, Secti
 use super::xml::{MC, W, W14, attr, child, is, is_w};
 use super::*;
 use crate::docx::char_props::RunXml;
+use crate::docx::para_props::ParaXml;
 
 mod comments;
 mod controls;

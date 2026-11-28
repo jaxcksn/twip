@@ -5,6 +5,7 @@ use std::rc::Rc;
 use crate::api::command::Command;
 use crate::api::error::Error;
 use crate::docx::char_props::RunXml;
+use crate::docx::para_props::ParaXml;
 use crate::docx::props::{Tab, TabKind};
 use crate::docx::resolvers::{Resolvers, TypedDefs};
 use crate::docx::style_xml::StyleEditError;

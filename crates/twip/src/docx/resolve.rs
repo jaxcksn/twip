@@ -14,6 +14,7 @@ use super::styles::{Region, Styles, ThemeFonts};
 #[cfg(test)]
 use super::write::props::Cx;
 use crate::docx::char_props::RunXml;
+use crate::docx::para_props::ParaXml;
 
 #[derive(Clone)]
 pub struct Resolver {

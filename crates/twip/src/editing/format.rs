@@ -5,6 +5,7 @@ use std::rc::Rc;
 
 use crate::docx::char_props::RunXml;
 use crate::docx::model::Compat;
+use crate::docx::para_props::ParaXml;
 use crate::docx::para_props::{self, ParaDirect};
 use crate::docx::para_xml;
 use crate::docx::resolvers::Resolvers;

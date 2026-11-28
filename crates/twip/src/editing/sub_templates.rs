@@ -6,6 +6,7 @@ use std::rc::Rc;
 use crate::api::command::{ApplicationFieldTypes, ReferenceRule, SubTemplateRules, SubTemplateView};
 use crate::document::paragraph::ListId;
 use crate::docx::fields::{self, FieldCode};
+use crate::docx::para_props::ParaXml;
 use crate::docx::resolvers::{Resolvers, TypedDefs};
 use crate::docx::{Block, Document, ElementId, FieldId, FieldKind, Gallery, Inline, Paragraph, Section};
 use crate::font::Fonts;

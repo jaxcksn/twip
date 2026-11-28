@@ -1,6 +1,7 @@
 //! Text to table and table to text
 
 use crate::api::command::{TableToText, TextSeparator, TextToTable};
+use crate::docx::para_props::ParaXml;
 use crate::docx::{Block, Control, ControlId, Inline, ParaStyle, Paragraph, Run, VMerge};
 use crate::font::Fonts;
 use crate::layout::Unit;

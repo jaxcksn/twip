@@ -24,6 +24,7 @@ use super::styles::ThemeFonts;
 use super::table_props::{self, CellDirect, ExceptionsDirect, PreviousDirect, RowDirect, TableDirect};
 use super::xml::*;
 use crate::docx::char_props::RunXml;
+use crate::docx::para_props::ParaXml;
 use crate::format::CharProps;
 use crate::format::cascade::TableRegion;
 use crate::format::cascade::div_chain;
@@ -1323,7 +1324,7 @@ struct Reader {
     /// The authored run properties read so far, by the `w:rPr` written: runs written alike share them.
     interned: HashMap<Rc<str>, RunDirect>,
     /// The authored paragraph properties read so far, by the `w:pPr` written, likewise.
-    interned_ppr: HashMap<Rc<str>, Rc<crate::format::ParaProps>>,
+    interned_ppr: HashMap<Rc<str>, ParaDirect>,
     /// Rows' and cells' authored properties by the `w:trPr` and `w:tcPr` they were read from, for elements written alike.
     interned_tr: HashMap<Rc<str>, Rc<crate::format::RowProps>>,
     interned_tc: HashMap<Rc<str>, Rc<crate::format::CellProps>>,
@@ -2210,18 +2211,19 @@ impl Reader {
         let Some(n) = ppr else { return ParaDirect::default() };
         let plain = n.namespaces().len() <= n.document().root_element().namespaces().len();
         let text = &n.document().input_text()[n.range()];
-        if let Some((x, p)) = self.interned_ppr.get_key_value(text).filter(|_| plain && self.record) {
-            return ParaDirect::shared(p.clone(), x.clone());
+        if let Some(d) = self.interned_ppr.get(text).filter(|_| plain && self.record) {
+            return d.clone();
         }
         let props = Rc::new(para_props::parse(n));
         if !self.record {
             return ParaDirect::typed(props);
         }
         let x = raw(n);
+        let d = ParaDirect::shared(props, x.clone());
         if plain {
-            self.interned_ppr.insert(x.clone(), props.clone());
+            self.interned_ppr.insert(x, d.clone());
         }
-        ParaDirect::shared(props, x)
+        d
     }
 
     /// A table's authored properties from its `w:tblPr`, with the element they were read from.

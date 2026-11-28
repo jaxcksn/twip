@@ -9,6 +9,7 @@ use std::rc::Rc;
 
 use crate::docx::char_props::RunXml;
 use crate::docx::model::{Block, Document, Inline, Paragraph, Raw, Run, RunStyle};
+use crate::docx::para_props::ParaXml;
 use crate::docx::review::{
     AuthorId, CellMarkKind, CellRevisions, Comment, CommentId, FormatChange, GridChange, Identity, MarkKind, ParaChange, RangeKind, RangeMark,
     RevisionId, RevisionMark, RowRevisions, RunRevisions, SectionChange, TableChange, Timestamp,

@@ -9,6 +9,7 @@ use super::{blank_body, fonts, texts, texts_ids};
 use crate::api::command::{CaseChange, Command as C, InsertField};
 use crate::document::paragraph::{ListId, ListRef};
 use crate::docx::Inline;
+use crate::docx::para_props::ParaXml;
 use crate::layout::Unit;
 
 const STYLES: &str = concat!(

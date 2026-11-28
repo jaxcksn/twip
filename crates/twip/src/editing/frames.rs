@@ -14,6 +14,7 @@ use crate::api::command::{
 use crate::api::value::Points;
 use crate::docx::Block;
 use crate::docx::Inline;
+use crate::docx::para_props::ParaXml;
 use crate::docx::props::FramePr;
 use crate::editing::position::{Position, StoryId};
 use crate::font::Fonts;

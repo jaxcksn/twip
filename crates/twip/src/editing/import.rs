@@ -8,6 +8,7 @@ use crate::document::paragraph::ListId;
 use crate::docx::char_props::RunXml;
 use crate::docx::list_xml::{ListDefDirect, ListDirect};
 use crate::docx::para_props::ParaDirect;
+use crate::docx::para_props::ParaXml;
 use crate::docx::resolvers::{Resolvers, TypedDefs};
 use crate::docx::review::{AuthorId, FormatChange, People, RevisionMark, TableChange};
 use crate::docx::style_xml::StyleDef;

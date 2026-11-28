@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::docx::char_props::RunXml;
+use crate::docx::para_props::ParaXml;
 use crate::docx::resolvers::{Resolvers, TypedDefs};
 use crate::docx::{Block, Inline, Paragraph, Run, RunStyle};
 use crate::font::Fonts;

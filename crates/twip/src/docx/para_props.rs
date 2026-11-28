@@ -15,11 +15,14 @@ use std::rc::Rc;
 
 use roxmltree::Node;
 
+use super::as_read;
 use super::prop_xml::{Compare, FILL, LINE_COLOUR, Out, Sink, Twips, border, border_attrs, colour, colour_attrs, foreign_child, props_key};
 use super::props::{self as xml_props, FramePr, ThemeColours};
 use super::write::props::Cx;
 use super::xml::{W, W15, attr, attr_twips, children, int, num, on_off, on_off_str, val};
+use crate::document::authored::{Authored, Empty};
 use crate::document::format::{Jc, Leader, LineRule, TabKind};
+use crate::document::origin::Origin;
 use crate::document::paragraph::{ListId, TextAlignment};
 use crate::format::{
     BorderSide, ForeignChild, ForeignProps, ListChoice, ParaBorders, ParaEdit, ParaFlag, ParaFlags, ParaProp, ParaProps, ParaSet, QName, Shading,
@@ -139,129 +142,135 @@ impl<'a> Owned<'a> {
     }
 }
 
-/// A paragraph's authored properties: typed, with the `w:pPr` they were read from (or last written as) beside them.
-/// The written form stands for the properties only while they are the ones it was read as; never part of equality.
-#[derive(Clone, Debug)]
-pub struct ParaDirect {
-    props: Rc<ParaProps>,
-    origin: Option<(Rc<ParaProps>, Rc<str>)>,
-    /// What edits since reading set, in order: written again over the `w:pPr` as read.
-    set: Vec<ParaSet>,
-}
+/// A paragraph's authored properties: typed, with the `w:pPr` they were read from (or last written as) in their
+/// origin. The written form stands for the properties only while they are the ones it was read as; never part of
+/// equality.
+pub type ParaDirect = Authored<Rc<ParaProps>, ParaSet>;
 
 thread_local! {
     /// No properties, shared.
     static EMPTY: Rc<ParaProps> = Rc::new(ParaProps::default());
 }
 
-impl Default for ParaDirect {
-    fn default() -> ParaDirect {
-        ParaDirect { props: EMPTY.with(Rc::clone), origin: None, set: Vec::new() }
+impl Empty for ParaProps {
+    fn empty() -> Rc<ParaProps> {
+        EMPTY.with(Rc::clone)
     }
 }
 
-impl ParaDirect {
+/// What the WordprocessingML adapter adds to a paragraph's authored properties: the `w:pPr` they were read from, and
+/// the `w:pPr` they are written as.
+pub trait ParaXml: Sized {
     /// Properties read from `xml`, the `w:pPr` they were parsed from.
-    pub fn read(props: ParaProps, xml: Rc<str>) -> ParaDirect {
-        let props = Rc::new(props);
-        ParaDirect { origin: Some((props.clone(), xml)), props, set: Vec::new() }
-    }
+    fn read(props: ParaProps, xml: Rc<str>) -> Self;
 
     /// The properties of `xml`, a `w:pPr` with the main namespace bound to `w`.
     #[cfg(test)]
-    pub(crate) fn in_w(xml: &str) -> ParaDirect {
-        ParaDirect::from_xml(Some(xml), &Cx::of_xml(&format!("<w:document xmlns:w=\"{W}\">")))
-    }
+    fn in_w(xml: &str) -> Self;
 
     /// Properties read from `xml`, shared with other paragraphs read alike.
-    pub fn shared(props: Rc<ParaProps>, xml: Rc<str>) -> ParaDirect {
-        ParaDirect { origin: Some((props.clone(), xml)), props, set: Vec::new() }
-    }
+    fn shared(props: Rc<ParaProps>, xml: Rc<str>) -> Self;
 
     /// The `w:pPr` they were read from, while they are the properties read from it, with those properties.
-    pub fn read_from(&self) -> Option<(&Rc<ParaProps>, &Rc<str>)> {
-        let xml = self.as_read()?;
-        Some((&self.props, xml))
-    }
+    fn read_from(&self) -> Option<(&Rc<ParaProps>, &Rc<str>)>;
 
     /// The `w:pPr` they were read from (or last written as), whatever they are now.
-    pub fn origin_xml(&self) -> Option<&Rc<str>> {
-        self.origin.as_ref().map(|(_, x)| x)
-    }
+    fn origin_xml(&self) -> Option<&Rc<str>>;
 
     /// These properties with `xml` in place of the `w:pPr` they were read from: the same element, written otherwise
     /// (its namespaces declared on it).
-    pub fn with_origin_xml(&self, xml: Rc<str>) -> ParaDirect {
-        let origin = self.origin.as_ref().map(|(p, _)| (p.clone(), xml));
-        ParaDirect { props: self.props.clone(), origin, set: self.set.clone() }
-    }
-
-    /// Typed properties with no written form.
-    pub fn typed(props: Rc<ParaProps>) -> ParaDirect {
-        ParaDirect { props, origin: None, set: Vec::new() }
-    }
+    fn with_origin_xml(&self, xml: Rc<str>) -> Self;
 
     /// The properties `xml` (a `w:pPr` in the part `cx` describes) holds; none for no XML, and nothing typed (the
     /// XML kept as written) for XML that doesn't parse.
-    pub fn from_xml(xml: Option<&str>, cx: &Cx) -> ParaDirect {
-        let Some(x) = xml else { return ParaDirect::default() };
-        ParaDirect::read(cx.parse(x, |_, el| parse(el)).unwrap_or_default(), x.into())
-    }
-
-    /// The typed properties.
-    pub fn get(&self) -> &Rc<ParaProps> {
-        &self.props
-    }
+    fn from_xml(xml: Option<&str>, cx: &Cx) -> Self;
 
     /// The `w:pPr` as read, while the properties are the ones read from it.
-    pub fn as_read(&self) -> Option<&Rc<str>> {
-        let (read, xml) = self.origin.as_ref()?;
-        (Rc::ptr_eq(read, &self.props) || **read == *self.props).then_some(xml)
-    }
+    fn as_read(&self) -> Option<&Rc<str>>;
 
     /// The `w:pPr` to write in the part `cx` describes: as read while the properties are those, else written from
     /// them (a theme colour's value as `colours` resolve it), the children other nodes own as they were read; `None`
     /// when nothing is left.
-    pub fn xml(&self, colours: &ThemeColours, cx: &Cx) -> Option<std::borrow::Cow<'_, str>> {
-        if let Some(x) = self.as_read() {
-            return Some(std::borrow::Cow::Borrowed(x));
-        }
-        let origin = self.origin.as_ref().map(|(read, xml)| (&**read, &**xml));
-        if origin.is_none() && *self.props == ParaProps::default() {
-            return None;
-        }
-        written_over(&self.props, colours, cx, origin, &self.set).map(std::borrow::Cow::Owned)
-    }
+    fn xml(&self, colours: &ThemeColours, cx: &Cx) -> Option<std::borrow::Cow<'_, str>>;
 
     /// `props` in place of these properties, set by an edit that set `set`, in order: the `w:pPr` they were read from
     /// kept to write them over, what was set written again.
-    pub fn edited(&self, mut props: ParaProps, set: &[ParaSet]) -> ParaDirect {
-        let mut all = self.set.clone();
-        all.extend_from_slice(set);
-        if props.foreign.is_some() {
-            drop_replaced(&self.props, &mut props, &all);
-        }
-        ParaDirect { props: Rc::new(props), origin: self.origin.clone(), set: all }
-    }
+    fn edited(&self, props: ParaProps, set: &[ParaSet]) -> Self;
 
     /// An edit's result as these properties' successor.
-    pub fn edit(&self, e: ParaEdit) -> ParaDirect {
-        self.edited(e.props, &e.set)
-    }
+    fn edit(&self, e: ParaEdit) -> Self;
 
     /// These properties where `cx` describes the part they are written in: `None` while the `w:pPr` they were read
     /// from reads the same there, else without it, to be written from the properties.
-    pub fn moved_to(&self, cx: &Cx) -> Option<ParaDirect> {
-        let (read, xml) = self.origin.as_ref()?;
-        if cx.parse(xml, |_, el| parse(el)).is_some_and(|p| p == **read) {
-            return None;
-        }
-        Some(ParaDirect { props: self.props.clone(), origin: None, set: self.set.clone() })
+    fn moved_to(&self, cx: &Cx) -> Option<Self>;
+}
+
+impl ParaXml for ParaDirect {
+    fn read(props: ParaProps, xml: Rc<str>) -> ParaDirect {
+        as_read::read(Rc::new(props), xml)
     }
 
-    /// Authored equality: the typed properties.
-    pub fn authored_eq(&self, o: &ParaDirect) -> bool {
-        Rc::ptr_eq(&self.props, &o.props) || self.props == o.props
+    #[cfg(test)]
+    fn in_w(xml: &str) -> ParaDirect {
+        ParaDirect::from_xml(Some(xml), &Cx::of_xml(&format!("<w:document xmlns:w=\"{W}\">")))
+    }
+
+    fn shared(props: Rc<ParaProps>, xml: Rc<str>) -> ParaDirect {
+        as_read::read(props, xml)
+    }
+
+    fn read_from(&self) -> Option<(&Rc<ParaProps>, &Rc<str>)> {
+        let xml = self.as_read()?;
+        Some((self.get(), xml))
+    }
+
+    fn origin_xml(&self) -> Option<&Rc<str>> {
+        as_read::origin_xml(self)
+    }
+
+    fn with_origin_xml(&self, xml: Rc<str>) -> ParaDirect {
+        as_read::with_origin_xml(self, xml)
+    }
+
+    fn from_xml(xml: Option<&str>, cx: &Cx) -> ParaDirect {
+        let Some(x) = xml else { return ParaDirect::default() };
+        ParaDirect::read(cx.parse(x, |_, el| parse(el)).unwrap_or_default(), x.into())
+    }
+
+    fn as_read(&self) -> Option<&Rc<str>> {
+        as_read::as_read(self, |read, now| read == now)
+    }
+
+    fn xml(&self, colours: &ThemeColours, cx: &Cx) -> Option<std::borrow::Cow<'_, str>> {
+        if let Some(x) = self.as_read() {
+            return Some(std::borrow::Cow::Borrowed(x));
+        }
+        let origin = as_read::record(self);
+        if origin.is_none() && **self.get() == ParaProps::default() {
+            return None;
+        }
+        written_over(self.get(), colours, cx, origin, self.set()).map(std::borrow::Cow::Owned)
+    }
+
+    fn edited(&self, mut props: ParaProps, set: &[ParaSet]) -> ParaDirect {
+        self.edited_with(set, |was, all| {
+            if props.foreign.is_some() {
+                drop_replaced(was, &mut props, all);
+            }
+            Rc::new(props)
+        })
+    }
+
+    fn edit(&self, e: ParaEdit) -> ParaDirect {
+        self.edited(e.props, &e.set)
+    }
+
+    fn moved_to(&self, cx: &Cx) -> Option<ParaDirect> {
+        let (read, xml) = as_read::record(self)?;
+        if cx.parse(xml, |_, el| parse(el)).is_some_and(|p| p == *read) {
+            return None;
+        }
+        Some(self.with_origin(Origin::NONE))
     }
 }
 

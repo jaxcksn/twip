@@ -13,6 +13,7 @@ use crate::docx::char_props::RunDirect;
 use crate::docx::char_props::RunXml;
 use crate::docx::model::ThemeColourRef;
 use crate::docx::numbering::Numbering;
+use crate::docx::para_props::ParaXml;
 use crate::docx::props::{Jc, ParaProps, RunProps, toggle};
 use crate::docx::resolve::Resolver;
 use crate::docx::styles::{Styles, ThemeFonts};

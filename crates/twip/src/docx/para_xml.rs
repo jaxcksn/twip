@@ -10,6 +10,7 @@ use super::para_props::ParaDirect;
 use super::resolvers::Resolvers;
 use super::review::ParaChange;
 use super::write::props::Cx;
+use crate::docx::para_props::ParaXml;
 use crate::format::cascade::{Cascade, ParaCascade, TableRegion};
 use crate::format::resolve::para_style;
 use crate::format::{CharProps, ListChoice, ListLevel, ParaProps};

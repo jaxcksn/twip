@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 use crate::api::review::Body;
 use crate::docx::fields;
+use crate::docx::para_props::ParaXml;
 use crate::docx::{Block, FieldKind, Inline, Paragraph};
 use crate::font::Fonts;
 use crate::layout::{FloatId, ParaId, TableId, Unit};

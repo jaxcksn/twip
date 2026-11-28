@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use crate::api::command::{AddTabStop, MoveTabStop};
 use crate::api::services::TabStopInfo;
 use crate::api::value::{Points, TabAlignment, TabLeader};
+use crate::docx::para_props::ParaXml;
 use crate::docx::props::{Leader, Tab, TabKind};
 use crate::font::Fonts;
 use crate::format::{ParaEdit, ParaProp, TabStop};

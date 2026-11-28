@@ -4,6 +4,7 @@ use super::{blank_body, blank_with, fonts, para_id, texts};
 use crate::api::command::TableSize;
 use crate::api::review::Body;
 use crate::document::paragraph::{ListId, ListRef};
+use crate::docx::para_props::ParaXml;
 use crate::docx::{Block, Inline};
 use crate::editing::Editor;
 use crate::editing::commands::Command;

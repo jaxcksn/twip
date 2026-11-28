@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use std::rc::Rc;
 
 use crate::api::command::CommandId;
+use crate::docx::para_props::ParaXml;
 use crate::docx::{Block, ControlId, Inline, Paragraph};
 use crate::font::Fonts;
 use crate::layout::{ParaId, Unit};
