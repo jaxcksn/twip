@@ -1061,7 +1061,7 @@ impl Editor {
         let (rules, types) = (&self.sub_template_rules, &self.application_field_types);
         let (changed, back) = fields::rekind(&mut self.doc, &|code: &FieldCode| field_kind(rules, types, code));
         if back {
-            fields::evaluate(&mut self.doc, crate::docx::now_local());
+            fields::evaluate(&mut self.doc, self.file_name.as_deref(), crate::docx::now_local());
         }
         if changed || back {
             self.changed_everywhere();

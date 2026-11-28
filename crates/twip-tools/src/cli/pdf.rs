@@ -15,7 +15,7 @@ pub fn run(docx: &Path, out: &Path, options: &twip::api::session::PdfOptions) ->
     };
     let fonts = super::system_fonts();
     let layout = twip::internal::layout::layout(&doc, &view, &fonts);
-    let (pdf, warnings) = twip::internal::pdf::export(&doc, &view, &layout, "", options, None).map_err(|e| e.message)?;
+    let (pdf, warnings) = twip::internal::pdf::export(&doc, &view, None, &layout, "", options, None).map_err(|e| e.message)?;
     for w in warnings {
         eprintln!("warning: {}: {}", w.code.name(), w.message);
     }

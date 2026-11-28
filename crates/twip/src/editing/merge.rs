@@ -1953,7 +1953,7 @@ impl Editor {
                 let Inline::FieldBegin { kind: Some(kind), .. } = &p.inlines[k] else { return None };
                 let code = crate::docx::fields::code_text(&p.inlines, crate::docx::fields::span_at(&p.inlines, k)?);
                 if *kind == FieldKind::FileName {
-                    return Some((*f, crate::docx::fields::file_name_shown(self.doc.file_name.as_deref()?, &code)));
+                    return Some((*f, crate::docx::fields::file_name_shown(self.file_name.as_deref()?, &code)));
                 }
                 if !matches!(kind, FieldKind::DocProperty(_) | FieldKind::DocVariable(_) | FieldKind::DocDate(_)) {
                     return None;

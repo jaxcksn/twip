@@ -499,7 +499,7 @@ impl Editor {
     /// be written (a result across paragraphs) still shows its new value.
     pub fn refresh_values(&mut self, want: &dyn Fn(crate::docx::FieldId, &FieldKind) -> bool, fonts: &Fonts) -> usize {
         type Note = Option<(crate::docx::NoteKind, i64)>;
-        let (now, _) = fields::field_changes(&self.doc, crate::docx::now_local());
+        let (now, _) = fields::field_changes(&self.doc, self.file_name.as_deref(), crate::docx::now_local());
         let mut changed: Vec<(ParaId, crate::docx::FieldId, Option<String>, Option<Note>)> = Vec::new();
         for c in now {
             let para = ParaId(c.para);

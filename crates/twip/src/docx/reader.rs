@@ -769,7 +769,7 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
     let mut prop = |kind: &str| root_rels.values().find(|(k, _)| k == kind).and_then(|(_, t)| pkg.read_str(t));
     doc.properties =
         super::properties::read(prop("core-properties").as_deref(), prop("extended-properties").as_deref(), prop("custom-properties").as_deref());
-    super::fields::evaluate(&mut doc, now);
+    super::fields::evaluate(&mut doc, None, now);
     super::frames::convert(&mut doc);
     doc.derive_image_sets();
     let divs = doc.resolver.as_ref().map(|r| r.cascade().divisions.clone()).unwrap_or_default();

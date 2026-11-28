@@ -59,11 +59,12 @@ impl Editor {
 
     /// The name FILENAME shows: its fields show it now, as layout does, without an undo step.
     pub(in crate::editing) fn set_file_name(&mut self, name: String) -> Outcome {
-        if self.doc.file_name.as_deref() == Some(name.as_str()) {
+        if self.file_name.as_deref() == Some(name.as_str()) {
             return Outcome::Unchanged("already so");
         }
-        self.doc.file_name = Some(name);
-        if crate::docx::fields::show_file_name(&mut self.doc) {
+        let shown = crate::docx::fields::show_file_name(&mut self.doc, &name);
+        self.file_name = Some(name);
+        if shown {
             self.changed_everywhere();
             self.relayout([None]);
         }

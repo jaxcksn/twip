@@ -175,7 +175,7 @@ impl Editor {
     /// Link Here: the selection bookmarked (`OLE_LINKn`), and at `drop` a `LINK` field to it showing its text. One
     /// undo step.
     fn link_drop(&mut self, drop: Position, fonts: &Fonts) -> Outcome {
-        let Some(file) = self.doc.file_name.clone() else { return Outcome::unavailable("the document has no file name to link to") };
+        let Some(file) = self.file_name.clone() else { return Outcome::unavailable("the document has no file name to link to") };
         if !self.editable(&drop) || self.kept(CommandId::InsertField, &drop, &drop) {
             return Outcome::Unchanged("kept");
         }

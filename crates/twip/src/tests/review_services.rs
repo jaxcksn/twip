@@ -127,7 +127,7 @@ fn pdf_shows_the_view_without_comment_tints() {
         e.complete(fonts());
         let snapshot = e.snapshot();
         assert!(
-            crate::pdf::export::export(e.document(), e.review(), &snapshot, "Review", &Default::default(), None)
+            crate::pdf::export::export(e.document(), e.review(), e.file_name(), &snapshot, "Review", &Default::default(), None)
                 .expect("exports")
                 .0
                 .starts_with(b"%PDF-")

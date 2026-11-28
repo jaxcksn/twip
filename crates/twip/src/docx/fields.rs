@@ -961,9 +961,10 @@ fn error_run(inlines: &[Inline], sp: FieldSpan) -> Option<Run> {
     Some(std::rc::Rc::new(super::model::RunStyle { bold: !e.bold, ..(**e).clone() }))
 }
 
-pub fn evaluate(doc: &mut Document, now: i64) {
+/// Every field's value in `doc` at `now`, FILENAME's from `file_name`.
+pub fn evaluate(doc: &mut Document, file_name: Option<&str>, now: i64) {
     date_blocks(doc, now);
-    let (changes, order) = field_changes(doc, now);
+    let (changes, order) = field_changes(doc, file_name, now);
     let mut changes = changes.into_iter();
     for s in &mut doc.sections {
         paras(&mut s.blocks, &mut |p| {
@@ -996,7 +997,7 @@ pub(crate) struct FieldChange {
 
 /// What evaluating the body sets on each field it computes (in document order, one for each field of a known kind),
 /// and every body paragraph's [`style_hits`]: read only.
-pub(crate) fn field_changes(doc: &Document, now: i64) -> (Vec<FieldChange>, Vec<Vec<(String, bool, String)>>) {
+pub(crate) fn field_changes(doc: &Document, file_name: Option<&str>, now: i64) -> (Vec<FieldChange>, Vec<Vec<(String, bool, String)>>) {
     let properties = doc.properties.clone();
     let variables = doc.settings.variables.clone();
     let resolver = doc.resolver.clone();
@@ -1079,7 +1080,6 @@ pub(crate) fn field_changes(doc: &Document, now: i64) -> (Vec<FieldChange>, Vec<
     for s in &doc.sections {
         formula_values(&s.blocks, None, decimal, list, &marks, &mut formulas);
     }
-    let file_name = doc.file_name.clone();
     let mut seq = Sequences::default();
     let mut lists: HashMap<String, [i64; 9]> = HashMap::new();
     let mut autonum = 0;
@@ -1153,7 +1153,7 @@ pub(crate) fn field_changes(doc: &Document, now: i64) -> (Vec<FieldChange>, Vec<
                     FieldKind::Invalid => Some(String::new()),
                     FieldKind::Date => Some(date(code, now)),
                     FieldKind::Formula => formulas.get(id).cloned(),
-                    FieldKind::FileName => file_name.as_deref().map(|n| file_name_shown(n, code)),
+                    FieldKind::FileName => file_name.map(|n| file_name_shown(n, code)),
                     // The note's number is the layout's; a bookmark without a note is Word's error.
                     FieldKind::NoteRef(name, _) => {
                         let note = notes.get(&name.to_ascii_lowercase()).copied();
@@ -1752,15 +1752,14 @@ pub(crate) fn document_value(kind: &FieldKind, code: &str, p: &crate::docx::prop
     }
 }
 
-/// Every FILENAME field's value from [`Document::file_name`]; whether one changed.
-pub fn show_file_name(doc: &mut Document) -> bool {
-    let Some(name) = doc.file_name.clone() else { return false };
+/// Every FILENAME field's value from `name`; whether one changed.
+pub fn show_file_name(doc: &mut Document, name: &str) -> bool {
     let mut changed = false;
     let mut visit = |p: &mut Paragraph| {
         for sp in spans(&p.inlines) {
             let code = code_text(&p.inlines, sp);
             if let Inline::FieldBegin { kind: Some(FieldKind::FileName), value, lock: false, .. } = &mut p.inlines[sp.begin] {
-                let v = Some(file_name_shown(&name, &code));
+                let v = Some(file_name_shown(name, &code));
                 changed |= *value != v;
                 *value = v;
             }
@@ -2208,8 +2207,7 @@ mod tests {
             ]
             .map(|s| s.to_string())
         );
-        doc.file_name = Some("C:\\Cases\\Brief.docx".into());
-        assert!(show_file_name(&mut doc));
+        assert!(show_file_name(&mut doc, "C:\\Cases\\Brief.docx"));
         assert!(texts(&doc)[11].starts_with("Brief.docx"));
     }
 

@@ -56,6 +56,7 @@ fn export(bytes: &[u8]) -> Vec<u8> {
     super::super::export::export(
         &doc,
         &crate::layout::tests::view(&doc),
+        None,
         &crate::layout::tests::layout(&doc, &fonts),
         "",
         &PdfOptions::default(),
@@ -237,6 +238,7 @@ fn list_numbers_languages_and_pictures_without_alt_text() {
     let (pdf, _) = super::super::export::export(
         &doc,
         &crate::layout::tests::view(&doc),
+        None,
         &crate::layout::tests::layout(&doc, &fonts),
         "",
         &PdfOptions::default(),
@@ -251,6 +253,7 @@ fn list_numbers_languages_and_pictures_without_alt_text() {
     let (pdf, warnings) = super::super::export::export(
         &doc,
         &crate::layout::tests::view(&doc),
+        None,
         &crate::layout::tests::layout(&doc, &fonts),
         "",
         &PdfOptions::default(),
@@ -298,8 +301,8 @@ fn tracked_deletions_stay_out_of_titles_outlines_and_links() {
     let doc = crate::docx::read(&package(&body, &[("styles.xml", "styles", styles)])).expect("reads");
     let fonts = bundled_fonts();
     let view = crate::layout::tests::no_markup(&doc);
-    let (pdf, _) =
-        super::super::export::export(&doc, &view, &crate::layout::layout(&doc, &view, &fonts), "", &PdfOptions::default(), None).expect("exports");
+    let (pdf, _) = super::super::export::export(&doc, &view, None, &crate::layout::layout(&doc, &view, &fonts), "", &PdfOptions::default(), None)
+        .expect("exports");
     for kept in ["Kept title", "Kept heading", "Kept link"] {
         assert!(holds(&pdf, kept), "{kept} is written");
     }
@@ -372,6 +375,7 @@ fn tagging_stops_when_cancelled() {
     let err = super::super::export::export(
         &doc,
         &crate::layout::tests::view(&doc),
+        None,
         &snap,
         "",
         &PdfOptions::default(),

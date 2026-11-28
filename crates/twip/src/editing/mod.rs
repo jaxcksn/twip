@@ -183,6 +183,8 @@ pub struct Editor {
     docx: crate::docx::Session,
     /// How the document shows: the markup view and options, hidden text and optional hyphens. The layout's view.
     review: ReviewView,
+    /// The file's name, and folder when the host gave one: what FILENAME shows. Not saved.
+    file_name: Option<String>,
     layout: DocumentLayout,
     index: DocIndex,
     history: History,
@@ -486,6 +488,7 @@ impl Editor {
             doc,
             docx,
             review,
+            file_name: None,
             layout,
             index,
             history: History::default(),
@@ -836,6 +839,11 @@ impl Editor {
     /// How the document shows: the markup view and options, hidden text and optional hyphens.
     pub fn review(&self) -> &ReviewView {
         &self.review
+    }
+
+    /// The file's name, and folder when the host gave one: what FILENAME shows.
+    pub fn file_name(&self) -> Option<&str> {
+        self.file_name.as_deref()
     }
 
     /// Which formatting marks show.

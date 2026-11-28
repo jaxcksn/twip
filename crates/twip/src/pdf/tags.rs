@@ -662,11 +662,11 @@ fn style_name(doc: &Document, p: &Paragraph) -> Option<std::rc::Rc<str>> {
 }
 
 /// The document's title: its `title` property, else its first paragraph in the Title style, else its first heading,
-/// else its file name.
-pub(super) fn title(doc: &Document, tags: &Tags) -> String {
+/// else its file name (`file_name`).
+pub(super) fn title(doc: &Document, file_name: Option<&str>, tags: &Tags) -> String {
     let property = doc.properties.core("title").map(str::trim).filter(|t| !t.is_empty());
     let heading = tags.headings.iter().map(|h| h.title.as_str()).find(|t| !t.is_empty());
-    let file = doc.file_name.as_deref().map(|f| {
+    let file = file_name.map(|f| {
         let name = f.rsplit(['/', '\\']).next().unwrap_or(f);
         name.rsplit_once('.').map_or(name, |n| n.0)
     });

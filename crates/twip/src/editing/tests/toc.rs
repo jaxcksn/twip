@@ -1020,7 +1020,7 @@ fn footnote_sequences_number_in_reference_order() {
     for id in [7, 3] {
         refs.inlines.push(Inline::NoteRef { kind: crate::docx::NoteKind::Foot, id, custom: false, run: run.clone() });
     }
-    crate::docx::fields::evaluate(&mut doc, 0);
+    crate::docx::fields::evaluate(&mut doc, None, 0);
     let vals = |id: i64| {
         let Block::Para(p) = &doc.footnotes[&id][0] else { panic!() };
         p.inlines.iter().filter_map(|i| if let Inline::FieldBegin { value: Some(v), .. } = i { Some(v.clone()) } else { None }).collect::<Vec<_>>()

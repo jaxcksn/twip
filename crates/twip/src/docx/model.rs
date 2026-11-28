@@ -2304,8 +2304,6 @@ pub struct Document {
     pub alt_chunks: Vec<AltChunk>,
     /// The core, extended and custom document properties.
     pub properties: super::properties::Properties,
-    /// The file's name, and folder when the host gave one: what FILENAME shows. Not saved.
-    pub file_name: Option<String>,
     /// Content controls the model keeps: row-level wrappers (repeating sections and their items) and checkboxes,
     /// by id.
     pub controls: HashMap<ControlId, Control>,
