@@ -1098,7 +1098,7 @@ impl Editor {
             Err(StyleEditError::Malformed) => return Outcome::Refused(Error::invalid("not a style")),
         };
         let mut tx = self.begin(label);
-        let added = self.doc.added_lists.clone();
+        let added = self.docx.added_lists.clone();
         if self.step(&mut tx, Step::Resolver { resolver: Some(Rc::new(next)), added }).is_err() {
             self.abort(tx);
             return Outcome::Unchanged("the styles didn't change");

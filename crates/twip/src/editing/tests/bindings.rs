@@ -66,7 +66,7 @@ fn bound_controls_show_their_node_and_write_it_back() {
     let k = case(&doc);
     doc.data_parts[k].xml = format!("<case xmlns=\"{ns}\"><name>Lin</name></case>");
     doc.data_parts[k].changed = true;
-    let again = Editor::open(&crate::docx::write::save(&doc).expect("saves"), fonts()).expect("reopens");
+    let again = Editor::open(&crate::docx::write::save(&doc, e.docx()).expect("saves"), fonts()).expect("reopens");
     assert!(line(&again, "Address").contains("Lin"), "{:?}", texts(&again));
 }
 
@@ -115,7 +115,7 @@ fn a_gallery_control_takes_a_building_block_of_its_category() {
     assert!(texts(&e).iter().any(|t| t == "Violation notice") && !texts(&e).iter().any(|t| t == "Choose"), "{:?}", texts(&e));
     let none = FillControl { id, text: None, image: None, docx: None, building_block: Some("Nope".into()), date: None };
     assert!(matches!(e.execute(Command::FillControl(none), fonts()), Outcome::Refused(_)));
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let again = Editor::open(&saved, fonts()).expect("reopens");
     assert!(texts(&again).iter().any(|t| t == "Violation notice"));
 }
@@ -161,7 +161,7 @@ fn a_bound_control_inside_another_opens_and_shows_its_node() {
         &mut e,
         Command::WriteDataPart(WriteDataPart { namespace: ns.into(), item_id: None, xml: format!("<case xmlns=\"{ns}\"><name>Ada</name></case>") }),
     );
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let bind = r#"<w:dataBinding w:prefixMappings="xmlns:c='urn:case'" w:xpath="/c:case[1]/c:name[1]"/>"#;
     let inner = r#"<w:r><w:t>b</w:t></w:r><w:r><w:rPr><w:b/></w:rPr><w:t>c</w:t></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>d</w:t></w:r>"#;
     let xml = format!(
@@ -261,9 +261,9 @@ fn filling_a_bound_date_writes_its_date() {
     run(&mut e, fill(&id, "3/5/2025"));
     assert!(case_xml(&e).contains("<d>2025-03-05T00:00:00Z</d>"), "{}", case_xml(&e));
     assert_eq!(full_date(&e, c).as_deref(), Some("2025-03-05T00:00:00Z"));
-    let main = crate::docx::write::main_xml(e.document()).expect("writes").expect("changed");
+    let main = crate::docx::write::main_xml(e.document(), e.docx()).expect("writes").expect("changed");
     assert!(main.contains(r#"<w:date w:fullDate="2025-03-05T00:00:00Z"><w:dateFormat"#), "saved in its place");
-    let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    let again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens");
     assert!(texts(&again)[0].contains("3/5/2025"), "{:?}", texts(&again));
     run(&mut e, fill(&id, "not a date"));
     assert!(case_xml(&e).contains("<d>not a date</d>"), "text that isn't a date is stored as it is: {}", case_xml(&e));
@@ -368,8 +368,8 @@ fn a_new_data_parts_item_id_is_a_guid() {
     assert_eq!(e.document().data_parts.len(), n);
     let guid = "8a2d6c3e-1f4b-4c5d-9e6f-0a1b2c3d4e5f";
     ok(&json_cmd(&mut e, serde_json::json!({ "type": "writeDataPart", "namespace": "urn:q", "itemId": guid, "xml": "<q xmlns=\"urn:q\"/>" })));
-    let saved = crate::docx::write::save(e.document()).expect("saves");
-    let again = crate::docx::read_editable(&saved).expect("reads back");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
+    let (again, _) = crate::docx::read_editable(&saved).expect("reads back");
     assert!(
         again.data_parts.iter().any(|d| crate::docx::binding::same_item(&d.item_id, guid)),
         "{:?}",
@@ -400,7 +400,7 @@ fn a_gallery_control_is_inserted_set_and_kept_with_its_gallery_and_category() {
     assert!(matches!(e.set_gallery_control(&id, None, Some(Some("Sub-templates".into())), fonts()), Outcome::Changed(_)));
     assert!(super::content_controls::element_changed(&mut e, crate::docx::ElementId::Control(c)), "the category change is reported");
     assert_eq!(kept(&e).0, KeptKind::Gallery { gallery: Some("Custom 1".into()), category: Some("Sub-templates".into()) });
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let again = Editor::open(&saved, fonts()).expect("reopens");
     assert_eq!(kept(&again), (KeptKind::Gallery { gallery: Some("Custom 1".into()), category: Some("Sub-templates".into()) }, true));
 }

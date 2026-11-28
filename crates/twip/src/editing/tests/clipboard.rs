@@ -36,7 +36,7 @@ fn caret(e: &mut Editor, a: (usize, u32)) {
 }
 
 fn saved(e: &Editor) -> Editor {
-    Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens")
+    Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens")
 }
 
 #[test]
@@ -497,7 +497,7 @@ fn a_list_from_a_document_writing_its_own_prefix_comes_with_a_paste() {
     let mut a = Editor::open(&blank_with("One\nTwo\nafter"), fonts()).unwrap();
     select(&mut a, (0, 0), (1, 3));
     a.execute(Command::SetList(Some(crate::api::command::ListKind::Numbered)), fonts());
-    let saved = crate::docx::write::save(a.document()).expect("saves");
+    let saved = crate::docx::write::save(a.document(), a.docx()).expect("saves");
     let src = edited(&saved, |name, x| {
         if name == "word/document.xml" {
             x.replace("<w:", "<v:").replace("</w:", "</v:").replace(" w:", " v:").replace("xmlns:w=", "xmlns:v=")
@@ -598,7 +598,7 @@ fn a_control_filled_from_a_docx_shows_its_pictures() {
     let mut a = Editor::open(&blank_with(""), fonts()).unwrap();
     let pic = crate::api::command::Picture { data: crate::api::value::Bytes(image.clone()), alt_text: None };
     assert!(matches!(a.execute(Command::InsertPicture(pic), fonts()), crate::editing::commands::Outcome::Changed(_)));
-    let docx = crate::docx::write::save(a.document()).expect("saves");
+    let docx = crate::docx::write::save(a.document(), a.docx()).expect("saves");
     let sdt = format!(
         r#"<w:sdt><w:sdtPr><w:alias w:val="Box"/><w:id w:val="4"/><w:richText/></w:sdtPr><w:sdtContent><w:p>{}</w:p></w:sdtContent></w:sdt><w:p/>"#,
         t("x")

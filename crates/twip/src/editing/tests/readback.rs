@@ -16,7 +16,7 @@ use crate::docx::ThemeFont;
 use crate::layout::Unit;
 
 fn doc_xml(e: &Editor) -> String {
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
     let mut s = String::new();
     z.by_name("word/document.xml").unwrap().read_to_string(&mut s).unwrap();
@@ -36,7 +36,7 @@ fn all(body: &str) -> Editor {
 }
 
 fn reopened(e: &Editor) -> Editor {
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut e = Editor::open(&bytes, fonts()).expect("reopens");
     e.complete(fonts());
     e.execute(Command::SelectAll, fonts());
@@ -447,7 +447,7 @@ fn page_borders_paint_in_front_of_the_text_unless_behind() {
 
 /// The saved headers' XML.
 fn headers_xml(e: &Editor) -> String {
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
     let mut out = String::new();
     for i in 0..z.len() {

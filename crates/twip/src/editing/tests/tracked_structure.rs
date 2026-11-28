@@ -24,7 +24,7 @@ fn replay(fixture: &str, cmds: &[Value]) -> Editor {
         while e.idle(fonts()) {}
         let st = super::super::inspect::inspect(&mut e, "integrity", true);
         assert_eq!(st["integrity"], json!([]), "integrity after #{k} {c}");
-        let saved = crate::docx::write::save(e.document()).expect("saves");
+        let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
         Editor::open(&saved, fonts()).unwrap_or_else(|err| panic!("reopens after #{k} {c}: {err}"));
     }
     while e.history().undo_depth() > 0 {
@@ -299,7 +299,7 @@ fn accepting_the_shown_changes_leaves_hidden_moves_alone() {
     let marks = |e: &Editor| {
         let s = String::from_utf8({
             use std::io::Read;
-            let mut z = zip::ZipArchive::new(std::io::Cursor::new(crate::docx::write::save(e.document()).expect("saves"))).unwrap();
+            let mut z = zip::ZipArchive::new(std::io::Cursor::new(crate::docx::write::save(e.document(), e.docx()).expect("saves"))).unwrap();
             let mut v = Vec::new();
             z.by_name("word/document.xml").unwrap().read_to_end(&mut v).unwrap();
             v

@@ -359,7 +359,7 @@ mod tests {
 
     fn cascade() -> std::rc::Rc<crate::format::cascade::Cascade> {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-STYLES.docx");
-        let doc = crate::docx::read_editable(&std::fs::read(path).expect("FX-STYLES")).expect("reads");
+        let (doc, _) = crate::docx::read_editable(&std::fs::read(path).expect("FX-STYLES")).expect("reads");
         doc.resolver.expect("a resolver").cascade()
     }
 

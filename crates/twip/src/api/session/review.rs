@@ -33,7 +33,7 @@ pub(super) fn story(e: &crate::editing::Editor, s: StoryId) -> Story {
     match s {
         StoryId::Body => Story::Body,
         StoryId::HeaderFooter(k)
-            if e.index().part(k).and_then(|id| crate::docx::write::story_part(e.document(), id)).is_some_and(|n| n.contains("footer")) =>
+            if e.index().part(k).and_then(|id| crate::docx::write::story_part(e.document(), e.docx(), id)).is_some_and(|n| n.contains("footer")) =>
         {
             Story::Footer
         }

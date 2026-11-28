@@ -170,12 +170,12 @@ pub fn para_id(e: &Editor, n: usize) -> crate::layout::ParaId {
 
 /// The header or footer part `id` is saved as.
 pub fn part_name(e: &Editor, id: crate::docx::HeaderFooterId) -> String {
-    crate::docx::write::story_part(e.document(), id).expect("a part")
+    crate::docx::write::story_part(e.document(), e.docx(), id).expect("a part")
 }
 
 /// Each section's page, its headers and footers by part name (ids are new on every read).
 pub fn named_pages(e: &Editor) -> Vec<(crate::docx::SectionPage, Vec<Option<String>>)> {
-    let names = crate::docx::write::story_parts(e.document());
+    let names = crate::docx::write::story_parts(e.document(), e.docx());
     e.document()
         .sections
         .iter()
@@ -190,7 +190,7 @@ pub fn named_pages(e: &Editor) -> Vec<(crate::docx::SectionPage, Vec<Option<Stri
 
 /// The headers and footers whose part names hold `part`, in name order.
 pub fn parts_named(e: &Editor, part: &str) -> Vec<crate::docx::HeaderFooterId> {
-    let names = crate::docx::write::story_parts(e.document());
+    let names = crate::docx::write::story_parts(e.document(), e.docx());
     let mut ids: Vec<_> = e.document().stories.keys().copied().filter(|id| names.get(id).is_some_and(|n| n.contains(part))).collect();
     ids.sort_by_key(|id| &names[id]);
     ids

@@ -17,7 +17,7 @@ const HIDDEN: &str = r#"<w:rPr><w:vanish/></w:rPr>"#;
 
 /// `body` read as the editor reads it, hidden text shown; `None` without Arial.
 fn doc(body: &str) -> Option<crate::docx::Document> {
-    let mut doc = crate::docx::read_editable(&super::breaking::test_package("", ARIAL_12, body, "")?).expect("reads");
+    let (mut doc, _) = crate::docx::read_editable(&super::breaking::test_package("", ARIAL_12, body, "")?).expect("reads");
     doc.review.show_hidden = true;
     Some(doc)
 }

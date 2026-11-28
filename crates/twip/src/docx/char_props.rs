@@ -1431,7 +1431,7 @@ pub(crate) mod tests {
     const NS: &str =
         r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml""#;
 
-    fn model(name: &str) -> crate::docx::Document {
+    fn model(name: &str) -> (crate::docx::Document, crate::docx::Session) {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/model").join(name);
         crate::docx::read_editable(&std::fs::read(&path).expect("reads")).expect("opens")
     }
@@ -1451,8 +1451,8 @@ pub(crate) mod tests {
     /// Every `w:rPr` of a model fixture's main part as written (a formatting change's earlier one with its change),
     /// round tripped in the part itself and in `to` (else the part).
     fn fixture(name: &str, to: Option<&Cx>) -> Vec<(CharProps, RprRevisions, String)> {
-        let d = model(name);
-        let src = &d.source.as_ref().expect("a source").xml;
+        let (d, dx) = model(name);
+        let src = &dx.source.as_ref().expect("a source").xml;
         let colours = d.resolver.as_ref().expect("a resolver").colours();
         let own = Cx::of_xml(src);
         let doc = roxmltree::Document::parse(src).expect("parses");

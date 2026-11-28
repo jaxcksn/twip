@@ -89,7 +89,7 @@ fn balance(xml: &str) -> (usize, usize, usize) {
 }
 
 fn saved(e: &Editor) -> String {
-    part(&crate::docx::write::save(e.document()).unwrap(), "word/document.xml")
+    part(&crate::docx::write::save(e.document(), e.docx()).unwrap(), "word/document.xml")
 }
 
 fn body_paras(e: &Editor) -> Vec<&Paragraph> {
@@ -157,7 +157,7 @@ fn editing_a_tables_entries_keeps_one_field() {
         e.execute(Command::InsertText("x".into()), fonts());
         let xml = saved(&e);
         assert_eq!(balance(&xml), (1, 1, 1), "case {case}: {xml}");
-        let again = Editor::open(&crate::docx::write::save(e.document()).unwrap(), fonts()).unwrap();
+        let again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).unwrap(), fonts()).unwrap();
         assert_eq!(again.tables_of_contents().len(), 1, "case {case}");
     }
 }
@@ -240,7 +240,7 @@ fn inserting_a_table_lists_headings_with_links_and_page_numbers() {
     let tab = ps[0].style.tabs.iter().find(|t| t.kind == crate::docx::props::TabKind::Right).expect("a right tab");
     assert_eq!(tab.leader, crate::docx::props::Leader::Dot);
     // One field, saved and read back.
-    let saved = crate::docx::write::save(e.document()).unwrap();
+    let saved = crate::docx::write::save(e.document(), e.docx()).unwrap();
     assert_eq!(balance(&part(&saved, "word/document.xml")).2, 1 + 4 * 2);
     let again = Editor::open(&saved, fonts()).unwrap();
     let t = again.tables_of_contents();
@@ -359,7 +359,7 @@ fn hidden_in_web_view_marks_the_leader_and_page_number() {
     let tab = hidden.find("<w:tab/>").unwrap();
     assert!(tab < hidden.find("PAGEREF").unwrap() && hidden.find("PAGEREF").unwrap() < hidden.find(">1<").unwrap(), "{first}");
     assert!(!hidden[..tab].contains("</w:r>"), "{first}");
-    let again = Editor::open(&crate::docx::write::save(e.document()).unwrap(), fonts()).unwrap();
+    let again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).unwrap(), fonts()).unwrap();
     assert_eq!(again.tables_of_contents().len(), 1);
 }
 
@@ -531,7 +531,7 @@ fn a_frame_adds_a_title_and_a_control() {
     assert!(end < xml.find("</w:sdtContent>").unwrap(), "{xml}");
     assert_eq!(e.tables_of_contents().len(), 1);
     // Read back: the same table, the caret in its end paragraph still in it.
-    let mut again = Editor::open(&crate::docx::write::save(e.document()).unwrap(), fonts()).unwrap();
+    let mut again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).unwrap(), fonts()).unwrap();
     let t = again.tables_of_contents().remove(0);
     assert_eq!((t.first, t.last), (1, 5));
     let p = crate::layout::ParaId(body_paras(&again)[5].id);
@@ -1127,7 +1127,7 @@ fn a_table_in_a_cell_is_found_and_updated_there() {
     assert_eq!(t.len(), 1);
     assert!(matches!(t[0].container, super::super::index::Container::Cell { .. }), "{:?}", t[0].container);
     assert!(matches!(e.update_table_of_contents(TocUpdate::Entire, fonts()), Outcome::Changed(_)));
-    let again = Editor::open(&crate::docx::write::save(e.document()).unwrap(), fonts()).unwrap();
+    let again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).unwrap(), fonts()).unwrap();
     assert_eq!(again.tables_of_contents().len(), 1);
 }
 
@@ -1191,7 +1191,7 @@ fn a_reference_with_notes_brings_them_again_as_its_own() {
     }
     let xml = saved(&e);
     assert_eq!(xml.matches("<w:footnoteReference").count(), 2, "{xml}");
-    let again = Editor::open(&crate::docx::write::save(e.document()).unwrap(), fonts()).unwrap();
+    let again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).unwrap(), fonts()).unwrap();
     assert_eq!(again.document().footnotes.len(), before + 1);
     e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(count(&e), before + 1);
@@ -1234,7 +1234,7 @@ fn a_tracked_insert_is_one_inserted_field() {
         insert(&mut e, &TocOptions::word_default());
         let xml = saved(&e);
         assert!(xml.contains(r#"<w:ins "#) && balance(&xml) == (9, 9, 9), "{xml}");
-        let again = Editor::open(&crate::docx::write::save(e.document()).unwrap(), fonts()).unwrap();
+        let again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).unwrap(), fonts()).unwrap();
         assert_eq!(again.tables_of_contents().len(), 1);
         resolve(&mut e, accept);
         let xml = saved(&e);
@@ -1259,7 +1259,7 @@ fn a_tracked_update_deletes_the_old_field_and_inserts_the_new() {
         let xml = saved(&e);
         let (b, s, n) = balance(&xml);
         assert!(b == n && s == b && xml.contains("<w:del ") && xml.contains("<w:ins "), "{xml}");
-        let again = Editor::open(&crate::docx::write::save(e.document()).unwrap(), fonts()).unwrap();
+        let again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).unwrap(), fonts()).unwrap();
         assert!(!again.tables_of_contents().is_empty());
         resolve(&mut e, accept);
         let xml = saved(&e);
@@ -1289,7 +1289,7 @@ fn a_tracked_deletion_of_a_whole_table_takes_its_field() {
         let xml = saved(&e);
         assert!(xml.contains("<w:delInstrText"), "{xml}");
         // Read back, the deletion holds the field's markers.
-        let mut again = Editor::open(&crate::docx::write::save(e.document()).unwrap(), fonts()).unwrap();
+        let mut again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).unwrap(), fonts()).unwrap();
         for e in [&mut e, &mut again] {
             resolve(e, accept);
             let xml = saved(e);
@@ -1708,7 +1708,7 @@ fn a_shown_code_is_edited_as_text_and_saved_as_the_fields_code() {
     assert!(xml.contains(r#" TOC \o "1-3" \h \z "#), "{xml}");
     assert!(!xml.contains("{") && !xml.contains(r#"<w:t xml:space="preserve"> TOC"#), "{xml}");
     assert_eq!(balance(&xml), (1, 1, 1));
-    let back = Editor::open(&crate::docx::write::save(e.document()).unwrap(), fonts()).unwrap();
+    let back = Editor::open(&crate::docx::write::save(e.document(), e.docx()).unwrap(), fonts()).unwrap();
     assert_eq!(texts(&back)[..2], ["One", "Two"]);
     show_codes(&mut e, false);
     assert_eq!(
@@ -2143,7 +2143,7 @@ fn a_table_of_contents_title_is_out_of_numbered_headings_list() {
     at_start(&mut e);
     let frame = TocFrame { title: Some("Contents".into()), ..TocFrame::default() };
     assert!(matches!(e.insert_table_of_contents(&TocOptions::default(), TocLook::default(), &frame, fonts()), Outcome::Changed(_)));
-    let again = Editor::open(&crate::docx::write::save(e.document()).unwrap(), fonts()).unwrap();
+    let again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).unwrap(), fonts()).unwrap();
     let ps = body_paras(&again);
     let title = ps.iter().find(|p| style_of(p) == "TOCHeading").unwrap();
     assert!(title.list.as_ref().is_none_or(|l| l.text.is_empty()), "{:?}", title.list);

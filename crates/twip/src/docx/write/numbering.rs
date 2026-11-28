@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use super::super::Session;
 use super::super::model::Document;
 use super::super::package;
 use super::super::xml::{attr, int, is_w};
@@ -14,8 +15,8 @@ const NUMBERING_TYPE: &str = "application/vnd.openxmlformats-officedocument.word
 /// The numbering part after list edits: each `w:numPicBullet`, `w:abstractNum` and `w:num` written as the numbering
 /// table holds it, unchanged ones kept as they were, removed ones spliced out, and new ones added where CT_Numbering
 /// has them (picture bullets first, then the definitions, then the `w:num`s).
-pub(super) fn numbering(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
-    let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
+pub(super) fn numbering(doc: &Document, session: &Session, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
+    let src = session.source.as_ref().ok_or("the document was not read for editing")?;
     let Some(res) = doc.resolver.as_ref() else { return Ok(()) };
     let typed = res.typed();
     let n = &typed.numbering;

@@ -92,7 +92,7 @@ fn a_watermark_goes_in_every_header_of_every_section_and_undoes_whole() {
         ("DRAFT", Some("Arial"), None, Some(WatermarkLayout::Diagonal), Some(50.0), Some(Color(0xC0C0C0)))
     );
 
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut spids = Vec::new();
     for name in super::parts_named(&e, "header").into_iter().map(|id| super::part_name(&e, id)) {
         let xml = part(&saved, &name);
@@ -139,7 +139,7 @@ fn a_watermark_replaces_the_one_there_is_and_is_removed() {
     assert!(marks(&e).iter().all(|(_, n)| *n == 1), "one watermark a header: {:?}", marks(&e));
     let Some(Watermark::Picture(p)) = e.page_formatting(0).watermark else { panic!("a picture") };
     assert_eq!((p.scale, p.washout, p.image.0.len()), (Some(50.0), Some(true), 0));
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let xml = part(&saved, "word/header1.xml");
     assert!(
         xml.contains("WordPictureWatermark") && xml.contains(r#"gain="19661f" blacklevel="22938f""#) && !xml.contains("PowerPlusWaterMarkObject"),
@@ -173,7 +173,7 @@ fn word_s_own_watermark_is_reported_and_removed() {
     let Some(Watermark::Text(h)) = e.page_formatting(1).watermark else { panic!("DRAFT") };
     assert_eq!(h.layout, Some(WatermarkLayout::Horizontal), "the second section's own");
     run(&mut e, Command::RemoveWatermark);
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     for n in ["word/header1.xml", "word/header2.xml"] {
         assert!(!part(&saved, n).contains("PowerPlusWaterMarkObject"), "{n}");
     }
@@ -210,7 +210,7 @@ fn watermark_arguments_are_checked_and_its_text_escaped() {
         ..Default::default()
     });
     run(&mut e, Command::SetWatermark(hostile));
-    let saved = crate::docx::write::save(e.document()).expect("saves, the text that looks like a picture's id being text");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves, the text that looks like a picture's id being text");
     let xml = part(&saved, "word/header1.xml");
     roxmltree::Document::parse(&xml).expect("well formed");
     assert!(xml.contains("font-family:&quot;O'Brien Sans&quot;"), "{xml}");
@@ -285,12 +285,12 @@ fn a_page_gradient_is_one_its_vml_holds() {
     run(&mut e, Command::SetPageColor(gradient(GradientShape::Linear, Some(30.25), three)));
     let Some(crate::drawing::paint::Fill::Gradient(g)) = &e.document().page_fill else { panic!("a gradient") };
     assert!(matches!(g.kind, crate::drawing::paint::GradientKind::Linear { scaled: true, .. }), "{:?}", g.kind);
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let again = Editor::open(&saved, fonts()).expect("reopens");
     assert_eq!(again.document().page_fill, e.document().page_fill, "{}", part(&saved, "word/document.xml"));
     // One following the outline is rectangular on a page.
     run(&mut e, Command::SetPageColor(gradient(GradientShape::Path, None, vec![stop(0.0, 0xFF0000, None), stop(1.0, 0xFFFFFF, None)])));
-    let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    let again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens");
     assert_eq!(again.document().page_fill, e.document().page_fill);
 }
 
@@ -301,7 +301,7 @@ fn a_page_colour_keeps_its_theme_colour_and_undoes() {
         ColourValue { transforms: vec![ColourTransform { kind: TransformKind::Tint, value: 0.6 }], ..ColourValue::theme(ThemeColour::Accent2) };
     run(&mut e, Command::SetPageColor(FillValue::Solid { colour: accent.clone() }));
     assert!(e.document().settings.display_background_shape && e.document().page_colour.is_some());
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let main = part(&saved, "word/document.xml");
     assert!(main.contains(r#"w:themeColor="accent2" w:themeTint="99""#), "{main}");
     assert!(part(&saved, "word/settings.xml").contains("displayBackgroundShape"));
@@ -316,7 +316,7 @@ fn a_page_colour_keeps_its_theme_colour_and_undoes() {
     run(&mut e, Command::Redo(Default::default()));
     run(&mut e, Command::SetPageColor(FillValue::None));
     assert_eq!(e.page_formatting(0).background, None);
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     assert!(!part(&saved, "word/document.xml").contains("w:background"));
     let two =
         ColourValue { transforms: vec![ColourTransform { kind: TransformKind::Tint, value: 0.6 }; 2], ..ColourValue::theme(ThemeColour::Accent2) };
@@ -334,7 +334,7 @@ fn a_page_pattern_is_written_with_its_tile_picture_and_read_back_as_its_pattern(
     };
     run(&mut e, Command::SetPageColor(pattern.clone()));
     assert_eq!(e.page_formatting(0).background, Some(pattern.clone()));
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let main = part(&saved, "word/document.xml");
     assert!(
         main.contains(r##"o:title="Wide upward diagonal" color2="#ffe699" type="pattern""##) && main.contains(r##"fillcolor="#2e75b6""##),
@@ -362,7 +362,7 @@ fn a_page_gradient_and_picture_are_written_as_word_writes_them() {
         GradientStop { position: 1.0, colour: ColourValue::rgb(Color(0x2E75B6)) },
     ];
     run(&mut e, Command::SetPageColor(FillValue::Gradient { kind: GradientShape::Linear, angle: Some(90.0), stops, focus: None }));
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     assert!(part(&saved, "word/document.xml").contains(r#"type="gradient""#));
     assert_eq!(e.document().page_colour, Some(0xFFFFFF), "the page colour is the first colour");
     let png = part_bytes(
@@ -373,7 +373,7 @@ fn a_page_gradient_and_picture_are_written_as_word_writes_them() {
         &mut e,
         Command::SetPageColor(FillValue::Picture { image: Bytes(png), stretch: None, tile: Some(Default::default()), rotate_with_shape: None }),
     );
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     assert!(part(&saved, "word/document.xml").contains(r#"type="tile""#));
     refused(&mut e, Command::SetPageColor(FillValue::Picture { image: Bytes(b"nope".to_vec()), stretch: None, tile: None, rotate_with_shape: None }));
     let many = (0..65).map(|k| GradientStop { position: f64::from(k) / 64.0, colour: ColourValue::rgb(Color(0)) }).collect();
@@ -385,14 +385,14 @@ fn a_watermark_s_transparency_is_a_percent_read_back_exactly() {
     let mut e = Editor::open(&two_sections(), fonts()).expect("opens");
     let w = Watermark::Text(TextWatermark { text: "COPY".into(), transparency: Some(30.0), ..TextWatermark::default() });
     run(&mut e, Command::SetWatermark(w));
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     assert!(part(&saved, "word/header1.xml").contains(r#"<v:fill opacity=".7"/>"#));
     let again = Editor::open(&saved, fonts()).expect("reopens");
     let Some(Watermark::Text(t)) = again.page_formatting(0).watermark else { panic!("a watermark") };
     assert_eq!(t.transparency, Some(30.0));
     refused(&mut e, Command::SetWatermark(Watermark::Text(TextWatermark { text: "A".into(), transparency: Some(101.0), ..Default::default() })));
     run(&mut e, Command::SetWatermark(Watermark::Text(TextWatermark { text: "A".into(), transparency: Some(0.0), ..Default::default() })));
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     assert!(!part(&saved, "word/header1.xml").contains("opacity"), "opaque");
 }
 
@@ -401,7 +401,7 @@ fn shape_numbers_past_the_largest_start_again_from_word_s_first() {
     let hostile = r#"<w:r><w:pict><v:rect id="r" o:spid="_x0000_s4294967295" style="width:10pt;height:10pt"/></w:pict></w:r><w:r><w:pict><v:rect o:spid="_x0000_s2049" style="width:10pt;height:10pt"/></w:pict></w:r>"#;
     let mut e = Editor::open(&two_sections_with(hostile), fonts()).expect("opens");
     run(&mut e, Command::SetWatermark(draft()));
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut spids: Vec<String> = e
         .document()
         .stories
@@ -430,7 +430,7 @@ fn an_auto_picture_watermark_reports_no_scale() {
         w => panic!("{w:?}"),
     };
     assert_eq!(auto(&e), (None, Some(false)));
-    let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    let again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens");
     assert_eq!(auto(&again), (None, Some(false)));
     run(&mut e, Command::SetWatermark(Watermark::Picture(PictureWatermark { image: Bytes(Vec::new()), scale: Some(150.0), washout: None })));
     assert_eq!(auto(&e), (Some(150.0), Some(true)), "the picture kept, scaled");
@@ -445,7 +445,7 @@ fn a_page_gradient_s_focus_rectangle_and_one_colour_round_trip() {
     ];
     let focus = Some([0.25, 0.1, 0.5, 0.3]);
     run(&mut e, Command::SetPageColor(FillValue::Gradient { kind: GradientShape::Rectangular, angle: None, stops, focus }));
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     assert!(part(&saved, "word/document.xml").contains(r#"focusposition="0.25,0.1" focussize="0.25,0.6""#));
     let again = Editor::open(&saved, fonts()).expect("reopens");
     let Some(FillValue::Gradient { focus: read, .. }) = again.page_formatting(0).background else { panic!("a gradient") };
@@ -454,7 +454,7 @@ fn a_page_gradient_s_focus_rectangle_and_one_colour_round_trip() {
     let darker = ColourValue { transforms: vec![ColourTransform { kind: TransformKind::Shade, value: 0.6 }], ..ColourValue::rgb(Color(0x2E75B6)) };
     let one = vec![GradientStop { position: 0.0, colour: ColourValue::rgb(Color(0x2E75B6)) }, GradientStop { position: 1.0, colour: darker }];
     run(&mut e, Command::SetPageColor(FillValue::Gradient { kind: GradientShape::Linear, angle: Some(90.0), stops: one, focus: None }));
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     assert!(part(&saved, "word/document.xml").contains(r#"color2="fill darken(153)""#), "{}", part(&saved, "word/document.xml"));
     let again = Editor::open(&saved, fonts()).expect("reopens");
     assert_eq!(again.page_formatting(0).background, e.page_formatting(0).background, "read as made");
@@ -472,7 +472,7 @@ fn a_page_gradient_to_its_own_shade_inside_the_page_keeps_its_stops() {
         b => panic!("a gradient: {b:?}"),
     };
     assert_eq!(positions(&e), vec![0.25, 0.75]);
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     assert_eq!(positions(&Editor::open(&saved, fonts()).expect("reopens")), vec![0.25, 0.75], "{}", part(&saved, "word/document.xml"));
 }
 
@@ -492,7 +492,7 @@ fn a_translucent_one_colour_page_gradient_keeps_its_opacity() {
             g.stops.iter().map(|(_, c)| c.resolve(&d.theme, &d.colour_map, None).a).collect::<Vec<_>>()
         };
         assert_eq!(alphas(&e), vec![128; 17], "{kind:?}");
-        let saved = crate::docx::write::save(e.document()).expect("saves");
+        let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
         let xml = part(&saved, "word/document.xml");
         assert!(xml.contains(r#"color2="fill darken(153)""#) && xml.contains(" opacity=") && xml.contains("o:opacity2="), "{xml}");
         assert_eq!(alphas(&Editor::open(&saved, fonts()).expect("reopens")), vec![128; 17], "{xml}");
@@ -511,7 +511,7 @@ fn a_page_gradient_s_focus_insets_leave_a_rectangle() {
     refused(&mut e, rect(Some([0.5, 0.6, 0.5, 0.6])));
     for focus in [Some([0.25; 4]), Some([0.0, 0.0, 1.0, 1.0])] {
         run(&mut e, rect(focus));
-        let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+        let again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens");
         let Some(FillValue::Gradient { focus: read, .. }) = again.page_formatting(0).background else { panic!("a gradient") };
         assert_eq!(read, focus);
     }
@@ -522,7 +522,7 @@ fn a_text_watermark_keeps_its_language_takes_the_body_font_and_a_one_point_size(
     let mut e = Editor::open(&two_sections(), fonts()).expect("opens");
     let w = TextWatermark { text: "BROUILLON".into(), language: Some("fr-FR".into()), size: Some(Points(1.0)), ..TextWatermark::default() };
     run(&mut e, Command::SetWatermark(Watermark::Text(w.clone())));
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let xml = part(&saved, "word/header1.xml");
     assert!(xml.contains(r#"<w:noProof/><w:lang w:val="fr-FR"/>"#), "{xml}");
     let width: f64 = xml.split("width:").nth(1).and_then(|s| s.split("pt").next()).and_then(|s| s.parse().ok()).expect("a width");
@@ -564,7 +564,7 @@ fn a_picture_watermark_kept_through_a_scale_change_is_the_edited_sections() {
     let mut e = Editor::open(&two_sections(), fonts()).expect("opens");
     run(&mut e, Command::SetWatermark(Watermark::Picture(PictureWatermark { image: Bytes(a.clone()), scale: Some(100.0), washout: None })));
     // The second section's header shows another picture.
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let rels = part(&saved, "word/_rels/header1.xml.rels");
     let target = rels.split("Target=\"").nth(1).and_then(|t| t.split('"').next()).expect("a picture target").to_string();
     let swapped = crate::docx::write::repackage(
@@ -609,7 +609,7 @@ fn typing_over_everything_keeps_the_last_sections_watermark_through_a_save() {
         let kept = super::part_name(&e, e.document().sections[0].headers[0].expect("the last section's header"));
         assert_eq!(marks(&e), vec![(kept.clone(), 1)], "{fx}: the first section's header goes with it");
 
-        let saved = crate::docx::write::save(e.document()).expect("saves");
+        let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
         let again = Editor::open(&saved, fonts()).expect("reopens");
         assert_eq!(marks(&again), marks(&e), "{fx}");
         assert_eq!(again.page_formatting(0).watermark, e.page_formatting(0).watermark, "{fx}");

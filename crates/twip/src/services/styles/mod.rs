@@ -157,7 +157,7 @@ mod tests {
 
     fn styles() -> crate::format::StyleSheet {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-STYLES.docx");
-        let doc = crate::docx::read_editable(&std::fs::read(path).expect("FX-STYLES")).expect("reads");
+        let (doc, _) = crate::docx::read_editable(&std::fs::read(path).expect("FX-STYLES")).expect("reads");
         (*doc.resolver.expect("a resolver").cascade().styles).clone()
     }
 

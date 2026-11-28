@@ -40,7 +40,7 @@ fn documents_written_from_the_model_alone_read_back_as_they_were() {
         let name = path.strip_prefix(crate::layout::tests::output::root()).unwrap_or(path).display().to_string();
         let Ok(mut e) = Editor::open(&std::fs::read(path).expect("reads"), fonts()) else { continue };
         let before = dump(&mut e);
-        let bytes = match crate::docx::write::save(&stripped(e.document())) {
+        let bytes = match crate::docx::write::save(&stripped(e.document()), e.docx()) {
             Ok(b) => b,
             Err(err) => {
                 writeln!(report, "{name}: not saved: {err}").unwrap();

@@ -22,7 +22,7 @@ fn click(e: &mut Editor, x: f64, y: f64) {
 }
 
 fn reopen(e: &Editor) -> (Editor, Vec<u8>) {
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     (Editor::open(&bytes, fonts()).expect("reopens"), bytes)
 }
 
@@ -293,7 +293,7 @@ fn drawing_ids_stay_unique_across_parts() {
     e.execute(Command::EditHeader, fonts());
     assert!(matches!(e.insert_shape_sized(NewShape::Shape(Preset::Rect), [72.0, 72.0], fonts()), crate::editing::Outcome::Changed(_)));
     e.execute(Command::CloseHeaderFooter, fonts());
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).unwrap();
     let names: Vec<String> = z.file_names().filter_map(|n| n.ok().map(|n| n.to_string())).filter(|n| n.ends_with(".xml")).collect();
     let mut ids = Vec::new();
@@ -342,7 +342,7 @@ fn bookmark_ids_stay_unique_across_parts() {
     e.execute(Command::SelectAll, fonts());
     assert!(matches!(e.execute(Command::InsertBookmark("head".into()), fonts()), crate::editing::Outcome::Changed(_)));
     e.execute(Command::CloseHeaderFooter, fonts());
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).unwrap();
     let names: Vec<String> = z.file_names().filter_map(|n| n.ok().map(|n| n.to_string())).filter(|n| n.ends_with(".xml")).collect();
     let mut starts = Vec::new();

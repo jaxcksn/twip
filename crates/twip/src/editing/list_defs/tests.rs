@@ -26,7 +26,7 @@ fn documents() -> Vec<(String, Rc<TypedDefs>)> {
     paths
         .into_iter()
         .filter_map(|path| {
-            let d = crate::docx::read_editable(&std::fs::read(&path).expect("reads")).ok()?;
+            let (d, _) = crate::docx::read_editable(&std::fs::read(&path).expect("reads")).ok()?;
             Some((path.display().to_string(), d.resolver.as_ref()?.typed()))
         })
         .collect()
@@ -530,7 +530,7 @@ fn label_formatting_writes_what_the_patches_wrote() {
 
 /// The typed definitions of a blank document with the numbering part `xml`.
 fn numbering(xml: &str) -> Rc<TypedDefs> {
-    let blank = crate::docx::read_editable(&crate::docx::blank::blank_docx()).expect("reads");
+    let (blank, _) = crate::docx::read_editable(&crate::docx::blank::blank_docx()).expect("reads");
     let mut r = (**blank.resolver.as_ref().expect("a resolver")).clone();
     r.set_numbering_part(xml);
     r.typed()

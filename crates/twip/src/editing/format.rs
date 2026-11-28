@@ -501,7 +501,7 @@ impl Editor {
     }
 
     pub(super) fn cx(&self) -> Cx {
-        Cx::of_xml(self.doc.source.as_ref().map_or(NEW_ROOT, |s| s.xml.as_str()))
+        Cx::of_xml(self.docx.source.as_ref().map_or(NEW_ROOT, |s| s.xml.as_str()))
     }
 
     /// The names of the part character formatting is written in: the numbering part when a list's number is

@@ -178,6 +178,8 @@ pub enum CorrectionKind {
 
 pub struct Editor {
     doc: Document,
+    /// The DOCX session the document was read with: what saving it needs.
+    docx: crate::docx::Session,
     layout: DocumentLayout,
     index: DocIndex,
     history: History,
@@ -462,15 +464,22 @@ pub struct Committed {
 
 impl Editor {
     pub fn open(bytes: &[u8], fonts: &Fonts) -> Result<Editor, String> {
-        let doc = crate::docx::read_editable(bytes)?;
-        Ok(Editor::with_document(doc, fonts))
+        let (doc, docx) = crate::docx::read_editable(bytes)?;
+        Ok(Editor::with_session(doc, docx, fonts))
     }
 
+    /// An editor of a document no package was read for: one built, or read for layout only.
     pub fn with_document(doc: Document, fonts: &Fonts) -> Editor {
+        Editor::with_session(doc, crate::docx::Session::default(), fonts)
+    }
+
+    /// An editor of a document read with its DOCX session.
+    pub fn with_session(doc: Document, docx: crate::docx::Session, fonts: &Fonts) -> Editor {
         let index = DocIndex::build(&doc);
         let doc_hides_white_space = doc.hides_white_space;
         let mut e = Editor {
             doc,
+            docx,
             layout: DocumentLayout::new(),
             index,
             history: History::default(),
@@ -633,6 +642,12 @@ impl Editor {
 
     pub fn document(&self) -> &Document {
         &self.doc
+    }
+
+    /// The DOCX session the document was read with, as the edits since leave it: what [`crate::docx::write::save`]
+    /// takes with the document.
+    pub fn docx(&self) -> &crate::docx::Session {
+        &self.docx
     }
 
     /// The document, as the editor holds it (its imported HTML brought in).
@@ -1419,7 +1434,7 @@ impl Editor {
         // Editable ranges, once found
         let cached = self.editable_cache.get_mut().is_some();
         let perms = cached && self.moves_perms(&s);
-        let a = s.apply(&mut self.doc, &mut self.index)?;
+        let a = s.apply(&mut self.doc, &mut self.docx, &mut self.index)?;
         if perms || (cached && self.moves_perms(&a.inverse)) {
             self.perm_generation += 1;
         }
@@ -1441,7 +1456,7 @@ impl Editor {
         self.pending_images = Default::default();
         self.perm_generation += 1;
         for s in tx.undo.into_iter().rev() {
-            let _ = s.apply(&mut self.doc, &mut self.index);
+            let _ = s.apply(&mut self.doc, &mut self.docx, &mut self.index);
         }
     }
 

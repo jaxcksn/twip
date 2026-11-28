@@ -69,7 +69,7 @@ fn custom_lists_save_unchanged_byte_for_byte() {
         zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap().by_name(name).unwrap().read_to_string(&mut s).unwrap();
         s
     };
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let original = std::fs::read(path).expect("fixture");
     for part in ["word/numbering.xml", "word/document.xml", "word/styles.xml"] {
         assert_eq!(read(&saved, part), read(&original, part), "{part}");
@@ -87,7 +87,7 @@ fn label(e: &crate::editing::Editor, text: &str) -> String {
 }
 
 fn read_again(e: &crate::editing::Editor) -> crate::editing::Editor {
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     crate::editing::Editor::open(&bytes, super::fonts()).expect("reads again")
 }
 
@@ -256,7 +256,7 @@ fn picture_bullets_draw_their_image_and_a_new_one_saves_with_its_part() {
     );
     let at = e.document().images.find(&picture).expect("the new image");
     assert!(drawn_images(e.document()).contains(&at), "the new bullet draws");
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(saved.clone())).expect("a package");
     let names: Vec<String> = z.file_names().filter_map(|n| n.ok().map(|n| n.to_string())).collect();
     let mut rels = String::new();
@@ -285,8 +285,8 @@ fn an_undecodable_picture_bullet_warns() {
         out.write_all(&data).unwrap();
     }
     let bytes = out.finish().unwrap().into_inner();
-    let doc = crate::docx::read_editable(&bytes).expect("reads");
-    assert_eq!(doc.diagnostics.count(crate::api::warning::WarningCode::PictureBulletUndecodable), 1);
+    let (_, docx) = crate::docx::read_editable(&bytes).expect("reads");
+    assert_eq!(docx.diagnostics.count(crate::api::warning::WarningCode::PictureBulletUndecodable), 1);
 }
 
 #[test]
@@ -319,10 +319,10 @@ fn a_self_closing_numbering_root_opens_for_a_new_list() {
     let bytes = out.finish().unwrap().into_inner();
     let mut e = crate::editing::Editor::open(&bytes, super::fonts()).expect("reads");
     // Nothing to add: the part is kept as it is.
-    assert_eq!(part(&crate::docx::write::save(e.document()).expect("saves")), EMPTY);
+    assert_eq!(part(&crate::docx::write::save(e.document(), e.docx()).expect("saves")), EMPTY);
     caret_in(&mut e, 0);
     e.execute(Command::ApplyListEntry(ListEntryId("library:bullet:1".into())), super::fonts());
-    let saved = crate::docx::write::save(e.document()).expect("saves with a new list");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves with a new list");
     let xml = part(&saved);
     assert!(xml.contains("<w:abstractNum ") && xml.contains("<w:num ") && xml.ends_with("</w:numbering>"), "{xml}");
     roxmltree::Document::parse(&xml).expect("the numbering part parses");

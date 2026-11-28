@@ -48,8 +48,9 @@ fn threads(e: &mut Editor) -> Vec<(Option<String>, Vec<(String, String, bool)>)>
 }
 
 fn reread(e: &Editor) -> Editor {
-    let bytes = write::save(e.document()).expect("saves");
-    Editor::with_document(read_editable(&bytes).expect("reads back"), fonts())
+    let bytes = write::save(e.document(), e.docx()).expect("saves");
+    let (doc, docx) = read_editable(&bytes).expect("reads back");
+    Editor::with_session(doc, docx, fonts())
 }
 
 fn changed(o: Outcome) {
@@ -241,10 +242,10 @@ fn a_comment_edit_keeps_the_other_comments_as_read() {
         s
     };
     let bytes = fixture("FX-A11Y-STRUCTURE.docx");
-    let mut doc = read_editable(&bytes).expect("reads");
+    let (mut doc, docx) = read_editable(&bytes).expect("reads");
     doc.comments.by_id.get_mut(&CommentId(0)).expect("comment 0").initials = Some("GX".into());
     let was = part(&bytes);
-    let now = part(&write::save(&doc).expect("saves"));
+    let now = part(&write::save(&doc, &docx).expect("saves"));
     let at = was.find(r#"<w:comment w:id="1""#).expect("comment 1");
     let kept = &was[at..at + was[at..].find("</w:comment>").unwrap()];
     assert!(kept.contains("w14:textId") && now.contains(kept), "comment 1 as read: {now}");

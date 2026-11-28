@@ -9,7 +9,7 @@ use super::super::position::{Position, StoryId};
 use super::super::selection::Selection;
 use super::super::step::{Step, para_len};
 use super::{fonts, open};
-use crate::docx::{Block, Document, Float, Inline, Paragraph, Run};
+use crate::docx::{Block, Document, Float, Inline, Paragraph, Run, Session};
 use crate::layout::incremental::Change;
 use crate::layout::{FloatId, ParaId, Unit};
 
@@ -41,6 +41,7 @@ fn a_float() -> (Box<Float>, Run) {
 #[test]
 fn joins_and_block_edits_in_the_sub_template_flow_give_layout_their_block_delta() {
     let mut doc = read("FX-SUBTEMPLATES.docx");
+    let mut docx = Session::default();
     let mut idx = DocIndex::build(&doc);
     idx.flow = Some(0);
     let c = Container::Story(StoryId::BuildingBlock(0));
@@ -51,18 +52,18 @@ fn joins_and_block_edits_in_the_sub_template_flow_give_layout_their_block_delta(
         let p = idx.para(&doc, cur).expect("para").clone();
         let second = blank_para_like(&p);
         let sid = ParaId(second.id);
-        Step::Split { para: cur, at: Unit(0), second, kept: Vec::new() }.apply(&mut doc, &mut idx).expect("split");
+        Step::Split { para: cur, at: Unit(0), second, kept: Vec::new() }.apply(&mut doc, &mut docx, &mut idx).expect("split");
         cur = sid;
     }
     assert!(idx.blocks(&doc, c).expect("blocks").len() >= 5);
-    let applied = Step::Blocks { container: c, range: 1..3, with: Vec::new() }.apply(&mut doc, &mut idx).expect("blocks");
+    let applied = Step::Blocks { container: c, range: 1..3, with: Vec::new() }.apply(&mut doc, &mut docx, &mut idx).expect("blocks");
     assert_eq!(applied.hint, Some(Change { section: 0, first: 1, old_end: 3, new_end: 1, row: None }), "Blocks hint");
     let (a, b) = {
         let bl = idx.blocks(&doc, c).expect("blocks");
         let (Block::Para(a), Block::Para(b)) = (&bl[0], &bl[1]) else { panic!("paragraphs") };
         (ParaId(a.id), ParaId(b.id))
     };
-    let applied = Step::Join { first: a, second: b }.apply(&mut doc, &mut idx).expect("join");
+    let applied = Step::Join { first: a, second: b }.apply(&mut doc, &mut docx, &mut idx).expect("join");
     assert_eq!(applied.hint, Some(Change { section: 0, first: 0, old_end: 2, new_end: 1, row: None }), "Join hint");
 }
 
@@ -126,13 +127,14 @@ fn undoing_typing_into_an_empty_paragraph_restores_its_empty_run() {
     let mut doc = with_a_carrier();
     let Some(Block::Para(p)) = doc.sections[0].blocks.first() else { panic!("a paragraph") };
     let (id, original, r) = (ParaId(p.id), p.inlines.clone(), p.mark.clone());
+    let mut docx = Session::default();
     let mut idx = DocIndex::build(&doc);
     let applied = Step::Text { para: id, range: Unit(0)..Unit(0), with: vec![Inline::Text("x".into(), r)], edges: Default::default() }
-        .apply(&mut doc, &mut idx)
+        .apply(&mut doc, &mut docx, &mut idx)
         .expect("insert");
-    let redo = applied.inverse.apply(&mut doc, &mut idx).expect("inverse");
+    let redo = applied.inverse.apply(&mut doc, &mut docx, &mut idx).expect("inverse");
     assert_eq!(idx.para(&doc, id).expect("para").inlines, original);
-    redo.inverse.apply(&mut doc, &mut idx).expect("redo");
+    redo.inverse.apply(&mut doc, &mut docx, &mut idx).expect("redo");
     assert!(matches!(&idx.para(&doc, id).expect("para").inlines[..], [Inline::Text(t, _)] if t == "x"));
 }
 
@@ -141,11 +143,12 @@ fn undoing_a_join_into_an_empty_paragraph_restores_its_empty_run() {
     let doc0 = with_a_carrier();
     assert!(matches!(doc0.sections[0].blocks.get(1), Some(Block::Para(q)) if para_len(q).0 > 0), "a text paragraph follows");
     let mut doc = doc0.clone();
+    let mut docx = Session::default();
     let mut idx = DocIndex::build(&doc);
     let (Block::Para(a), Block::Para(b)) = (&doc.sections[0].blocks[0], &doc.sections[0].blocks[1]) else { panic!("paras") };
     let (a, b) = (ParaId(a.id), ParaId(b.id));
-    let applied = Step::Join { first: a, second: b }.apply(&mut doc, &mut idx).expect("join");
-    applied.inverse.apply(&mut doc, &mut idx).expect("inverse");
+    let applied = Step::Join { first: a, second: b }.apply(&mut doc, &mut docx, &mut idx).expect("join");
+    applied.inverse.apply(&mut doc, &mut docx, &mut idx).expect("inverse");
     let (Block::Para(now), Block::Para(was)) = (&doc.sections[0].blocks[0], &doc0.sections[0].blocks[0]) else { panic!("para") };
     assert_eq!(now.inlines, was.inlines);
 }
@@ -172,7 +175,8 @@ fn controls_in_text_boxes_in_building_blocks_are_listed() {
 #[test]
 fn a_table_in_a_text_box_in_a_deep_cell_is_refused_for_its_depth() {
     use crate::docx::Table;
-    let doc = read("FX-NEST-2.docx");
+    let opened = open("FX-NEST-2.docx");
+    let (doc, docx) = (opened.document(), opened.docx());
     let Some(Block::Table(outer)) = doc.sections[0].blocks.iter().find(|b| matches!(b, Block::Table(_))).cloned() else { panic!("a table") };
     let para = |text: &str| {
         let Some(Block::Para(mut p)) = outer.rows[0].cells[0].blocks.first().cloned() else { panic!("a paragraph") };
@@ -196,7 +200,7 @@ fn a_table_in_a_text_box_in_a_deep_cell_is_refused_for_its_depth() {
     let boxed_id = boxed.id;
     f.text_box.as_mut().expect("box").blocks = vec![Block::Para(boxed)];
     let fid = FloatId(f.id);
-    let reopens = |d: &Document| crate::docx::write::save(d).ok().is_some_and(|b| Editor::open(&b, fonts()).is_ok());
+    let reopens = |d: &Document, dx: &Session| crate::docx::write::save(d, dx).ok().is_some_and(|b| Editor::open(&b, fonts()).is_ok());
     let build = |depth: usize, f: &crate::docx::Float| {
         let mut inner = para("deep");
         inner.inlines.push(Inline::Float(Box::new(f.clone()), run.clone()));
@@ -208,11 +212,11 @@ fn a_table_in_a_text_box_in_a_deep_cell_is_refused_for_its_depth() {
         d.sections[0].blocks = vec![Block::Para(para("Before.")), Block::Table(t), Block::Para(para("After."))];
         d
     };
-    let depth = (1..=29).rev().find(|&n| reopens(&build(n, &f))).expect("some depth reopens");
+    let depth = (1..=29).rev().find(|&n| reopens(&build(n, &f), docx)).expect("some depth reopens");
     assert!(depth > 1, "a shallow and a deep case: {depth}");
     let insert = Command::InsertTable(crate::api::command::TableSize { rows: 1, columns: 1 });
     for (depth, accepts) in [(1, true), (depth, false)] {
-        let mut e = Editor::with_document(build(depth, &f), fonts());
+        let mut e = Editor::with_session(build(depth, &f), docx.clone(), fonts());
         e.complete(fonts());
         e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::TextBox(fid), ParaId(boxed_id), Unit(0))));
         let out = e.execute(insert.clone(), fonts());
@@ -221,7 +225,7 @@ fn a_table_in_a_text_box_in_a_deep_cell_is_refused_for_its_depth() {
         } else {
             assert!(matches!(out, Outcome::Unchanged(why) if why.starts_with("tables nested deeper")), "depth {depth}: {out:?}");
         }
-        assert!(reopens(e.document()), "depth {depth}: the document reopens");
+        assert!(reopens(e.document(), e.docx()), "depth {depth}: the document reopens");
     }
 }
 

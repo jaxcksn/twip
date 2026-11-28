@@ -1156,7 +1156,7 @@ fn ctrl_alt_enter_inserts_a_style_separator() {
     assert!(one_line(&mut e, ids[0], ids[1]), "the two lay out as one");
     assert!(!one_line(&mut e, ids[1], ids[2]));
     // Saved and opened again, it reads as one paragraph with a style separator.
-    let mut again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    let mut again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens");
     again.complete(fonts());
     assert_eq!(texts(&again), ["Head body", "next"]);
     assert_eq!(again.hidden_marks(texts_ids(&again)[0]), [(Unit(4), true)]);
@@ -1370,7 +1370,7 @@ fn formatting_restrictions_keep_auto_format_unless_it_may_override_them() {
         caret(&mut e, 1, 0);
         type_in(&mut e, "---\n");
         assert_eq!(para(&e, 1).style.border_bottom.is_some(), allow, "override {allow}");
-        let saved = crate::docx::write::save(e.document()).expect("saves");
+        let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
         let again = Editor::open(&saved, fonts()).expect("reopens");
         let s = &again.document().settings;
         assert_eq!((s.auto_format_override, s.style_lock_theme, s.style_lock_style_set), (allow, true, false));
@@ -1416,12 +1416,12 @@ fn track_moves_and_formatting_options() {
             "bold"
         );
     }
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
-    let back = crate::docx::read_editable(&bytes).expect("reads back");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
+    let (back, back_docx) = crate::docx::read_editable(&bytes).expect("reads back");
     assert!(back.settings.do_not_track_moves && back.settings.do_not_track_formatting, "written as the two settings");
-    let mut e = crate::editing::Editor::with_document(back, fonts());
+    let mut e = crate::editing::Editor::with_session(back, back_docx, fonts());
     assert_eq!(e.set_track_options(true, true), crate::editing::commands::Outcome::Moved);
-    let again = crate::docx::read_editable(&crate::docx::write::save(e.document()).expect("saves")).expect("reads back");
+    let (again, _) = crate::docx::read_editable(&crate::docx::write::save(e.document(), e.docx()).expect("saves")).expect("reads back");
     assert!(!again.settings.do_not_track_moves && !again.settings.do_not_track_formatting, "and cleared");
 }
 

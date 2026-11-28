@@ -72,7 +72,7 @@ fn a_picture_controls_handles_resize_it() {
     r.step(&json!({ "drag": { "from": { "picture": k, "at": "right" }, "to": { "picture": k, "at": "right", "dx": -60.0 } } }));
     let (w2, h2) = size(&r.e, "Placeholder:Signature.X");
     assert!(w2 < w - 30.0 && (h2 - h).abs() < 0.01, "a side doesn't: {w2}×{h2}");
-    let bytes = crate::docx::write::save(r.e.document()).expect("saves");
+    let bytes = crate::docx::write::save(r.e.document(), r.e.docx()).expect("saves");
     let xml = document_xml(&bytes);
     let at = xml.find("Placeholder:Signature.X").expect("the control is saved");
     let extent = &xml[at..][xml[at..].find("<wp:extent").unwrap()..];
@@ -228,7 +228,7 @@ fn floating_picture_control_reads_once() {
     let all = crate::editing::elements::enumerate(r.e.document(), r.e.index(), &Default::default());
     let secure = all.iter().filter(|x| x.props.as_ref().is_some_and(|p| p.tag.as_deref() == Some("Placeholder:Secure.Y"))).count();
     assert_eq!(secure, 1, "one control, not the VML copy too");
-    let bytes = crate::docx::write::save(r.e.document()).expect("saves");
+    let bytes = crate::docx::write::save(r.e.document(), r.e.docx()).expect("saves");
     let xml = document_xml(&bytes);
     assert_eq!((xml.matches("Placeholder:Secure.Y").count(), xml.contains("v:textbox")), (1, false), "saved without the VML copy");
     let again = Editor::open(&bytes, fonts()).expect("reopens");
@@ -273,7 +273,7 @@ fn floating_picture_control_round_trip() {
     assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");
     let f = body_floats(&r.e).into_iter().find(|f| f.picture_control(&r.e.document().controls).is_some()).expect("a floating picture control");
     assert!((f.h_offset - 72.0).abs() < 0.5 && f.h_relative == crate::docx::HorizontalRelation::Margin, "placed: {:?} {}", f.h_relative, f.h_offset);
-    let bytes = crate::docx::write::save(r.e.document()).expect("saves");
+    let bytes = crate::docx::write::save(r.e.document(), r.e.docx()).expect("saves");
     let xml = document_xml(&bytes);
     assert!(xml.contains("wps:txbx") && xml.contains(r#"lIns="0""#) && xml.contains("<a:noFill/>"), "the box");
     assert!(!xml.contains("mc:Fallback") && xml.matches("Placeholder:Float.Z").count() == 1, "one copy");
@@ -444,7 +444,7 @@ fn filling_a_picture_control_leaves_another_sharing_its_image() {
     assert_eq!(r.e.document().images.get(image_of(&r.e, a).unwrap()).unwrap(), new);
     assert_eq!(r.e.document().images.get(image_of(&r.e, b).unwrap()).unwrap(), before, "the other control's image is unchanged");
     assert_eq!(size_of(&r.e, b), size_b, "and its size");
-    let saved = crate::docx::write::save(r.e.document()).expect("saves");
+    let saved = crate::docx::write::save(r.e.document(), r.e.docx()).expect("saves");
     let again = Editor::open(&saved, fonts()).expect("reopens");
     let tags = |e: &Editor, tag: &str| image_of(e, control(e, tag).0).map(|i| e.document().images.get(i).unwrap().to_vec());
     assert_eq!(tags(&again, "Placeholder:Signature.X"), Some(new), "saved with its new image");
@@ -530,7 +530,7 @@ fn a_filled_anchored_picture_saves_its_own_image() {
     let blips: Vec<(Option<crate::docx::ResourceId>, Option<crate::docx::ResourceId>)> =
         body_floats(&e).iter().map(|f| (f.image, f.shape.as_deref().and_then(|s| s.pic()).and_then(|p| p.blip.image))).collect();
     assert!(blips[0].0 != blips[1].0 && blips.iter().all(|(a, b)| a == b), "each drawing's picture shows its own image: {blips:?}");
-    let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    let again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens");
     let shown: Vec<Vec<u8>> = body_floats(&again).iter().filter_map(|f| f.image.map(|k| again.document().images.get(k).unwrap().to_vec())).collect();
     assert_eq!(shown, vec![new, before], "the control's picture, then the other");
 }

@@ -568,9 +568,9 @@ mod tests {
     fn re_resolving_gives_what_reading_resolved() {
         let mut checked = 0;
         for f in docs() {
-            let Ok(doc) = super::super::read_editable(&std::fs::read(&f).expect("readable")) else { continue };
-            let (Some(_), Some(src)) = (&doc.resolver, &doc.source) else { panic!("{}: no resolver", f.display()) };
-            let res = crate::docx::baseline::Baseline::as_read(&doc);
+            let Ok((doc, docx)) = super::super::read_editable(&std::fs::read(&f).expect("readable")) else { continue };
+            let (Some(_), Some(src)) = (&doc.resolver, &docx.source) else { panic!("{}: no resolver", f.display()) };
+            let res = crate::docx::baseline::Baseline::as_read(&doc, &docx);
             let cx = Cx::of_xml(&src.xml);
             for s in &doc.sections {
                 check(&res, &cx, &s.blocks, None, &f.display().to_string(), &mut checked);

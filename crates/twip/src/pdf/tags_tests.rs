@@ -146,12 +146,12 @@ fn headings_by_style_header_cells_and_link_targets() {
 
 #[test]
 fn cell_ids_and_headers_are_written_back() {
-    let mut d = crate::docx::read_editable(&fixture()).expect("reads");
+    let (mut d, dx) = crate::docx::read_editable(&fixture()).expect("reads");
     let t = d.sections[0].blocks.iter_mut().find_map(|b| if let crate::docx::Block::Table(t) = b { Some(t) } else { None }).expect("the table");
     // One cell's headers changed as read, another's properties written from the model.
     t.rows[1].cells[0].ids = Some(Rc::new(CellIds { id: Some("n1".into()), headers: vec!["h1".into(), "h2".into()] }));
     t.rows[2].cells[0].direct = Default::default();
-    let again = crate::docx::read_editable(&crate::docx::write::save(&d).expect("saves")).expect("reads again");
+    let (again, _) = crate::docx::read_editable(&crate::docx::write::save(&d, &dx).expect("saves")).expect("reads again");
     let t = again.sections[0].blocks.iter().find_map(|b| if let crate::docx::Block::Table(t) = b { Some(t) } else { None }).expect("the table");
     let ids = |r: usize| t.rows[r].cells[0].ids.as_deref().cloned().unwrap_or_default();
     assert_eq!(ids(0), CellIds { id: Some("h1".into()), headers: Vec::new() });
@@ -166,13 +166,13 @@ fn a_rewritten_row_keeps_header_cells_past_the_read_bound() {
     let body = format!(
         r#"<w:tbl><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc w:id="c"><w:tcPr><w:tcW w:w="2000" w:type="dxa"/><w:headers>{refs}</w:headers></w:tcPr><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#
     );
-    let mut d = crate::docx::read_editable(&package(&body, &[])).expect("reads");
+    let (mut d, dx) = crate::docx::read_editable(&package(&body, &[])).expect("reads");
     let crate::docx::Block::Table(t) = &mut d.sections[0].blocks[0] else { panic!("a table") };
     assert_eq!(t.rows[0].cells[0].ids.as_ref().map(|i| i.headers.len()), Some(crate::docx::MAX_CELL_HEADERS), "reading is bounded");
     // A cell more: the row is written again, its first cell from its properties as read.
     let extra = crate::docx::Cell { ids: None, ..t.rows[0].cells[0].clone() };
     t.rows[0].cells.push(extra);
-    let saved = crate::docx::write::save(&d).expect("saves");
+    let saved = crate::docx::write::save(&d, &dx).expect("saves");
     let xml = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part");
     let first = &xml[xml.find("<w:tc").expect("a cell")..xml.find("</w:tc>").expect("its end")];
     assert_eq!(first.matches("<w:header ").count(), n, "every header the source lists is kept");
@@ -182,12 +182,12 @@ fn a_rewritten_row_keeps_header_cells_past_the_read_bound() {
 #[test]
 fn a_rewritten_row_keeps_header_cells_however_quoted() {
     let body = r#"<w:tbl><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/><w:headers><w:header w:val='a&#x26;"b'/></w:headers></w:tcPr><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/>"#;
-    let mut d = crate::docx::read_editable(&package(body, &[])).expect("reads");
+    let (mut d, dx) = crate::docx::read_editable(&package(body, &[])).expect("reads");
     let crate::docx::Block::Table(t) = &mut d.sections[0].blocks[0] else { panic!("a table") };
     assert_eq!(t.rows[0].cells[0].ids.as_ref().map(|i| i.headers.clone()), Some(vec![r#"a&"b"#.to_string()]));
     let extra = crate::docx::Cell { ids: None, ..t.rows[0].cells[0].clone() };
     t.rows[0].cells.push(extra);
-    let saved = crate::docx::write::save(&d).expect("saves");
+    let saved = crate::docx::write::save(&d, &dx).expect("saves");
     let xml = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part");
     assert!(xml.contains(r#"<w:header w:val='a&#x26;"b'/>"#), "kept as written: {xml}");
 }

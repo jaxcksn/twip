@@ -15,7 +15,7 @@ use crate::docx::review::{
     RevisionId, RevisionMark, RowRevisions, RunRevisions, SectionChange, TableChange, Timestamp,
 };
 use crate::docx::table_props::TableXml;
-use crate::docx::{read_editable, write};
+use crate::docx::{Session, read_editable, write};
 
 const W: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 
@@ -50,8 +50,8 @@ fn part(package: &[u8], name: &str) -> Option<String> {
     entries(package).into_iter().find(|(n, _)| n == name).map(|(_, b)| String::from_utf8(b).expect("UTF-8"))
 }
 
-fn main_part(doc: &Document, saved: &[u8]) -> String {
-    let main = &doc.source.as_ref().expect("read for editing").main;
+fn main_part(docx: &Session, saved: &[u8]) -> String {
+    let main = &docx.source.as_ref().expect("read for editing").main;
     part(saved, main).expect("a main part")
 }
 
@@ -91,8 +91,8 @@ fn markup_counts(xml: &str) -> Vec<(&'static str, usize)> {
 }
 
 /// The body paragraph to edit (section, block): the first whose source has no review markup, else the first with text.
-fn paragraph_to_edit(doc: &Document) -> (usize, usize) {
-    let src = doc.source.as_ref().expect("read for editing");
+fn paragraph_to_edit(doc: &Document, docx: &Session) -> (usize, usize) {
+    let src = docx.source.as_ref().expect("read for editing");
     let mut with_text = None;
     for (s, sec) in doc.sections.iter().enumerate() {
         for (b, block) in sec.blocks.iter().enumerate() {
@@ -132,16 +132,16 @@ fn an_unrelated_edit_keeps_every_other_paragraph_and_part() {
     for path in review_fixtures() {
         let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
         let bytes = std::fs::read(&path).expect("a fixture");
-        let mut doc = read_editable(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
-        let at = paragraph_to_edit(&doc);
+        let (mut doc, docx) = read_editable(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let at = paragraph_to_edit(&doc, &docx);
         let edited = match &doc.sections[at.0].blocks[at.1] {
             Block::Para(_) => crate::docx::read_range(&doc.sections[at.0].blocks[at.1]).expect("a source"),
             Block::Table(_) => unreachable!("a paragraph was chosen"),
         };
         edit(&mut doc, at);
-        let saved = write::save(&doc).unwrap_or_else(|e| panic!("{name}: {e}"));
-        let src = doc.source.as_ref().expect("read for editing");
-        let out = main_part(&doc, &saved);
+        let saved = write::save(&doc, &docx).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let src = docx.source.as_ref().expect("read for editing");
+        let out = main_part(&docx, &saved);
         let (was, now) = (paragraphs(&src.xml), paragraphs(&out));
         assert_eq!(was.len(), now.len(), "{name}: paragraph count");
         let mut changed = 0;
@@ -239,13 +239,13 @@ fn blocks_review(doc: &Document, blocks: &[Block], out: &mut Vec<String>) {
 
 /// Everything review about a document: revisions in every story, comments with their bodies and threads, people,
 /// settings.
-fn review(doc: &Document) -> Vec<String> {
+fn review(doc: &Document, docx: &Session) -> Vec<String> {
     let mut out = Vec::new();
     for s in &doc.sections {
         out.push(format!("section {}", s.change.as_ref().map_or(String::new(), |c| mark_key(doc, &Some(c.mark.clone())))));
         blocks_review(doc, &s.blocks, &mut out);
     }
-    let names = crate::docx::write::story_parts(doc);
+    let names = crate::docx::write::story_parts(doc, docx);
     let mut stories: Vec<(&String, &Vec<crate::docx::Block>)> = doc.stories.iter().filter_map(|(id, b)| Some((names.get(id)?, b))).collect();
     stories.sort_by_key(|(n, _)| *n);
     for (n, b) in stories {
@@ -287,12 +287,12 @@ fn review(doc: &Document) -> Vec<String> {
 fn the_review_reads_back_after_an_unrelated_edit() {
     for path in review_fixtures().into_iter().filter(|p| !p.to_string_lossy().contains("MALFORMED")) {
         let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-        let mut doc = read_editable(&std::fs::read(&path).expect("a fixture")).unwrap_or_else(|e| panic!("{name}: {e}"));
-        let at = paragraph_to_edit(&doc);
+        let (mut doc, docx) = read_editable(&std::fs::read(&path).expect("a fixture")).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let at = paragraph_to_edit(&doc, &docx);
         edit(&mut doc, at);
-        let saved = write::save(&doc).unwrap_or_else(|e| panic!("{name}: {e}"));
-        let again = read_editable(&saved).unwrap_or_else(|e| panic!("{name}: reads back: {e}"));
-        let (a, b) = (review(&doc), review(&again));
+        let saved = write::save(&doc, &docx).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let (again, again_docx) = read_editable(&saved).unwrap_or_else(|e| panic!("{name}: reads back: {e}"));
+        let (a, b) = (review(&doc, &docx), review(&again, &again_docx));
         assert_eq!(a.len(), b.len(), "{name}: {a:#?}\n{b:#?}");
         for (x, y) in a.iter().zip(&b) {
             assert_eq!(x, y, "{name}");
@@ -331,7 +331,7 @@ fn holder<'a, 'i>(dom: &'a roxmltree::Document<'i>, text: &str, up: usize) -> ro
 }
 
 /// Text in an insertion, a deletion, a deleted insertion and a formatting change, written into a paragraph.
-fn tracked_runs(doc: &mut Document) -> Vec<u8> {
+fn tracked_runs(doc: &mut Document, docx: &Session) -> Vec<u8> {
     let (at, base) = short_paragraph(doc);
     let (ins, del) = (mark(doc, 9001, "Author A", MarkKind::Insert), mark(doc, 9002, "Author B", MarkKind::Delete));
     let (ins2, del2) = (mark(doc, 9003, "Author A", MarkKind::Insert), mark(doc, 9004, "Author B", MarkKind::Delete));
@@ -363,14 +363,14 @@ fn tracked_runs(doc: &mut Document) -> Vec<u8> {
         Inline::Text("formatted".into(), formatted),
         Inline::Text(" paragraph.".into(), base),
     ];
-    write::save(doc).expect("saves")
+    write::save(doc, docx).expect("saves")
 }
 
 #[test]
 fn tracked_runs_are_written_in_their_wrappers() {
-    let mut doc = read_editable(&fixture("FX-TEXT.docx")).expect("reads");
-    let saved = tracked_runs(&mut doc);
-    let xml = main_part(&doc, &saved);
+    let (mut doc, docx) = read_editable(&fixture("FX-TEXT.docx")).expect("reads");
+    let saved = tracked_runs(&mut doc, &docx);
+    let xml = main_part(&docx, &saved);
     let dom = roxmltree::Document::parse(&xml).expect("well-formed");
     let ins = holder(&dom, "inserted ", 2);
     assert_eq!((ins.tag_name().name(), ins.attribute((W, "id")), ins.attribute((W, "author"))), ("ins", Some("9001"), Some("Author A")));
@@ -394,9 +394,9 @@ fn tracked_runs_are_written_in_their_wrappers() {
 
 #[test]
 fn tracked_runs_read_back() {
-    let mut doc = read_editable(&fixture("FX-TEXT.docx")).expect("reads");
-    let saved = tracked_runs(&mut doc);
-    let again = read_editable(&saved).expect("reads back");
+    let (mut doc, docx) = read_editable(&fixture("FX-TEXT.docx")).expect("reads");
+    let saved = tracked_runs(&mut doc, &docx);
+    let (again, _) = read_editable(&saved).expect("reads back");
     let at = (0, 1);
     let (Block::Para(a), Block::Para(b)) = (&doc.sections[at.0].blocks[at.1], &again.sections[at.0].blocks[at.1]) else { panic!("paragraphs") };
     let mut x = Vec::new();
@@ -408,7 +408,7 @@ fn tracked_runs_read_back() {
 
 #[test]
 fn text_typed_into_an_insertion_without_its_mark_goes_outside_it() {
-    let mut doc = read_editable(&fixture("review/FX-REVIEW-RUNS.docx")).expect("reads");
+    let (mut doc, docx) = read_editable(&fixture("review/FX-REVIEW-RUNS.docx")).expect("reads");
     let (s, b) = (0, 0);
     let p = para_mut(&mut doc, (s, b));
     let k = p
@@ -423,20 +423,20 @@ fn text_typed_into_an_insertion_without_its_mark_goes_outside_it() {
         k..=k,
         [Inline::Text(text[..at].to_string(), run.clone()), Inline::Text("TYPED ".into(), plain), Inline::Text(text[at..].to_string(), run)],
     );
-    let saved = write::save(&doc).expect("saves");
-    let xml = main_part(&doc, &saved);
+    let saved = write::save(&doc, &docx).expect("saves");
+    let xml = main_part(&docx, &saved);
     let dom = roxmltree::Document::parse(&xml).expect("well-formed");
     let typed = holder(&dom, "TYPED ", 2);
     assert_eq!(typed.tag_name().name(), "p", "{}", &xml[typed.range()]);
     assert_eq!(
-        markup_counts(&doc.source.as_ref().expect("source").xml),
+        markup_counts(&docx.source.as_ref().expect("source").xml),
         markup_counts(&xml).iter().map(|&(n, c)| (n, if n == "ins" { c - 1 } else { c })).collect::<Vec<_>>()
     );
 }
 
 #[test]
 fn paragraph_marks_and_property_changes_are_written_in_schema_order() {
-    let mut doc = read_editable(&fixture("FX-TEXT.docx")).expect("reads");
+    let (mut doc, docx) = read_editable(&fixture("FX-TEXT.docx")).expect("reads");
     let (at, _) = short_paragraph(&doc);
     let ins = mark(&mut doc, 9101, "Author A", MarkKind::Insert);
     let change = mark(&mut doc, 9102, "Author B", MarkKind::Insert);
@@ -448,8 +448,8 @@ fn paragraph_marks_and_property_changes_are_written_in_schema_order() {
         crate::docx::ParaStyle { direct: crate::docx::para_props::ParaDirect::in_w("<w:pPr><w:jc w:val=\"left\"/></w:pPr>"), ..(*p.style).clone() };
     style.change = Some(Rc::new(ParaChange { mark: change, previous: Rc::new(previous), properties: true, numbering_change: Raw(None) }));
     p.style = Rc::new(style);
-    let saved = write::save(&doc).expect("saves");
-    let xml = main_part(&doc, &saved);
+    let saved = write::save(&doc, &docx).expect("saves");
+    let xml = main_part(&docx, &saved);
     let dom = roxmltree::Document::parse(&xml).expect("well-formed");
     let ppr = holder(&dom, "Short paragraph.", 2).children().find(|c| c.tag_name().name() == "pPr").expect("properties");
     let kids: Vec<&str> = ppr.children().filter(|c| c.is_element()).map(|c| c.tag_name().name()).collect();
@@ -464,7 +464,7 @@ fn paragraph_marks_and_property_changes_are_written_in_schema_order() {
 
 #[test]
 fn table_row_and_cell_revisions_are_written() {
-    let mut doc = read_editable(&fixture("FX-TBL-BASIC.docx")).expect("reads");
+    let (mut doc, docx) = read_editable(&fixture("FX-TBL-BASIC.docx")).expect("reads");
     let (row, cell, grid, tbl) = (
         mark(&mut doc, 9201, "Author A", MarkKind::Insert),
         mark(&mut doc, 9202, "Author B", MarkKind::Delete),
@@ -482,8 +482,8 @@ fn table_row_and_cell_revisions_are_written() {
     }));
     t.rows[1].rev = RowRevisions { ins: Some(row), ..Default::default() };
     t.rows[0].cells[2].rev = CellRevisions { structural: Some((cell, CellMarkKind::Delete)), change: None };
-    let saved = write::save(&doc).expect("saves");
-    let xml = main_part(&doc, &saved);
+    let saved = write::save(&doc, &docx).expect("saves");
+    let xml = main_part(&docx, &saved);
     let dom = roxmltree::Document::parse(&xml).expect("well-formed");
     let el = |name: &str| dom.descendants().find(|n| n.tag_name().name() == name).unwrap_or_else(|| panic!("{name} is written"));
     let g = el("tblGridChange");
@@ -500,7 +500,7 @@ fn table_row_and_cell_revisions_are_written() {
 
 #[test]
 fn section_changes_are_written_last() {
-    let mut doc = read_editable(&fixture("FX-TEXT.docx")).expect("reads");
+    let (mut doc, mut docx) = read_editable(&fixture("FX-TEXT.docx")).expect("reads");
     let m = mark(&mut doc, 9301, "Author A", MarkKind::Insert);
     let previous = doc.sections[0].page();
     doc.sections[0].left += 36.0;
@@ -509,9 +509,9 @@ fn section_changes_are_written_last() {
         previous,
         previous_raw: Raw(Some("<w:sectPr><w:pgMar w:top=\"1440\" w:right=\"1440\" w:bottom=\"1440\" w:left=\"1440\"/></w:sectPr>".into())),
     }));
-    doc.edited_sections.insert(0);
-    let saved = write::save(&doc).expect("saves");
-    let xml = main_part(&doc, &saved);
+    docx.edited_sections.insert(0);
+    let saved = write::save(&doc, &docx).expect("saves");
+    let xml = main_part(&docx, &saved);
     let dom = roxmltree::Document::parse(&xml).expect("well-formed");
     let body = dom.descendants().find(|n| n.tag_name().name() == "body").expect("a body");
     let sect = body.children().rfind(|n| n.tag_name().name() == "sectPr").expect("a section");
@@ -521,7 +521,7 @@ fn section_changes_are_written_last() {
 }
 
 /// A comment on "Short paragraph." by a person with an identity, with its range, its reference and a reply.
-fn commented(doc: &mut Document) -> Vec<u8> {
+fn commented(doc: &mut Document, docx: &Session) -> Vec<u8> {
     let (at, base) = short_paragraph(doc);
     let author = doc.people.author("Author A", Some(&Identity { provider: "AD".into(), user_id: "a@example.com".into() }));
     let body = |text: &str| {
@@ -554,14 +554,14 @@ fn commented(doc: &mut Document) -> Vec<u8> {
     p.inlines.insert(0, range(RangeKind::CommentStart));
     p.inlines.push(range(RangeKind::CommentEnd));
     p.inlines.push(Inline::CommentRef { id: CommentId(40), run: base });
-    write::save(doc).expect("saves")
+    write::save(doc, docx).expect("saves")
 }
 
 #[test]
 fn new_comments_are_written_with_their_parts() {
-    let mut doc = read_editable(&fixture("FX-TEXT.docx")).expect("reads");
-    let saved = commented(&mut doc);
-    let xml = main_part(&doc, &saved);
+    let (mut doc, docx) = read_editable(&fixture("FX-TEXT.docx")).expect("reads");
+    let saved = commented(&mut doc, &docx);
+    let xml = main_part(&docx, &saved);
     let p = paragraphs(&xml).into_iter().map(|(_, x)| x).find(|x| x.contains("Short paragraph.")).expect("the paragraph");
     let (start, end, reference) =
         (p.find("<w:commentRangeStart w:id=\"40\"/>"), p.find("<w:commentRangeEnd w:id=\"40\"/>"), p.find("<w:commentReference w:id=\"40\"/>"));
@@ -589,18 +589,18 @@ fn new_comments_are_written_with_their_parts() {
 
 #[test]
 fn new_comments_read_back() {
-    let mut doc = read_editable(&fixture("FX-TEXT.docx")).expect("reads");
-    let saved = commented(&mut doc);
-    let again = read_editable(&saved).expect("reads back");
-    assert_eq!(review(&doc), review(&again));
+    let (mut doc, docx) = read_editable(&fixture("FX-TEXT.docx")).expect("reads");
+    let saved = commented(&mut doc, &docx);
+    let (again, again_docx) = read_editable(&saved).expect("reads back");
+    assert_eq!(review(&doc, &docx), review(&again, &again_docx));
 }
 
 #[test]
 fn changed_comments_are_written_and_others_kept() {
     let bytes = fixture("review/FX-REVIEW-COMMENTS.docx");
-    let mut doc = read_editable(&bytes).expect("reads");
+    let (mut doc, docx) = read_editable(&bytes).expect("reads");
     // Unchanged: every part as read.
-    assert_eq!(write::save(&doc).expect("saves"), bytes);
+    assert_eq!(write::save(&doc, &docx).expect("saves"), bytes);
     let reply = Comment {
         id: CommentId(77),
         author: AuthorId(0),
@@ -616,7 +616,7 @@ fn changed_comments_are_written_and_others_kept() {
     };
     doc.people.author("Author A", None);
     doc.comments.by_id.insert(reply.id, reply);
-    let saved = write::save(&doc).expect("saves");
+    let saved = write::save(&doc, &docx).expect("saves");
     let comments = part(&saved, "word/comments.xml").expect("comments");
     assert!(comments.contains("<w:comment w:id=\"77\""), "{comments}");
     assert!(part(&saved, "word/commentsExtended.xml").expect("extended").contains("w15:paraId=\"00000077\" w15:done=\"1\""));
@@ -626,9 +626,9 @@ fn changed_comments_are_written_and_others_kept() {
 #[test]
 fn tracking_is_turned_on_in_the_settings() {
     let bytes = fixture("FX-TEXT.docx");
-    let mut doc = read_editable(&bytes).expect("reads");
+    let (mut doc, docx) = read_editable(&bytes).expect("reads");
     doc.settings.track_revisions = true;
-    let saved = write::save(&doc).expect("saves");
+    let saved = write::save(&doc, &docx).expect("saves");
     let settings = part(&saved, "word/settings.xml").expect("settings");
     assert!(settings.contains("<w:trackRevisions/><w:defaultTabStop"), "{settings}");
     let before = part(&bytes, "word/settings.xml").expect("settings");
@@ -637,10 +637,10 @@ fn tracking_is_turned_on_in_the_settings() {
 
 #[test]
 fn tracking_is_turned_off_and_protection_kept() {
-    let mut doc = read_editable(&fixture("review/FX-REVIEW-PROTECTED.docx")).expect("reads");
+    let (mut doc, docx) = read_editable(&fixture("review/FX-REVIEW-PROTECTED.docx")).expect("reads");
     assert!(doc.settings.track_revisions, "read on");
     doc.settings.track_revisions = false;
-    let saved = write::save(&doc).expect("saves");
+    let saved = write::save(&doc, &docx).expect("saves");
     let settings = part(&saved, "word/settings.xml").expect("settings");
     assert!(!settings.contains("trackRevisions"), "{settings}");
     assert!(settings.contains("<w:documentProtection w:edit=\"trackedChanges\" w:enforcement=\"1\"/>"), "{settings}");
@@ -650,10 +650,10 @@ fn tracking_is_turned_off_and_protection_kept() {
 /// and markers.
 #[test]
 fn a_paragraph_written_from_the_model_keeps_its_review() {
-    let mut doc = read_editable(&fixture("FX-TEXT.docx")).expect("reads");
-    tracked_runs(&mut doc);
-    let saved = commented(&mut doc);
-    let xml = main_part(&doc, &saved);
+    let (mut doc, docx) = read_editable(&fixture("FX-TEXT.docx")).expect("reads");
+    tracked_runs(&mut doc, &docx);
+    let saved = commented(&mut doc, &docx);
+    let xml = main_part(&docx, &saved);
     let dom = roxmltree::Document::parse(&xml).expect("well-formed");
     assert_eq!(holder(&dom, "inserted ", 2).attribute((W, "id")), Some("9001"));
     assert_eq!(holder(&dom, "both ", 2).parent().and_then(|p| p.attribute((W, "id"))), Some("9003"));
@@ -664,7 +664,7 @@ fn a_paragraph_written_from_the_model_keeps_its_review() {
 
 #[test]
 fn moved_text_is_written_with_its_range() {
-    let mut doc = read_editable(&fixture("FX-TEXT.docx")).expect("reads");
+    let (mut doc, docx) = read_editable(&fixture("FX-TEXT.docx")).expect("reads");
     let (at, base) = short_paragraph(&doc);
     let mut to = (*mark(&mut doc, 9401, "Author A", MarkKind::MoveTo)).clone();
     to.move_name = Some("move1".into());
@@ -672,8 +672,8 @@ fn moved_text_is_written_with_its_range() {
     let range = |kind| Inline::Range(RangeMark { kind, id: 9400, name: Some("move1".into()), permission: None });
     let p = para_mut(&mut doc, at);
     p.inlines = vec![range(RangeKind::MoveToStart), Inline::Text("Moved here.".into(), moved), range(RangeKind::MoveToEnd)];
-    let saved = write::save(&doc).expect("saves");
-    let xml = main_part(&doc, &saved);
+    let saved = write::save(&doc, &docx).expect("saves");
+    let xml = main_part(&docx, &saved);
     let p = paragraphs(&xml).into_iter().map(|(_, x)| x).find(|x| x.contains("Moved here.")).expect("the paragraph");
     assert!(
         p.starts_with(
@@ -686,7 +686,7 @@ fn moved_text_is_written_with_its_range() {
 
 #[test]
 fn a_reviewed_paragraph_rewritten_from_the_model_reads_back() {
-    let mut doc = read_editable(&fixture("review/FX-REVIEW-MOVES.docx")).expect("reads");
+    let (mut doc, docx) = read_editable(&fixture("review/FX-REVIEW-MOVES.docx")).expect("reads");
     // A new comment range forces the moved paragraph to be written from the model.
     let at = doc.sections[0]
         .blocks
@@ -720,8 +720,8 @@ fn a_reviewed_paragraph_rewritten_from_the_model_reads_back() {
     p.inlines.insert(first, Inline::Range(RangeMark { kind: RangeKind::CommentStart, id: 500, name: None, permission: None }));
     p.inlines.push(Inline::Range(RangeMark { kind: RangeKind::CommentEnd, id: 500, name: None, permission: None }));
     p.inlines.push(Inline::CommentRef { id: CommentId(500), run });
-    let saved = write::save(&doc).expect("saves");
-    let again = read_editable(&saved).expect("reads back");
-    let (a, b) = (review(&doc), review(&again));
+    let saved = write::save(&doc, &docx).expect("saves");
+    let (again, again_docx) = read_editable(&saved).expect("reads back");
+    let (a, b) = (review(&doc, &docx), review(&again, &again_docx));
     assert_eq!(a.iter().filter(|l| l.starts_with("p ")).collect::<Vec<_>>(), b.iter().filter(|l| l.starts_with("p ")).collect::<Vec<_>>());
 }

@@ -15,7 +15,7 @@ use crate::api::value::{AutoOr, HorizontalAlignment, NoneOr, Points};
 use crate::docx::{Block, Table};
 
 fn doc_xml(e: &Editor) -> String {
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
     let mut s = String::new();
     z.by_name("word/document.xml").unwrap().read_to_string(&mut s).unwrap();
@@ -29,7 +29,7 @@ fn open(body: &str) -> Editor {
 }
 
 fn reopened(e: &Editor) -> Editor {
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut e = Editor::open(&bytes, fonts()).expect("reopens");
     e.complete(fonts());
     e
@@ -553,7 +553,7 @@ fn insert_cells_track_as_inserted_cells_and_moved_text() {
             e.execute(Command::SetTrackChanges(true), fonts());
             cells(&mut e, sel, sel);
             assert!(matches!(e.insert_cells(shift, fonts()), Outcome::Changed(_)));
-            assert!(crate::docx::write::save(e.document()).is_ok());
+            assert!(crate::docx::write::save(e.document(), e.docx()).is_ok());
             e.execute(
                 if accept { Command::AcceptAllRevisions(Default::default()) } else { Command::RejectAllRevisions(Default::default()) },
                 fonts(),

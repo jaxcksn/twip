@@ -2,6 +2,7 @@
 
 use std::rc::Rc;
 
+use super::Session;
 use super::model::Document;
 use super::resolve::Resolver;
 use super::resolvers::{Resolvers, TypedDefs};
@@ -23,15 +24,15 @@ impl std::ops::Deref for Baseline {
 }
 
 impl Baseline {
-    /// `d`'s typed definitions, and the XML path's resolver of `d` saved.
-    pub fn of(d: &Document) -> Baseline {
-        let bytes = super::write::save(d).unwrap_or_else(|e| panic!("the document saves: {e}"));
+    /// `d`'s typed definitions, and the XML path's resolver of `d` saved with `docx`.
+    pub fn of(d: &Document, docx: &Session) -> Baseline {
+        let bytes = super::write::save(d, docx).unwrap_or_else(|e| panic!("the document saves: {e}"));
         Baseline::read(d, &bytes)
     }
 
-    /// `d`'s typed definitions, and the XML path's resolver of the package `d` was read from.
-    pub fn as_read(d: &Document) -> Baseline {
-        Baseline::read(d, &d.source.as_ref().expect("the document was read for editing").package)
+    /// `d`'s typed definitions, and the XML path's resolver of the package `d` was read from (`docx`'s source).
+    pub fn as_read(d: &Document, docx: &Session) -> Baseline {
+        Baseline::read(d, &docx.source.as_ref().expect("the document was read for editing").package)
     }
 
     /// `d`'s typed definitions, and the XML path's resolver of the package `bytes`.

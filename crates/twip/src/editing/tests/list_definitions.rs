@@ -83,7 +83,7 @@ fn part(bytes: &[u8], name: &str) -> String {
 }
 
 fn saved(e: &Editor) -> Vec<u8> {
-    crate::docx::write::save(e.document()).expect("saves")
+    crate::docx::write::save(e.document(), e.docx()).expect("saves")
 }
 
 fn para(e: &Editor, n: usize) -> &Paragraph {

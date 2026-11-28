@@ -182,7 +182,7 @@ impl Editor {
             n += u32::from(self.doc.font_descriptions.contains_key(&r.from.to_lowercase()));
             if n > 0 {
                 changed += n;
-                let mut renames = self.doc.font_renames.clone();
+                let mut renames = self.docx.font_renames.clone();
                 renames.push(rename);
                 steps.push(Step::Fonts { resolver: Some(std::rc::Rc::new(renamed)), renames });
             }

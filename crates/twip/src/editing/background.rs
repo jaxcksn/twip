@@ -409,7 +409,7 @@ impl Editor {
     /// The VML shape numbers the headers use (`o:spid`'s `_x0000_s` numbers as read, and the shapes made since).
     fn shape_numbers(&self) -> std::collections::HashSet<u32> {
         let mut used: std::collections::HashSet<u32> =
-            self.doc.source.as_ref().map_or_else(Default::default, |s| s.stories.values().flat_map(|(xml, _)| spids(xml)).collect());
+            self.docx.source.as_ref().map_or_else(Default::default, |s| s.stories.values().flat_map(|(xml, _)| spids(xml)).collect());
         used.extend(
             self.doc
                 .stories

@@ -48,7 +48,7 @@ fn caret(e: &mut Editor, para: usize, unit: u32) {
 
 fn doc_xml(e: &Editor) -> String {
     use std::io::Read;
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
     let mut s = String::new();
     z.by_name("word/document.xml").unwrap().read_to_string(&mut s).unwrap();
@@ -331,13 +331,13 @@ fn setting_a_drop_downs_entries_replaces_them() {
     let c = by_alias(&e, "C");
     let items = json!({ "items": [{ "text": "One", "value": "1" }, { "text": "Two & more", "value": "2" }] });
     ok(&cmd(&mut e, json!({ "type": "setControl", "id": api(c), "options": items })));
-    let x = crate::docx::write::main_xml(e.document()).expect("writes").expect("changed");
+    let x = crate::docx::write::main_xml(e.document(), e.docx()).expect("writes").expect("changed");
     let x = &x[x.find("<w:comboBox").expect("a combo box still")..];
     let x = &x[..x.find("</w:comboBox>").expect("its end")];
     assert!(x.starts_with(r#"<w:comboBox w:lastValue="b">"#), "its last value kept: {x}");
     assert!(x.contains(r#"w:displayText="One" w:value="1""#) && x.contains(r#"w:displayText="Two &amp; more" w:value="2""#), "{x}");
     assert!(!x.contains(r#"w:value="a""#), "the old entries are gone: {x}");
-    let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    let again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens");
     let x = again.document().controls[&by_alias(&again, "C")].props.kind_xml.clone().map(|k| k.xml).unwrap_or_default();
     assert!(x.contains(r#"w:displayText="One""#), "saved: {x}");
 }
@@ -603,7 +603,7 @@ fn a_date_control_without_its_xml_keeps_its_locale_when_its_calendar_is_set() {
     ok(&cmd(&mut e, json!({ "type": "setControl", "id": id.0, "options": { "locale": "de-DE" } })));
     assert!(e.document().controls[&c].props.kind_xml.is_none(), "no XML of its own yet");
     assert!(matches!(e.set_date_control_storage(&id, Some("hijri"), None, fonts()), Outcome::Changed(_)));
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let again = Editor::open(&saved, fonts()).expect("reopens");
     let k = ctl(&again, |_| true);
     let s = date_settings(&again.document().controls[&k].props).expect("a date control");

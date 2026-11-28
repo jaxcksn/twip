@@ -248,7 +248,7 @@ mod tests {
         assert_eq!(names(&e), ["_Toc1"]);
         assert!(matches!(e.execute(Command::DeleteBookmark("Gone".into()), fonts()), Outcome::Refused(_)));
         assert!(matches!(e.execute(Command::InsertBookmark("1st".into()), fonts()), Outcome::Refused(_)));
-        let saved = crate::docx::write::save(e.document()).expect("saves");
+        let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
         let e = Editor::open(&saved, fonts()).expect("reopens");
         assert_eq!(names(&e), ["_Toc1"]);
     }

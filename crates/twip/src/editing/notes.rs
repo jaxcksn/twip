@@ -241,7 +241,7 @@ impl Editor {
     pub fn set_note_separator(&mut self, kind: NoteKind, part: crate::docx::NoteSeparator, text: Option<&str>, fonts: &Fonts) -> Outcome {
         use crate::docx::NoteSeparator as S;
         let key = part.key(kind);
-        let defaults = self.doc.source.as_ref().map(|s| &s.separator_defaults);
+        let defaults = self.docx.source.as_ref().map(|s| &s.separator_defaults);
         let builtin = |k: &str| defaults.and_then(|d| d.get(k)).map(|b| b.to_vec());
         let blocks = match text {
             None if part == S::Notice => None,

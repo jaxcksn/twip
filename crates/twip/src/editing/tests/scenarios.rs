@@ -790,7 +790,7 @@ fn run(path: &Path) {
                 .replace(['/', '\\'], "__");
             let out = Path::new(&dir).join(name).with_extension("docx");
             std::fs::create_dir_all(&dir).expect("the output directory");
-            let saved = crate::docx::write::save(r.e.document()).map_err(|e| e.to_string());
+            let saved = crate::docx::write::save(r.e.document(), r.e.docx()).map_err(|e| e.to_string());
             std::fs::write(&out, saved.unwrap_or_else(|e| format!("not saved: {e}").into_bytes())).expect("writes");
         }
     }

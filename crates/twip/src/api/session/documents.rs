@@ -7,7 +7,6 @@ use crate::api::error::{Error, ErrorCode};
 use crate::api::fonts::FontLibrary;
 use crate::api::value::Bytes;
 use crate::api::warning::{Warning, WarningCode};
-use crate::docx::Document;
 use crate::editing::Editor;
 
 /// The formats a document exports to.
@@ -114,8 +113,8 @@ pub struct OpenToken {
 
 /// A blank document's editor.
 pub(super) fn blank(fonts: &FontLibrary) -> Editor {
-    let document = crate::docx::read_editable(&crate::docx::blank::blank_docx()).expect("the blank document always reads");
-    Editor::with_document(document, &fonts.fonts())
+    let (document, docx) = crate::docx::read_editable(&crate::docx::blank::blank_docx()).expect("the blank document always reads");
+    Editor::with_session(document, docx, &fonts.fonts())
 }
 
 impl Session {
@@ -129,9 +128,9 @@ impl Session {
     /// still be cancelled: all the work that can fail or take long happens here, and committing is a swap.
     pub fn open_prepare(&mut self, bytes: &[u8]) -> Result<OpenToken, Error> {
         unsupported_package(bytes)?;
-        let document: Document = crate::docx::read_editable(bytes).map_err(|e| Error::new(ErrorCode::ImportFailed, e))?;
-        let warnings = document.diagnostics.warnings.clone();
-        Ok(OpenToken { editor: Box::new(Editor::with_document(document, &self.fonts.fonts())), warnings })
+        let (document, docx) = crate::docx::read_editable(bytes).map_err(|e| Error::new(ErrorCode::ImportFailed, e))?;
+        let warnings = docx.diagnostics.warnings.clone();
+        Ok(OpenToken { editor: Box::new(Editor::with_session(document, docx, &self.fonts.fonts())), warnings })
     }
 
     /// Replaces the open document with a prepared one. Returns the read's warnings.
@@ -180,7 +179,8 @@ impl Session {
         let revision = self.editor.revision();
         match options {
             ExportOptions::Docx => {
-                let bytes = crate::docx::write::save(self.editor.document()).map_err(|e| Error::new(ErrorCode::ExportFailed, e))?;
+                let bytes =
+                    crate::docx::write::save(self.editor.document(), self.editor.docx()).map_err(|e| Error::new(ErrorCode::ExportFailed, e))?;
                 self.editor.mark_saved();
                 if self.state.modified {
                     self.changed(Vec::new());

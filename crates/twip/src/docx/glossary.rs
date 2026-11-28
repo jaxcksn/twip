@@ -311,7 +311,7 @@ mod tests {
 
     #[test]
     fn reads_building_blocks_with_their_properties() {
-        let doc = super::super::read_editable(&fixture()).unwrap();
+        let (doc, docx) = super::super::read_editable(&fixture()).unwrap();
         let g = doc.glossary.as_ref().expect("a glossary");
         let names: Vec<(&str, &str)> = g.parts.iter().map(|b| (b.name.as_str(), b.category.as_str())).collect();
         assert_eq!(
@@ -330,14 +330,14 @@ mod tests {
         assert!(g.parts.iter().all(|b| b.editable && b.state == PartState::AsRead));
         assert_eq!(g.find("Violation", "Sub-templates", None), Some(0));
         assert_eq!(g.find("violation", "Sub-templates", None), None);
-        let src = doc.source.as_ref().and_then(|s| s.glossary.as_ref()).expect("the glossary as read");
+        let src = docx.source.as_ref().and_then(|s| s.glossary.as_ref()).expect("the glossary as read");
         assert_eq!(src.parts.len(), 6);
         assert!(src.xml[src.parts[1].0.clone()].contains("FeeRow"));
     }
 
     #[test]
     fn body_styles_resolve_by_name_with_the_document_first() {
-        let doc = super::super::read_editable(&fixture()).unwrap();
+        let (doc, _) = super::super::read_editable(&fixture()).unwrap();
         let g = doc.glossary.as_ref().unwrap();
         let res = doc.resolver.as_ref().unwrap();
         let body = paras(&g.parts[0].body);
@@ -360,7 +360,7 @@ mod tests {
 
     #[test]
     fn body_lists_pictures_revisions_and_comments_are_read() {
-        let doc = super::super::read_editable(&fixture()).unwrap();
+        let (doc, docx) = super::super::read_editable(&fixture()).unwrap();
         let g = doc.glossary.as_ref().unwrap();
         let body = paras(&g.parts[0].body);
         let labels: Vec<&str> = body[2..4].iter().map(|p| p.list.as_ref().map_or("", |l| l.text.as_str())).collect();
@@ -373,9 +373,9 @@ mod tests {
         let inserted = body[1].inlines.iter().any(|i| matches!(i, Inline::Text(s, r) if s.contains("again") && r.rev.ins.is_some()));
         assert!(inserted, "the tracked insertion is a revision");
         // The comment is the glossary's own: its markers aren't orphans, and they stay in the paragraph's source.
-        assert_eq!(doc.diagnostics.count(super::super::diagnostics::WarningCode::CommentReferenceOrphan), 0);
+        assert_eq!(docx.diagnostics.count(super::super::diagnostics::WarningCode::CommentReferenceOrphan), 0);
         let src = body[1].src().expect("a source");
-        let xml = &doc.source.as_ref().unwrap().glossary.as_ref().unwrap().xml;
+        let xml = &docx.source.as_ref().unwrap().glossary.as_ref().unwrap().xml;
         assert!(src.ranges.iter().any(|r| xml[r.clone()].contains("commentReference")));
     }
 
@@ -395,10 +395,10 @@ mod tests {
             out.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
             std::io::Write::write_all(&mut out, &data).unwrap();
         }
-        let doc = super::super::read_editable(&out.finish().unwrap().into_inner()).unwrap();
+        let (doc, docx) = super::super::read_editable(&out.finish().unwrap().into_inner()).unwrap();
         let g = doc.glossary.as_ref().unwrap();
         assert_eq!(g.parts.len(), 5);
         assert!(g.parts.iter().all(|b| b.name != "FeeRow"));
-        assert_eq!(doc.diagnostics.count(super::super::diagnostics::WarningCode::GlossaryUnreadable), 1);
+        assert_eq!(docx.diagnostics.count(super::super::diagnostics::WarningCode::GlossaryUnreadable), 1);
     }
 }

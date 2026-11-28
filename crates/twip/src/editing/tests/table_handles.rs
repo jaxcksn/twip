@@ -341,7 +341,7 @@ fn set_table_position_saves_reopens_and_undoes() {
     want.wrap_distance = Some(crate::api::state::TextDistance { top: Points(0.0), bottom: Points(0.0), left: Points(9.0), right: Points(9.0) });
     want.allow_overlap = Some(true);
     assert_eq!(e.table_position(), Some(want), "the state's value");
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut xml = String::new();
     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&bytes[..])).expect("a package");
     std::io::Read::read_to_string(&mut zip.by_name("word/document.xml").expect("the document part"), &mut xml).expect("text");

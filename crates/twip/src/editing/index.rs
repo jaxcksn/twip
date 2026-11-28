@@ -604,7 +604,7 @@ mod tests {
 
     fn doc() -> Document {
         let bytes = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/editor/FX-NEST-3.docx")).expect("FX-NEST-3 fixture");
-        crate::docx::read_editable(&bytes).expect("FX-NEST-3 reads")
+        crate::docx::read_editable(&bytes).expect("FX-NEST-3 reads").0
     }
 
     #[test]

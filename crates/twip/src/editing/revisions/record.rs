@@ -1179,7 +1179,7 @@ mod tests {
         let mut e = tracked(&blank_with("Alpha beta."));
         select(&mut e, 6, 6);
         e.execute(Command::InsertText("new ".into()), fonts());
-        let saved = crate::docx::write::save(e.document()).expect("saves");
+        let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
         let mut e = tracked(&saved);
         assert_eq!(revised(&e), 1, "the insertion is read back");
         select(&mut e, 6, 10);
@@ -1192,7 +1192,7 @@ mod tests {
         let mut e = tracked(&blank_with("Alpha beta."));
         let before = e.document().sections[0].page();
         e.execute(Command::SetOrientation(crate::api::command::SectionValue::here(crate::api::value::Orientation::Landscape)), fonts());
-        let saved = crate::docx::write::save(e.document()).expect("saves");
+        let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
         let read = crate::docx::read(&saved).expect("reads back");
         let c = read.sections[0].change.as_ref().expect("the change is saved");
         assert_eq!((&c.previous, read.sections[0].page_w > read.sections[0].page_h), (&before, true));
@@ -1201,7 +1201,7 @@ mod tests {
         let mut e = tracked(&saved);
         e.execute(Command::RejectAllRevisions(Default::default()), fonts());
         assert!(e.document().sections[0].change.is_none() && e.document().sections[0].page() == before);
-        let saved = crate::docx::write::save(e.document()).expect("saves");
+        let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
         let read = crate::docx::read(&saved).expect("reads back");
         assert!(read.sections[0].change.is_none() && read.sections[0].page() == before);
     }

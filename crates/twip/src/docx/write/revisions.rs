@@ -235,7 +235,7 @@ mod tests {
     #[test]
     fn format_changes_go_last_in_the_run_properties() {
         let cx = Cx::of_xml(r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>"#);
-        let doc = crate::docx::read_editable(&crate::docx::blank::blank_docx()).expect("a blank document");
+        let (doc, _) = crate::docx::read_editable(&crate::docx::blank::blank_docx()).expect("a blank document");
         let mut run = match doc.sections.first().and_then(|s| s.blocks.first()) {
             Some(crate::docx::model::Block::Para(p)) => (*p.mark).clone(),
             _ => panic!("a blank document starts with a paragraph"),

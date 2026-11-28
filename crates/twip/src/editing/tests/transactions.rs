@@ -13,7 +13,7 @@ use super::{fonts, open, texts};
 use crate::api::record::Origin;
 
 fn saved(e: &Editor) -> Vec<u8> {
-    crate::docx::write::save(e.document()).unwrap_or_default()
+    crate::docx::write::save(e.document(), e.docx()).unwrap_or_default()
 }
 
 fn check(path: &Path) {

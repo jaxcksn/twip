@@ -62,7 +62,7 @@ fn allocations_and_held<T>(f: impl FnOnce() -> T) -> (T, u64, i64) {
 
 fn showcase() -> Document {
     let bytes = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/docx-feature-showcase.docx")).expect("the showcase");
-    crate::docx::read_editable(&bytes).expect("reads")
+    crate::docx::read_editable(&bytes).expect("reads").0
 }
 
 #[test]

@@ -2921,7 +2921,8 @@ fn tables_read_as_one_save_as_one() {
     let doc = format!(r#"<w:document xmlns:w="{w}"><w:body>{body}<w:sectPr/></w:body></w:document>"#);
     let rels = r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>"#;
     let bytes = super::package_bytes(&[("word/document.xml", &doc), ("word/_rels/document.xml.rels", rels)]).unwrap();
-    let saved = crate::docx::write::save(&crate::docx::read_editable(&bytes).expect("reads")).expect("saves");
+    let (read, read_docx) = crate::docx::read_editable(&bytes).expect("reads");
+    let saved = crate::docx::write::save(&read, &read_docx).expect("saves");
     let mut xml = String::new();
     std::io::Read::read_to_string(
         &mut zip::ZipArchive::new(std::io::Cursor::new(&saved[..])).unwrap().by_name("word/document.xml").unwrap(),
@@ -2932,7 +2933,7 @@ fn tables_read_as_one_save_as_one() {
     let grid: Vec<&str> = xml.split(r#"<w:gridCol w:w=""#).skip(1).map(|s| &s[..s.find('"').unwrap()]).collect();
     assert_eq!(grid, ["2000", "1000", "1000", "2000"]);
     assert_eq!(xml.matches(r#"<w:gridSpan w:val="2"/>"#).count(), 3, "{xml}");
-    let again = crate::docx::read_editable(&saved).expect("reads again");
+    let (again, _) = crate::docx::read_editable(&saved).expect("reads again");
     assert!(matches!(&again.sections[0].blocks[1], crate::docx::Block::Table(t) if t.rows.len() == 2 && t.grid.len() == 4));
 }
 
@@ -2949,14 +2950,14 @@ fn a_later_tables_alignment_and_margins_are_its_rows_exceptions_and_another_styl
         crate::docx::read_editable(&bytes).expect("reads")
     };
     let tables = |d: &crate::docx::Document| d.sections[0].blocks.iter().filter(|b| matches!(b, crate::docx::Block::Table(_))).count();
-    assert_eq!(tables(&read("")), 2, "the second has no style");
+    assert_eq!(tables(&read("").0), 2, "the second has no style");
     let mar = r#"<w:tblCellMar><w:left w:w="500" w:type="dxa"/></w:tblCellMar>"#;
-    let doc = read(&format!(r#"<w:tblStyle w:val="Grid"/><w:jc w:val="center"/>{mar}"#));
+    let (doc, docx) = read(&format!(r#"<w:tblStyle w:val="Grid"/><w:jc w:val="center"/>{mar}"#));
     assert_eq!(tables(&doc), 1);
     let Some(crate::docx::Block::Table(t)) = doc.sections[0].blocks.get(1) else { panic!("a table") };
     assert_eq!((t.rows[0].jc, t.rows[1].jc), (None, Some(crate::docx::props::Jc::Center)));
     assert_eq!((t.rows[0].cells[0].margins[1], t.rows[1].cells[0].margins[1]), (0.0, 25.0), "{:?}", t.rows[1].cells[0].margins);
-    let saved = crate::docx::write::save(&doc).expect("saves");
+    let saved = crate::docx::write::save(&doc, &docx).expect("saves");
     let mut xml = String::new();
     std::io::Read::read_to_string(
         &mut zip::ZipArchive::new(std::io::Cursor::new(&saved[..])).unwrap().by_name("word/document.xml").unwrap(),
@@ -2965,7 +2966,7 @@ fn a_later_tables_alignment_and_margins_are_its_rows_exceptions_and_another_styl
     .unwrap();
     assert_eq!(xml.matches("<w:tbl>").count(), 1, "{xml}");
     assert!(xml.contains(&format!(r#"<w:tblPrEx><w:jc w:val="center"/>{mar}</w:tblPrEx>"#)), "{xml}");
-    let again = crate::docx::read_editable(&saved).expect("reads again");
+    let (again, _) = crate::docx::read_editable(&saved).expect("reads again");
     let Some(crate::docx::Block::Table(u)) = again.sections[0].blocks.get(1) else { panic!("a table") };
     assert_eq!((u.rows[1].jc, u.rows[1].cells[0].margins), (t.rows[1].jc, t.rows[1].cells[0].margins));
 }

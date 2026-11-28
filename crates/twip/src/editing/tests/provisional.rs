@@ -14,7 +14,7 @@ fn fixture() -> Editor {
 }
 
 fn parts(e: &Editor) -> Vec<String> {
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).expect("a package");
     let mut names: Vec<String> = z.file_names().filter_map(|n| n.ok().map(|n| n.to_string())).collect();
     names.sort();

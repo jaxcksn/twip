@@ -57,7 +57,7 @@ pub(crate) use reader::local_offset;
 #[cfg(test)]
 pub(crate) use reader::set_option;
 pub(crate) use reader::style_cell;
-pub use reader::{now_local, now_utc, read, read_at, read_editable};
+pub use reader::{now_local, now_utc, read, read_at, read_editable, read_reported};
 pub use session::Session;
 #[cfg(test)]
 mod cascade_tests;

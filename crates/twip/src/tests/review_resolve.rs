@@ -580,7 +580,7 @@ fn protection_keeps_track_options_on() {
     assert_eq!(e.track_options(), (true, true));
     let mut doc = e.document().clone();
     (doc.settings.do_not_track_moves, doc.settings.do_not_track_formatting) = (true, true);
-    let mut e = Editor::with_document(doc, fonts());
+    let mut e = Editor::with_session(doc, e.docx().clone(), fonts());
     e.execute(Command::SelectAll, fonts());
     e.execute(Command::SetBold(true), fonts());
     let tracked = e.document().sections.iter().flat_map(|s| &s.blocks).any(|b| match b {

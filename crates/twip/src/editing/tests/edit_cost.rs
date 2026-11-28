@@ -36,7 +36,7 @@ fn editor(body: &str) -> Editor {
 }
 
 fn document(body: &str) -> Document {
-    crate::docx::read_editable(&blank_body(body)).expect("reads")
+    crate::docx::read_editable(&blank_body(body)).expect("reads").0
 }
 
 fn dict(name: &str) -> Vec<u8> {
@@ -230,7 +230,7 @@ fn typing_beside_text_boxes_leaves_their_stories_indexed_as_they_are() {
     let boxed = sp(0, 0, 40, 20, "rect", "", "FFFFFF").replace("<wps:bodyPr/>", story);
     let time = |inlines: &str, stories: usize| {
         let body = format!("<w:p><w:r><w:t>words</w:t></w:r>{inlines}</w:p>");
-        let mut doc = crate::docx::read_editable(&bytes(&body).expect("a package")).expect("reads");
+        let (mut doc, mut docx) = crate::docx::read_editable(&bytes(&body).expect("a package")).expect("reads");
         let p = first_para(&doc);
         assert_eq!(p.inlines.iter().filter(|i| i.story().is_some()).count(), stories, "the text boxes are read");
         let (para, run) = (ParaId(p.id), p.inlines.iter().find_map(|i| i.run().cloned()).expect("a run"));
@@ -238,7 +238,7 @@ fn typing_beside_text_boxes_leaves_their_stories_indexed_as_they_are() {
         let t = ms(|| {
             for _ in 0..20 {
                 let s = Step::Text { para, range: Unit(0)..Unit(0), with: vec![Inline::Text("a".into(), run.clone())], edges: Edges::default() };
-                s.apply(&mut doc, &mut idx).expect("applies");
+                s.apply(&mut doc, &mut docx, &mut idx).expect("applies");
             }
         });
         assert_eq!(idx, DocIndex::build(&doc), "the same index as a fresh build");

@@ -2,15 +2,15 @@
 
 use std::io::Cursor;
 
-use crate::docx::Document;
+use crate::docx::Session;
 use crate::docx::font_table::FontRename;
 
-/// The style, numbering, theme and font table parts with the document's font renames applied, added to `parts`.
-pub(super) fn font_renames(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
-    if doc.font_renames.is_empty() {
+/// The style, numbering, theme and font table parts with the session's font renames applied, added to `parts`.
+pub(super) fn font_renames(session: &Session, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
+    if session.font_renames.is_empty() {
         return Ok(());
     }
-    let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
+    let src = session.source.as_ref().ok_or("the document was not read for editing")?;
     let mut zin = zip::ZipArchive::new(Cursor::new(&src.package[..])).map_err(|e| e.to_string())?;
     let mut read = |parts: &[(String, Vec<u8>)], n: &str| -> Result<Option<String>, String> {
         if let Some((_, b)) = parts.iter().find(|(m, _)| m == n) {
@@ -27,7 +27,7 @@ pub(super) fn font_renames(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -
         let Some(name) = target(&rels, kind, dir) else { continue };
         let Some(xml) = read(parts, &name)? else { continue };
         let out = match kind {
-            "theme" => rewrite(&xml, &["latin", "ea", "cs", "font"], &["typeface"], &doc.font_renames, |_| false),
+            "theme" => rewrite(&xml, &["latin", "ea", "cs", "font"], &["typeface"], &session.font_renames, |_| false),
             "fontTable" => {
                 let names: Vec<String> = roxmltree::Document::parse(&xml)
                     .map(|d| {
@@ -38,9 +38,9 @@ pub(super) fn font_renames(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -
                     })
                     .unwrap_or_default();
                 // An entry for the new name already: the old entry stays as it is.
-                rewrite(&xml, &["font"], &["name"], &doc.font_renames, |to| names.contains(&to.to_lowercase()))
+                rewrite(&xml, &["font"], &["name"], &session.font_renames, |to| names.contains(&to.to_lowercase()))
             }
-            _ => rewrite(&xml, &["rFonts"], &["ascii", "hAnsi", "eastAsia", "cs"], &doc.font_renames, |_| false),
+            _ => rewrite(&xml, &["rFonts"], &["ascii", "hAnsi", "eastAsia", "cs"], &session.font_renames, |_| false),
         };
         if out != xml {
             match parts.iter_mut().find(|(m, _)| *m == name) {

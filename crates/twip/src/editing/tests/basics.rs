@@ -213,7 +213,7 @@ fn added_rows_and_typing_in_them_save_and_reopen() {
     type_text(&mut e, "new row");
     let edited = texts(&e);
     assert!(edited.contains(&"new row".to_string()));
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
     assert_eq!(texts(&again), edited);
 }
@@ -338,7 +338,7 @@ fn a_deleted_float_stays_deleted_after_saving() {
     e.execute(crate::editing::tests::del(super::super::commands::Dir::Forward, false), fonts());
     assert_eq!(count(&e), before - 1);
     let edited = texts(&e);
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
     assert_eq!(count(&again), before - 1);
     assert_eq!(texts(&again), edited);
@@ -386,7 +386,7 @@ fn edits_in_every_story_save_and_reopen() {
     };
     let edited = snap(e.document());
     assert!(edited.0.contains('Q') && edited.2.contains('Q') && edited.1.iter().filter(|t| t.contains('Q')).count() == 2, "{edited:?}");
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
     assert_eq!(snap(again.document()), edited);
     assert_eq!(texts(&again), texts(&e));
@@ -419,7 +419,7 @@ fn a_nudged_float_saves_its_new_offsets() {
     e.execute(crate::editing::tests::mv(super::super::commands::MoveBy::Char, super::super::commands::Dir::Forward, false), fonts());
     e.execute(crate::editing::tests::mv(super::super::commands::MoveBy::Line, super::super::commands::Dir::Forward, false), fonts());
     let moved = floats(&e);
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
     let back = floats(&again);
     assert_eq!(back.len(), moved.len());
@@ -447,7 +447,7 @@ fn a_resized_float_saves_its_new_size() {
     };
     let edited = size(&r.e);
     assert!((edited[1].0 - 151.2).abs() < 0.01 && (edited[1].1 - 108.0).abs() < 0.01, "{edited:?}");
-    let bytes = crate::docx::write::save(r.e.document()).expect("saves");
+    let bytes = crate::docx::write::save(r.e.document(), r.e.docx()).expect("saves");
     if let Some(d) = std::env::var_os("RT_KEEP") {
         std::fs::write(std::path::Path::new(&d).join("FX-OBJ.resize.docx"), &bytes).expect("writes");
     }
@@ -487,7 +487,7 @@ fn resized_columns_and_rows_save_and_reopen() {
     let edited = tables(&r.e);
     assert_eq!(edited[1].0, vec![186.0, 126.0, 156.0]);
     assert!(edited[1].1[1].as_ref().is_some_and(|(_, rule)| *rule == crate::docx::HeightRule::AtLeast), "{:?}", edited[1].1);
-    let bytes = crate::docx::write::save(r.e.document()).expect("saves");
+    let bytes = crate::docx::write::save(r.e.document(), r.e.docx()).expect("saves");
     if let Some(d) = std::env::var_os("RT_KEEP") {
         std::fs::write(std::path::Path::new(&d).join("FX-TBL-BASIC.resize.docx"), &bytes).expect("writes");
     }
@@ -508,7 +508,7 @@ fn a_reanchored_float_saves_in_its_new_paragraph() {
     let floats = |e: &mut super::super::Editor| crate::editing::inspect::inspect(e, "dump", true)["dump"]["floats"].clone();
     let edited = floats(&mut r.e);
     assert_eq!(edited[0]["anchor"], json!(5), "{edited}");
-    let bytes = crate::docx::write::save(r.e.document()).expect("saves");
+    let bytes = crate::docx::write::save(r.e.document(), r.e.docx()).expect("saves");
     if let Some(d) = std::env::var_os("RT_KEEP") {
         std::fs::write(std::path::Path::new(&d).join("FX-OBJ.reanchor.docx"), &bytes).expect("writes");
     }
@@ -606,7 +606,7 @@ fn a_border_moved_in_selected_rows_saves() {
     let tables = |e: &mut super::super::Editor| crate::editing::inspect::inspect(e, "dump", true)["dump"]["tables"].clone();
     let edited = tables(&mut r.e);
     assert_eq!(edited[1]["grid"], json!([156.0, 30.0, 126.0, 156.0]));
-    let bytes = crate::docx::write::save(r.e.document()).expect("saves");
+    let bytes = crate::docx::write::save(r.e.document(), r.e.docx()).expect("saves");
     if let Some(d) = std::env::var_os("RT_KEEP") {
         std::fs::write(std::path::Path::new(&d).join("FX-TBL-BASIC.obs48.docx"), &bytes).expect("writes");
     }
@@ -627,7 +627,7 @@ fn table_formats_save_and_reopen() {
     let tables = |e: &mut super::super::Editor| crate::editing::inspect::inspect(e, "dump", true)["dump"]["tables"].clone();
     let edited = tables(&mut r.e);
     assert_eq!(edited[1]["header_rows"], json!(1));
-    let bytes = crate::docx::write::save(r.e.document()).expect("saves");
+    let bytes = crate::docx::write::save(r.e.document(), r.e.docx()).expect("saves");
     if let Some(d) = std::env::var_os("RT_KEEP") {
         std::fs::write(std::path::Path::new(&d).join("FX-TBL-BASIC.formats.docx"), &bytes).expect("writes");
     }
@@ -665,7 +665,7 @@ fn an_inserted_footnote_saves_and_deleting_its_reference_deletes_it() {
     let edited = note_texts(&e);
     assert_eq!(edited.len(), before.len() + 1);
     assert!(edited.last().unwrap().ends_with(" New note."), "{edited:?}");
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     if let Some(d) = std::env::var_os("RT_KEEP") {
         std::fs::write(std::path::Path::new(&d).join("FX-STORIES.footnote.docx"), &bytes).expect("writes");
     }
@@ -675,7 +675,7 @@ fn an_inserted_footnote_saves_and_deleting_its_reference_deletes_it() {
     e.set_caret_for_benchmark(Selection::Caret(super::super::position::Position::text(StoryId::Body, para, Unit(4))));
     e.execute(crate::editing::tests::del(super::super::commands::Dir::Forward, false), fonts());
     assert_eq!(note_texts(&e), before);
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
     assert_eq!(note_texts(&again), before);
     e.execute(Command::Undo(Default::default()), fonts());
@@ -692,7 +692,7 @@ fn notes_inserted_in_a_document_without_notes_save() {
         e.execute(if kind == crate::docx::NoteKind::Foot { Command::InsertFootnote } else { Command::InsertEndnote }, fonts());
         type_text(&mut e, "A note.");
     }
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     if let Some(d) = std::env::var_os("RT_KEEP") {
         std::fs::write(std::path::Path::new(&d).join("FX-TEXT.notes.docx"), &bytes).expect("writes");
     }
@@ -729,7 +729,7 @@ fn deleted_and_split_cells_save_and_reopen() {
                 .collect()
         };
         let edited = tables(&mut r.e);
-        let bytes = crate::docx::write::save(r.e.document()).expect("saves");
+        let bytes = crate::docx::write::save(r.e.document(), r.e.docx()).expect("saves");
         if let Some(d) = std::env::var_os("RT_KEEP") {
             std::fs::write(std::path::Path::new(&d).join(format!("FX-TBL-BASIC.{cmd}.docx")), &bytes).expect("writes");
         }
@@ -758,7 +758,7 @@ fn editing_works_in_every_layout_status() {
         type_text(&mut e, "Still editable. ");
         e.complete(fonts());
         assert!(texts(&e)[0].starts_with("Still editable. "));
-        assert!(crate::docx::write::save(e.document()).is_ok());
+        assert!(crate::docx::write::save(e.document(), e.docx()).is_ok());
         e.execute(Command::Undo(Default::default()), fonts());
         assert_eq!(texts(&e), before);
         HF_ALTERNATE.set(0.0);
@@ -885,7 +885,7 @@ fn a_row_inserted_in_a_repeating_section_saves_as_its_own_item() {
     assert_eq!(edited.len(), 6);
     assert_eq!(edited[3], vec!["Some(RepeatingSection { title: None, fixed: false })".to_string(), "Some(RepeatingItem)".to_string()]);
     assert_eq!(distinct_items(&e), 4);
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     if let Some(d) = std::env::var_os("RT_KEEP") {
         std::fs::write(std::path::Path::new(&d).join("FX-REPEAT-REGION.row.docx"), &bytes).expect("writes");
     }
@@ -903,7 +903,7 @@ fn a_toggled_checkbox_saves_its_state() {
     let faces = |e: &super::super::Editor| texts(e).into_iter().filter(|t| t.ends_with(" done")).collect::<Vec<_>>();
     let edited = faces(&r.e);
     assert_eq!(edited, vec!["\u{2612} done", "\u{2612} done", "\u{2610} done"]);
-    let bytes = crate::docx::write::save(r.e.document()).expect("saves");
+    let bytes = crate::docx::write::save(r.e.document(), r.e.docx()).expect("saves");
     if let Some(d) = std::env::var_os("RT_KEEP") {
         std::fs::write(std::path::Path::new(&d).join("FX-REPEAT-REGION.checkbox.docx"), &bytes).expect("writes");
     }
@@ -951,7 +951,7 @@ fn wrapping_and_the_anchor_lock_save() {
     let now = body_floats(&e);
     assert_eq!((now[0].wrap, now[0].locked), (crate::docx::FloatWrap::Tight, !was[0].locked));
     assert_eq!((now[1].wrap, now[1].behind), (crate::docx::FloatWrap::None, true));
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     if let Some(d) = std::env::var_os("RT_KEEP") {
         std::fs::write(std::path::Path::new(&d).join("FX-OBJ.wrap.docx"), &bytes).expect("writes");
     }
@@ -980,7 +980,7 @@ fn an_inline_picture_resizes_by_its_handle_and_saves() {
     assert!(now[0].0 > was[0].0 + 30.0, "{was:?} -> {now:?}");
     assert!((now[0].0 / now[0].1 - was[0].0 / was[0].1).abs() < 0.02, "ratio kept: {was:?} -> {now:?}");
     assert_eq!(&now[1..], &was[1..]);
-    let bytes = crate::docx::write::save(r.e.document()).expect("saves");
+    let bytes = crate::docx::write::save(r.e.document(), r.e.docx()).expect("saves");
     if let Some(d) = std::env::var_os("RT_KEEP") {
         std::fs::write(std::path::Path::new(&d).join("FX-OBJ.inline-resize.docx"), &bytes).expect("writes");
     }
@@ -1044,7 +1044,7 @@ fn a_floating_picture_control() {
     assert!((m.h_offset - g.h_offset).abs() > 30.0, "moved: {} -> {}", g.h_offset, m.h_offset);
     assert_eq!((control(&r.e).0, image(&r.e, &m)), (c, svg.as_bytes().to_vec()), "the control and its picture stay");
 
-    let saved = crate::docx::write::save(r.e.document()).expect("saves");
+    let saved = crate::docx::write::save(r.e.document(), r.e.docx()).expect("saves");
     let mut xml = String::new();
     zip::ZipArchive::new(std::io::Cursor::new(saved.clone())).unwrap().by_name("word/document.xml").unwrap().read_to_string(&mut xml).unwrap();
     let anchor = &xml[xml.find("<wp:anchor").unwrap()..xml.find("</wp:anchor>").unwrap()];
@@ -1121,7 +1121,7 @@ fn an_inline_picture_floats_where_it_is_and_goes_back_in_line() {
         (f.wrap, f.h_relative, f.v_relative, f.image.is_some()),
         (crate::docx::FloatWrap::Square, crate::docx::HorizontalRelation::Column, crate::docx::VerticalRelation::Paragraph, true)
     );
-    let bytes = crate::docx::write::save(r.e.document()).expect("saves");
+    let bytes = crate::docx::write::save(r.e.document(), r.e.docx()).expect("saves");
     if let Some(d) = std::env::var_os("RT_KEEP") {
         std::fs::write(std::path::Path::new(&d).join("FX-OBJ.inline-to-float.docx"), &bytes).expect("writes");
     }
@@ -1322,7 +1322,7 @@ fn position_commands_place_the_float_and_the_state_reports_it() {
     );
     let p = e.object_selection().and_then(|o| o.placement).expect("a placement");
     assert_eq!((p.wrap_side, p.distance.left), (WrapSide::Largest, Points(18.0)));
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
     let (a, b) = (&body_floats(&again)[1], &body_floats(&e)[1]);
     assert_eq!(
@@ -1387,7 +1387,7 @@ fn an_inserted_picture_saves_with_its_image() {
     };
     let now = pictures(&e);
     assert_eq!(now.len(), 2, "{:?}", now.iter().map(|p| (p.0, p.1)).collect::<Vec<_>>());
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     if let Some(d) = std::env::var_os("RT_KEEP") {
         std::fs::write(std::path::Path::new(&d).join("FX-STORIES.picture.docx"), &bytes).expect("writes");
     }
@@ -1410,7 +1410,7 @@ fn an_inserted_jpeg_xr_picture_saves_as_a_wdp_part() {
     let out =
         e.execute(Command::InsertPicture(crate::api::command::Picture { data: crate::api::value::Bytes(data.clone()), alt_text: None }), fonts());
     assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let types = crate::docx::package::read(&bytes, &[], "[Content_Types].xml").expect("reads").expect("content types");
     assert!(types.contains(r#"Extension="wdp" ContentType="image/vnd.ms-photo""#), "{types}");
     let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
@@ -1440,7 +1440,7 @@ fn an_inserted_text_box_takes_typing_and_saves() {
     };
     assert_eq!(body_floats(&e).len(), before + 1);
     assert_eq!(box_text(&e), vec!["Boxed text".to_string()]);
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     if let Some(d) = std::env::var_os("RT_KEEP") {
         std::fs::write(std::path::Path::new(&d).join("FX-TEXT.textbox.docx"), &bytes).expect("writes");
     }
@@ -1521,7 +1521,7 @@ fn table_properties_save_and_reopen() {
         let above = &t.rows[top - 1].cells[1];
         assert_eq!(above.bottom.as_ref().map(|b| b.style), Some(crate::docx::props::BorderStyle::Double), "{above:?}");
     }
-    let bytes = crate::docx::write::save(r.e.document()).expect("saves");
+    let bytes = crate::docx::write::save(r.e.document(), r.e.docx()).expect("saves");
     if let Some(d) = std::env::var_os("RT_KEEP") {
         std::fs::write(std::path::Path::new(&d).join("FX-TBL-BASIC.properties.docx"), &bytes).expect("writes");
     }
@@ -1559,7 +1559,7 @@ fn a_table_style_and_its_options_restyle_the_cells() {
     let plain = first_table(&r.e);
     assert_ne!(fill(&plain, 0), fill(&styled, 0), "no header row: the first row is a band");
     let edited = table_formatting(&r.e);
-    let bytes = crate::docx::write::save(r.e.document()).expect("saves");
+    let bytes = crate::docx::write::save(r.e.document(), r.e.docx()).expect("saves");
     if let Some(d) = std::env::var_os("RT_KEEP") {
         std::fs::write(std::path::Path::new(&d).join("tables.style.docx"), &bytes).expect("writes");
     }
@@ -1601,7 +1601,7 @@ fn a_new_header_and_footer_save() {
     e.execute(Command::EditHeader, fonts());
     let edited = story_texts(&e);
     assert_eq!(edited.iter().map(|(_, t)| t.as_str()).collect::<Vec<_>>(), vec!["New footer", "New header"], "{edited:?}");
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     if let Some(d) = std::env::var_os("RT_KEEP") {
         std::fs::write(std::path::Path::new(&d).join("FX-TEXT.header.docx"), &bytes).expect("writes");
     }
@@ -1649,7 +1649,7 @@ fn new_lists_save_with_their_definitions() {
         e.execute(Command::SetList(Some(crate::api::command::ListKind::Bullet)), fonts());
         let edited = labels(&e);
         assert_eq!(edited[1].as_deref(), Some("1."), "{fixture}: {edited:?}");
-        let bytes = crate::docx::write::save(e.document()).expect("saves");
+        let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
         if let Some(d) = std::env::var_os("RT_KEEP") {
             std::fs::write(std::path::Path::new(&d).join(name), &bytes).expect("writes");
         }
@@ -1692,7 +1692,7 @@ fn a_picture_control_activates_and_fills() {
     );
     assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");
     assert!(!r.e.selected_picture_unfilled(), "filled: no longer showing its placeholder");
-    let bytes = crate::docx::write::save(r.e.document()).expect("saves");
+    let bytes = crate::docx::write::save(r.e.document(), r.e.docx()).expect("saves");
     let xml = {
         use std::io::Read;
         let mut z = zip::ZipArchive::new(std::io::Cursor::new(&bytes[..])).unwrap();
@@ -1741,7 +1741,7 @@ fn content_controls_survive_edits() {
         for s in steps {
             r.step(s);
         }
-        let bytes = crate::docx::write::save(r.e.document()).expect("saves");
+        let bytes = crate::docx::write::save(r.e.document(), r.e.docx()).expect("saves");
         let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
         assert_eq!(texts(&again), texts(&r.e), "{steps:?}");
         controls_by_tag(&bytes)
@@ -1892,7 +1892,7 @@ fn alt_text_saves() {
             .collect()
     };
     assert!(alts(r.e.document()).contains(&"The board seal".to_string()));
-    let bytes = crate::docx::write::save(r.e.document()).expect("saves");
+    let bytes = crate::docx::write::save(r.e.document(), r.e.docx()).expect("saves");
     let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
     assert_eq!(alts(again.document()), alts(r.e.document()));
     assert_eq!(texts(&again), texts(&r.e));
@@ -1921,13 +1921,13 @@ fn decorative_pictures_read_set_and_save() {
     let out = r.e.execute(Command::SetAltText(crate::api::command::AltText { text: "ignored".into(), decorative: Some(true) }), fonts());
     assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");
     assert_eq!(pictures(r.e.document())[0], (String::new(), true), "decorative: no alt text");
-    let bytes = crate::docx::write::save(r.e.document()).expect("saves");
+    let bytes = crate::docx::write::save(r.e.document(), r.e.docx()).expect("saves");
     let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
     assert_eq!(pictures(again.document()), [(String::new(), true), (String::new(), true)], "both decorative after a save");
     let mut r = super::scenarios::Run::open("FX-A11Y-STRUCTURE.docx", "decorative-off");
     r.step(&json!({ "click": { "picture": 1 } }));
     r.e.execute(Command::SetAltText(crate::api::command::AltText { text: "Divider".into(), decorative: Some(false) }), fonts());
-    let bytes = crate::docx::write::save(r.e.document()).expect("saves");
+    let bytes = crate::docx::write::save(r.e.document(), r.e.docx()).expect("saves");
     let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
     assert_eq!(pictures(again.document())[1], ("Divider".to_string(), false));
 }
@@ -2174,7 +2174,7 @@ fn rows_move_up_and_down() {
     assert!(matches!(e.selection(), Selection::Cells { anchor: crate::editing::selection::CellRef { row: 0, .. }, .. }), "the moved row is selected");
     e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(table_texts(&e), [["a1", "a2"], ["c1", "c2"], ["b1", "b2"]]);
-    let saved = crate::docx::write::save(e.document()).unwrap();
+    let saved = crate::docx::write::save(e.document(), e.docx()).unwrap();
     assert_eq!(table_texts(&super::super::Editor::open(&saved, fonts()).unwrap()), table_texts(&e), "saved in the new order");
 }
 
@@ -2280,10 +2280,10 @@ fn after_a_page_break_the_caret_shows_on_the_next_page() {
 
 #[test]
 fn a_page_break_with_split_pg_break_and_para_mark_keeps_its_paragraph() {
-    let mut doc = crate::docx::read_editable(&blank_with("Conversation\nB")).unwrap();
+    let (mut doc, docx) = crate::docx::read_editable(&blank_with("Conversation\nB")).unwrap();
     doc.settings.policy.mode = 11;
     doc.settings.policy.split_pg_break_and_para_mark = true;
-    let mut e = crate::editing::Editor::with_document(doc, fonts());
+    let mut e = crate::editing::Editor::with_session(doc, docx, fonts());
     e.execute(super::mv(MoveBy::LineEdge, Dir::Forward, false), fonts());
     e.execute(Command::InsertPageBreak, fonts());
     assert_eq!(texts(&e), ["Conversation\u{c}", "B"], "only the break");
@@ -2372,16 +2372,16 @@ fn select_all_delete_across_sections() {
     e.execute(crate::editing::tests::del(Dir::Forward, false), fonts());
     assert_eq!(texts(&e), vec![String::new()]);
     assert_eq!(pages(&e), vec![was.last().unwrap().clone()]);
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let again = super::super::Editor::open(&saved, fonts()).expect("reopens");
     assert_eq!(texts(&again), vec![String::new()]);
     assert_eq!(pages(&again), pages(&e));
-    let xml = crate::docx::write::main_xml(e.document()).unwrap().unwrap();
+    let xml = crate::docx::write::main_xml(e.document(), e.docx()).unwrap().unwrap();
     assert_eq!(xml.matches("<w:sectPr").count(), 1, "{xml}");
     e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), before);
     assert_eq!(pages(&e), was);
-    assert!(crate::docx::write::main_xml(e.document()).unwrap().is_none(), "undone, nothing to save");
+    assert!(crate::docx::write::main_xml(e.document(), e.docx()).unwrap().is_none(), "undone, nothing to save");
 }
 
 #[test]
@@ -2399,7 +2399,7 @@ fn backspace_and_delete_take_a_section_break() {
     };
     let (was, before) = (pages(&e), texts(&e));
     let n = was.len();
-    let sects = |e: &super::super::Editor| crate::docx::write::main_xml(e.document()).unwrap().unwrap().matches("<w:sectPr").count();
+    let sects = |e: &super::super::Editor| crate::docx::write::main_xml(e.document(), e.docx()).unwrap().unwrap().matches("<w:sectPr").count();
     for (back, k) in [(true, 1), (false, 1)] {
         let (p, len) = para(&e, k, !back);
         e.selection = Selection::Caret(super::super::position::Position::text(StoryId::Body, p, if back { Unit(0) } else { len }));
@@ -2407,7 +2407,7 @@ fn backspace_and_delete_take_a_section_break() {
         e.execute(crate::editing::tests::del(if back { Dir::Back } else { Dir::Forward }, false), fonts());
         assert_eq!(texts(&e).len() + 1, paras, "joined");
         assert_eq!(sects(&e), pages(&e).len());
-        let again = super::super::Editor::open(&crate::docx::write::save(e.document()).unwrap(), fonts()).unwrap();
+        let again = super::super::Editor::open(&crate::docx::write::save(e.document(), e.docx()).unwrap(), fonts()).unwrap();
         assert_eq!((pages(&again), texts(&again)), (pages(&e), texts(&e)), "reopened");
     }
     assert_eq!(pages(&e), vec![was[1].clone(), was[3].clone()]);
@@ -2438,7 +2438,7 @@ fn hyphenation_settings_change_undo_and_save_in_schema_order() {
     assert_eq!(states[&id(Command::SetAutoHyphenation(true))].checked, Some(true));
     assert_eq!(states[&id(Command::SetHyphenateCaps(true))].checked, Some(false));
     assert_eq!(states[&id(Command::SetHyphenationZone(Points(0.0)))].value, Some(CommandValue::Length(Tri::Uniform(Points(9.0)))));
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(&saved[..])).expect("zip");
     let mut xml = String::new();
     std::io::Read::read_to_string(&mut z.by_name("word/settings.xml").expect("settings"), &mut xml).expect("reads");
@@ -2447,7 +2447,7 @@ fn hyphenation_settings_change_undo_and_save_in_schema_order() {
     assert!(at("<w:autoHyphenation/>") < at("<w:consecutiveHyphenLimit w:val=\"2\"/>"));
     assert!(at("<w:consecutiveHyphenLimit") < at("<w:hyphenationZone w:val=\"180\"/>"));
     assert!(at("<w:hyphenationZone") < at("<w:doNotHyphenateCaps/>"));
-    let again = crate::docx::read_editable(&saved).expect("reads");
+    let (again, _) = crate::docx::read_editable(&saved).expect("reads");
     assert_eq!((again.settings.auto_hyphenation, again.settings.consecutive_hyphen_limit), (true, 2));
     for _ in 0..4 {
         e.execute(Command::Undo(Default::default()), fonts());
@@ -2546,7 +2546,7 @@ fn an_inserted_text_box_draws_as_it_reopens() {
     let mut e = super::super::Editor::open(&super::blank_with("Body text here"), fonts()).expect("opens");
     e.set_caret_for_benchmark(Selection::Caret(Position::text(StoryId::Body, super::para_id(&e, 0), Unit(2))));
     e.execute(Command::InsertTextBox, fonts());
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let again = super::super::Editor::open(&bytes, fonts()).expect("reopens");
     let look = |e: &super::super::Editor| {
         let f = body_floats(e).remove(0);
@@ -2578,7 +2578,7 @@ fn an_inserted_pictures_alt_text_and_aspect_lock_save_inline_and_floating() {
     let want = Some(("A black \"square\"".to_string(), true));
     assert_eq!(picture(&e), want, "inserted");
     let reopened = |e: &super::super::Editor| {
-        let bytes = crate::docx::write::save(e.document()).expect("saves");
+        let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
         super::super::Editor::open(&bytes, fonts()).expect("reopens")
     };
     assert_eq!(picture(&reopened(&e)), want, "inline, reopened");
@@ -2683,7 +2683,7 @@ fn a_paragraph_cut_and_pasted_in_a_header_or_note_is_a_tracked_move() {
         assert!(kinds.contains(&MarkKind::MoveFrom) && kinds.contains(&MarkKind::MoveTo), "{story:?}: {kinds:?}");
         assert!(!kinds.contains(&MarkKind::Insert) && !kinds.contains(&MarkKind::Delete), "{story:?}: a move, as Word records it: {kinds:?}");
     }
-    let bytes = crate::docx::write::save(r.e.document()).expect("saves");
+    let bytes = crate::docx::write::save(r.e.document(), r.e.docx()).expect("saves");
     if let Some(d) = std::env::var_os("RT_KEEP") {
         std::fs::write(std::path::Path::new(&d).join("FX-REVIEW-MOVES-STORIES.moved.docx"), &bytes).expect("writes");
     }
@@ -2753,7 +2753,7 @@ fn insert_and_save_take_a_wmf() {
     let out =
         e.execute(Command::InsertPicture(crate::api::command::Picture { data: crate::api::value::Bytes(data.clone()), alt_text: None }), fonts());
     assert!(matches!(out, super::super::Outcome::Changed(_)), "{out:?}");
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let types = crate::docx::package::read(&saved, &[], "[Content_Types].xml").expect("reads").expect("types");
     assert!(types.contains("Extension=\"wmf\"") && types.contains("image/x-wmf"), "{types}");
     assert!(crate::docx::read(&saved).expect("reopens").images.find(&data).is_some());
@@ -2842,7 +2842,7 @@ fn a_heavy_tab_leader_is_kept() {
     let p = super::para_id(&e, 0);
     e.set_caret_for_benchmark(Selection::Caret(super::super::position::Position::text(StoryId::Body, p, Unit(0))));
     let saved = |e: &super::super::Editor| {
-        let bytes = crate::docx::write::save(e.document()).expect("saves");
+        let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
         crate::docx::package::read(&bytes, &[], "word/document.xml").expect("reads").expect("the part")
     };
     e.execute(Command::AddTabStop(AddTabStop { position: Points(100.0), alignment: None, leader: None }), fonts());

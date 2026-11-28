@@ -461,7 +461,7 @@ fn ltb_35_structural_table_edits_save_and_reopen_to_the_same_dump() {
     };
     let edited = dump(&mut r.e);
     let shape = structure(&r.e);
-    let bytes = crate::docx::write::save(r.e.document()).expect("saves");
+    let bytes = crate::docx::write::save(r.e.document(), r.e.docx()).expect("saves");
     if let Some(d) = std::env::var_os("RT_KEEP") {
         std::fs::write(std::path::Path::new(&d).join("FX-TBL-BASIC.ltb35.docx"), &bytes).expect("writes");
     }

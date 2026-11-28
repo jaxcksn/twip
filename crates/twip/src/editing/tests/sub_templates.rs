@@ -42,8 +42,8 @@ fn a_building_block_body_is_a_story_that_edits_undoes_and_redoes() {
     assert_eq!(text_of(&e, p), "Violation notice");
     e.execute(Command::Redo(Default::default()), fonts());
     assert_eq!(text_of(&e, p), "New Violation notice");
-    let saved = crate::docx::write::save(e.document()).expect("saves");
-    let again = crate::docx::read_editable(&saved).expect("reads");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
+    let (again, _) = crate::docx::read_editable(&saved).expect("reads");
     let Block::Para(first) = &again.glossary.as_ref().unwrap().parts[0].body[0] else { panic!("a paragraph") };
     assert!(first.inlines.iter().any(|i| matches!(i, Inline::Text(s, _) if s.starts_with("New "))));
 }
@@ -480,8 +480,8 @@ fn sub_templates_are_created_renamed_and_removed_each_as_one_step() {
     e.execute(remove("Appeals notice"), fonts());
     assert_eq!(e.editing_sub_template(), None);
     assert!(!part_names(&e).contains(&"Appeals notice".into()));
-    let saved = crate::docx::write::save(e.document()).expect("saves");
-    let again = crate::docx::read_editable(&saved).expect("reads");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
+    let (again, _) = crate::docx::read_editable(&saved).expect("reads");
     let names: Vec<&str> = again.glossary.as_ref().unwrap().parts.iter().map(|b| b.name.as_str()).collect();
     assert_eq!(names, ["Violation", "FeeRow", "Cycle-A", "Cycle-B", "Greeting", "Payment", "Imported"]);
 }
@@ -491,10 +491,10 @@ fn the_first_sub_template_makes_the_glossary_part() {
     let mut e = open("FX-EMPTY.docx");
     e.execute(super::super::sub_templates::rules("SUBTEMPLATE", "Sub-templates"), fonts());
     assert!(matches!(create(&mut e, "Notice", None), super::super::commands::Outcome::Changed(_)));
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let z = zip::ZipArchive::new(std::io::Cursor::new(saved.clone())).expect("a package");
     assert!(z.file_names().any(|n| n.is_ok_and(|n| n == "word/glossary/document.xml")));
-    let again = crate::docx::read_editable(&saved).expect("reads");
+    let (again, _) = crate::docx::read_editable(&saved).expect("reads");
     let g = again.glossary.as_ref().expect("a glossary");
     assert_eq!((g.parts[0].name.as_str(), g.parts[0].category.as_str()), ("Notice", "Sub-templates"));
 }
@@ -592,7 +592,7 @@ fn a_sub_template_exports_alone_and_copies_whole() {
     assert!(violation.0.iter().any(|p| p.contains("picture 90x60")));
 
     let docx = e.export_sub_template("Violation", None).expect("exports");
-    let alone = crate::docx::read_editable(&docx).expect("reads");
+    let (alone, _) = crate::docx::read_editable(&docx).expect("reads");
     assert_eq!(alone.sections.len(), 1);
     assert!(alone.glossary.as_ref().is_none_or(|g| g.parts.iter().all(|b| b.state == crate::docx::PartState::Removed) || g.parts.is_empty()));
     assert!(alone.images.iter().any(|(_, i)| !i.is_empty()), "the picture's image");
@@ -622,7 +622,7 @@ fn a_sub_template_exports_alone_and_copies_whole() {
     );
     assert!(matches!(copy(&mut e, "X", "Nope"), Outcome::Refused(_)));
 
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let again = Editor::open(&saved, fonts()).expect("reopens");
     assert_eq!(body_shape(&again, "Violation copy"), violation, "saved and read back, its controls with it");
 }
@@ -636,7 +636,7 @@ fn an_exported_sub_template_has_no_headers_or_footers() {
         let mut z = zip::ZipArchive::new(std::io::Cursor::new(b.to_vec())).expect("a package");
         std::io::read_to_string(z.by_name("word/document.xml").expect("the main part")).expect("text")
     };
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     assert!(main(&saved).contains("footerReference"), "the template has them");
     let alone = e.export_sub_template("Notice", None).expect("exports");
     let xml = main(&alone);
@@ -664,7 +664,7 @@ fn the_body_is_replaced_from_a_docx_keeping_the_sub_templates() {
     let data = crate::api::command::WriteDataPart { namespace: ns.into(), item_id: None, xml: format!("<merge xmlns=\"{ns}\"/>") };
     e.execute(Command::WriteDataPart(data), fonts());
     let docx = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-TEXT.docx")).unwrap();
-    let want = body_texts(&crate::docx::read_editable(&docx).unwrap());
+    let want = body_texts(&crate::docx::read_editable(&docx).unwrap().0);
     let (before, names, settings) = (body_texts(e.document()), part_names(&e), format!("{:?}", e.document().settings));
     assert_eq!(e.document().sections.len(), 2);
     e.execute(Command::EditSubTemplate(crate::api::command::SubTemplateName { name: "Violation".into(), category: None }), fonts());
@@ -678,7 +678,7 @@ fn the_body_is_replaced_from_a_docx_keeping_the_sub_templates() {
     assert_eq!((body_texts(e.document()), e.document().sections.len()), (before, 2));
     e.execute(Command::Redo(Default::default()), fonts());
     assert_eq!(body_texts(e.document()), want);
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let again = Editor::open(&saved, fonts()).expect("reopens");
     assert_eq!((body_texts(again.document()), part_names(&again)), (want, names));
     assert!(again.document().data_parts.iter().any(|d| d.xml.contains(ns)), "the data part stays");
@@ -831,15 +831,15 @@ fn a_body_from_another_docx_brings_its_notes_comments_and_lists() {
     e.complete(fonts());
     let out = e.execute(Command::ReplaceBody(crate::api::command::ReplaceBody { from: crate::api::value::Bytes(source.clone()) }), fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
-    let want = lists_and_notes(&crate::docx::read_editable(&source).expect("reads"));
+    let want = lists_and_notes(&crate::docx::read_editable(&source).expect("reads").0);
     assert!(!want.0.is_empty() && !want.1.is_empty(), "the source's lists and notes");
     assert_eq!(lists_and_notes(e.document()), want);
-    let source_doc = crate::docx::read_editable(&source).expect("reads");
+    let (source_doc, _) = crate::docx::read_editable(&source).expect("reads");
     let comments = comments_and_anchors(&source_doc);
     assert!(comments.iter().any(|c| !c.1.is_empty()), "the source's anchored comment: {comments:?}");
     assert_eq!(comments_and_anchors(e.document()), comments, "its comments come along on the same text");
-    let saved = crate::docx::write::save(e.document()).expect("saves");
-    let again = crate::docx::read_editable(&saved).expect("reads again");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
+    let (again, _) = crate::docx::read_editable(&saved).expect("reads again");
     assert_eq!(lists_and_notes(&again), want, "as saved");
     assert_eq!(comments_and_anchors(&again), comments, "comments as saved");
 }
@@ -916,11 +916,11 @@ fn a_replaced_body_keeps_its_pictures_images() {
     let mut e = open("FX-EXACT-ROW.docx");
     assert!(!e.document().images.is_empty(), "the template has an image of its own");
     let docx = std::fs::read(path("FX-OBJ.docx")).unwrap();
-    let want = picture_bytes(&crate::docx::read_editable(&docx).unwrap());
+    let want = picture_bytes(&crate::docx::read_editable(&docx).unwrap().0);
     assert!(!want.is_empty());
     e.execute(Command::ReplaceBody(crate::api::command::ReplaceBody { from: crate::api::value::Bytes(docx) }), fonts());
     assert_eq!(picture_bytes(e.document()), want, "live");
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let again = Editor::open(&saved, fonts()).expect("reopens");
     assert_eq!(picture_bytes(again.document()), want);
 }
@@ -936,7 +936,7 @@ fn a_replaced_body_keeps_the_bookmarks_it_shares_with_the_old_one() {
     e.execute(Command::ReplaceBody(crate::api::command::ReplaceBody { from }), fonts());
     let found = e.bookmark("Chapter").expect("the new body's bookmark");
     assert_eq!(text_of(&e, found.start.para), "New");
-    let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    let again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens");
     assert!(again.bookmark("Chapter").is_some(), "as saved");
 }
 
@@ -997,10 +997,10 @@ fn a_replaced_body_brings_the_lists_of_its_group_shapes_text() {
         }
         out
     };
-    assert_eq!(formats(&crate::docx::read_editable(&source).expect("reads")), ["upperRoman"], "setup: the source's list");
+    assert_eq!(formats(&crate::docx::read_editable(&source).expect("reads").0), ["upperRoman"], "setup: the source's list");
     e.execute(Command::ReplaceBody(crate::api::command::ReplaceBody { from: crate::api::value::Bytes(source) }), fonts());
-    let saved = crate::docx::write::save(e.document()).expect("saves");
-    assert_eq!(formats(&crate::docx::read_editable(&saved).expect("reads again")), ["upperRoman"], "its own list, as saved");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
+    assert_eq!(formats(&crate::docx::read_editable(&saved).expect("reads again").0), ["upperRoman"], "its own list, as saved");
 }
 
 #[test]

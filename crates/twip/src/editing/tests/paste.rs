@@ -211,7 +211,7 @@ fn html_pictures_come_in_line_and_remote_ones_as_their_text() {
     assert_eq!(text, "x abfar", "a remote picture is never fetched: its alternative text stands in");
     let alt = paras(&e)[0].inlines.iter().find_map(|i| if let Inline::Picture(p, _) = i { Some(p.alt.to_string()) } else { None });
     assert_eq!(alt.as_deref(), Some("dot"));
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let again = Editor::open(&saved, fonts()).expect("reopens");
     assert_eq!(again.document().images.len(), 1, "the picture saves");
 }
@@ -582,7 +582,7 @@ fn quote_paste(choice: Option<PasteChoice>) -> crate::docx::ParaStyle {
         assert_eq!(b.default_paste(&clip), Some(PasteChoice::DestinationStyles), "the styles conflict");
     }
     assert!(changed(&b.paste_clip(clip, choice, fonts())));
-    let b = Editor::open(&crate::docx::write::save(b.document()).expect("saves"), fonts()).expect("reopens");
+    let b = Editor::open(&crate::docx::write::save(b.document(), b.docx()).expect("saves"), fonts()).expect("reopens");
     let p = paras(&b).into_iter().find(|p| crate::editing::text::UnitText::of(p).text == "quoted").expect("the pasted paragraph");
     (*p.style).clone()
 }
@@ -700,7 +700,7 @@ fn text_from_file_brings_its_section_breaks_and_their_page_setup() {
     let v = crate::editing::integrity::check(e.document(), e.index(), &e.selection());
     assert!(v.is_empty(), "{:?}", v.iter().map(|v| v.detail.clone()).collect::<Vec<_>>());
     assert_eq!(e.history().next_undo(), Some("Insert File"));
-    let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    let again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens");
     assert_eq!(section_texts(&again), section_texts(&e), "saved with its section break");
     assert!(again.document().sections[0].headers.iter().flatten().next().is_some(), "and its header");
     e.execute(Command::Undo(Default::default()), fonts());
@@ -751,7 +751,7 @@ fn many_file_sections_sharing_a_header_bring_it_in_once() {
 fn a_file_ending_in_a_section_break_keeps_it() {
     let landscape = r#"<w:sectPr><w:pgSz w:w="15840" w:h="12240" w:orient="landscape"/></w:sectPr>"#;
     let other = blank_body(&format!("<w:p>{}</w:p><w:p><w:pPr>{landscape}</w:pPr>{}</w:p>", t("one"), t("land")));
-    let r = crate::docx::read_editable(&other).expect("reads");
+    let (r, _) = crate::docx::read_editable(&other).expect("reads");
     assert_eq!(r.sections.iter().map(|s| s.blocks.len()).collect::<Vec<_>>(), [2, 1], "the reader closes the last section");
     let mut e = ed(&format!("<w:p>{}</w:p>", t("ab")));
     let page = e.document().sections[0].page_w;
@@ -1018,7 +1018,7 @@ fn an_alt_chunk_s_html_is_content_once_opened_and_saves_as_it() {
     assert!(paras(&e)[2].style.num.is_some(), "a list item");
     assert_eq!(e.history().next_undo(), None, "opening isn't an edit");
     assert!(e.document().alt_chunks.is_empty());
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let xml = main_part(&saved);
     assert!(!xml.contains("altChunk") && xml.contains("bold"), "{xml}");
     let again = Editor::open(&saved, fonts()).expect("reopens");
@@ -1026,7 +1026,7 @@ fn an_alt_chunk_s_html_is_content_once_opened_and_saves_as_it() {
     // Edited next to it, it is written once
     caret(&mut e, (3, 0));
     e.execute(Command::InsertText("x".into()), fonts());
-    let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    let again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens");
     assert_eq!(texts(&again), ["before", "one bold", "item", "xafter"]);
 }
 
@@ -1034,9 +1034,9 @@ fn an_alt_chunk_s_html_is_content_once_opened_and_saves_as_it() {
 fn an_alt_chunk_comes_in_untracked_and_its_pictures_with_it() {
     let body = format!("<w:p>{}</w:p>{CHUNK}<w:p/>", t("x"));
     let html = format!(r#"<p>pic <img src="data:image/png;base64,{}" width="16" height="16"></p>"#, base64(&png(4, 4)));
-    let mut doc = crate::docx::read_editable(&with_chunk(&body, "chunk.htm", html.as_bytes())).expect("reads");
+    let (mut doc, docx) = crate::docx::read_editable(&with_chunk(&body, "chunk.htm", html.as_bytes())).expect("reads");
     doc.settings.track_revisions = true;
-    let e = Editor::with_document(doc, fonts());
+    let e = Editor::with_session(doc, docx, fonts());
     assert!(e.document().settings.track_revisions);
     assert_eq!(pictures(&e).len(), 1);
     assert!(paras(&e).iter().all(|p| p.inlines.iter().all(|i| i.run().is_none_or(|r| r.rev.ins.is_none()))), "not a tracked insertion");
@@ -1045,10 +1045,10 @@ fn an_alt_chunk_comes_in_untracked_and_its_pictures_with_it() {
 #[test]
 fn a_document_without_a_resolver_keeps_its_alt_chunks_and_tracking() {
     let body = format!("<w:p>{}</w:p>{CHUNK}<w:p/>", t("x"));
-    let mut doc = crate::docx::read_editable(&with_chunk(&body, "chunk.html", b"<p>from html</p>")).expect("reads");
+    let (mut doc, docx) = crate::docx::read_editable(&with_chunk(&body, "chunk.html", b"<p>from html</p>")).expect("reads");
     doc.settings.track_revisions = true;
     doc.resolver = None;
-    let e = Editor::with_document(doc, fonts());
+    let e = Editor::with_session(doc, docx, fonts());
     assert_eq!(e.document().alt_chunks.len(), 1);
     assert!(e.document().settings.track_revisions);
     assert_eq!(e.history().next_undo(), None);
@@ -1087,7 +1087,7 @@ fn an_alt_chunk_of_another_format_or_too_much_html_is_kept_as_read() {
     let rtf = with_chunk(&body, "chunk.rtf", br"{\rtf1 hello}");
     let e = Editor::open(&rtf, fonts()).expect("opens");
     assert_eq!(texts(&e), ["a", "b"], "not drawn");
-    assert!(main_part(&crate::docx::write::save(e.document()).expect("saves")).contains("altChunk"), "kept");
+    assert!(main_part(&crate::docx::write::save(e.document(), e.docx()).expect("saves")).contains("altChunk"), "kept");
     let big = format!("<p>{}</p>", "x".repeat(9 << 20));
     let e = Editor::open(&with_chunk(&body, "big.html", big.as_bytes()), fonts()).expect("opens");
     assert_eq!(texts(&e), ["a", "b"]);
@@ -1100,7 +1100,7 @@ fn an_alt_chunk_s_text_is_a_paragraph_a_line() {
     assert_eq!(texts(&e).len(), 5, "{:?}", texts(&e));
     assert!(paras(&e)[2].inlines.iter().any(|i| matches!(i, Inline::Tab(_))), "a tab");
     assert_eq!(e.history().next_undo(), None, "opening isn't an edit");
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     assert!(!main_part(&saved).contains("altChunk"));
     let e = Editor::open(&with_chunk(&body, "chunk.txt", b"caf\xe9"), fonts()).expect("opens");
     assert_eq!(texts(&e), ["a", "caf\u{e9}", "b"], "Windows-1252 when not UTF-8");
@@ -1118,14 +1118,14 @@ fn an_alt_chunk_s_document_is_its_body_once_opened_and_saves_as_it() {
     let e = Editor::open(&with_chunk(&body, "chunk.docx", &inner), fonts()).expect("opens");
     assert_eq!(texts(&e), ["a", "inner one", "inner two", "b"]);
     assert_eq!(e.history().next_undo(), None, "opening isn't an edit");
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     assert!(!main_part(&saved).contains("altChunk"));
     assert_eq!(texts(&Editor::open(&saved, fonts()).expect("reopens")), ["a", "inner one", "inner two", "b"]);
     let v = crate::editing::integrity::check(e.document(), e.index(), &e.selection());
     assert!(v.is_empty(), "{:?}", v.iter().map(|v| v.detail.clone()).collect::<Vec<_>>());
     let e = Editor::open(&with_chunk(&body, "chunk.docx", b"not a zip"), fonts()).expect("opens");
     assert_eq!(texts(&e), ["a", "b"], "an unreadable document is not drawn");
-    assert!(main_part(&crate::docx::write::save(e.document()).expect("saves")).contains("altChunk"), "kept as read");
+    assert!(main_part(&crate::docx::write::save(e.document(), e.docx()).expect("saves")).contains("altChunk"), "kept as read");
 }
 
 #[test]
@@ -1286,7 +1286,7 @@ fn pasted_list_items_landing_in_a_list_continue_it_unless_told_not_to() {
     let list = numbering(&e).into_iter().flatten().next().expect("a list");
     let n = texts(&e).iter().position(|t| t == "two").expect("two");
     for merge in [true, false] {
-        let mut e2 = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+        let mut e2 = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens");
         e2.set_paste_defaults(PasteDefaults { merge_lists: merge, ..PasteDefaults::default() });
         caret(&mut e2, (n, 3));
         assert!(changed(&e2.paste_clip(Clip { html: Some(html.into()), text: "new\nmid\nend".into(), ..Clip::default() }, None, fonts())));
@@ -1341,12 +1341,12 @@ fn a_paragraph_whose_mark_is_hidden_stays_before_an_alt_chunk() {
 fn a_refused_document_alt_chunk_after_a_table_leaves_the_body_ending_in_a_paragraph() {
     let body = format!("{}{CHUNK}", table(&[&["a"]]));
     let docx = with_chunk(&body, "x.docx", b"not a package");
-    for doc in [crate::docx::read(&docx).expect("reads"), crate::docx::read_editable(&docx).expect("reads")] {
+    for doc in [crate::docx::read(&docx).expect("reads"), crate::docx::read_editable(&docx).expect("reads").0] {
         assert!(matches!(doc.sections[0].blocks.last(), Some(Block::Para(_))), "{:?}", doc.sections[0].blocks.len());
     }
     let mut e = Editor::open(&docx, fonts()).expect("opens");
     e.execute(Command::InsertText("x".into()), fonts());
-    let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    let again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens");
     assert!(matches!(again.document().sections[0].blocks.last(), Some(Block::Para(_))));
 }
 
@@ -1415,7 +1415,7 @@ fn copying_text_with_pictures_draws_nothing_until_its_html_is_asked_for() {
 fn an_alt_chunk_not_brought_in_saves_as_read() {
     let body = format!("<w:p>{}</w:p>{CHUNK}<w:p>{}</w:p>", t("a"), t("b"));
     let html = "<html><body><p>one</p></body></html>";
-    let doc = crate::docx::read_editable(&with_chunk(&body, "chunk.html", html.as_bytes())).expect("reads");
-    let xml = main_part(&crate::docx::write::save(&doc).expect("saves"));
+    let (doc, docx) = crate::docx::read_editable(&with_chunk(&body, "chunk.html", html.as_bytes())).expect("reads");
+    let xml = main_part(&crate::docx::write::save(&doc, &docx).expect("saves"));
     assert!(xml.contains("altChunk") && !xml.contains("<w:p></w:p>"), "{xml}");
 }

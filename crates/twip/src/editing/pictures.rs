@@ -477,7 +477,7 @@ mod tests {
         run(&mut e, serde_json::json!({ "type": "setObjectSize", "relativeWidth": { "percent": 40, "relativeTo": "margin" } }));
         run(&mut e, serde_json::json!({ "type": "setObjectPosition", "horizontal": { "relativeTo": "page", "percent": 10 } }));
         run(&mut e, serde_json::json!({ "type": "alignObjects", "align": "bottom", "relativeTo": "page" }));
-        let saved = crate::docx::write::save(e.document()).expect("saves");
+        let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
         let xml = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part");
         for el in ["<a:srcRect l=\"25000\"", "<a:clrChange>", "<wp14:sizeRelH", "<wp14:pctWidth>40000</wp14:pctWidth>", "<wp14:pctPosHOffset"] {
             assert!(xml.contains(el), "{el}");
@@ -519,7 +519,7 @@ mod inline_tests {
         e.set_caret_for_benchmark(Selection::Object(ObjectRef::Inline { para, offset: Unit(u) }));
         let c: Command = serde_json::from_value(serde_json::json!({ "type": "setPictureCrop", "right": 0.5 })).expect("a command");
         assert!(matches!(e.execute(c, fonts()), Outcome::Changed(_)));
-        let saved = crate::docx::write::save(e.document()).expect("saves");
+        let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
         let xml = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part");
         assert!(xml.contains("r=\"50000\""), "the crop is saved");
     }

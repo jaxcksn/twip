@@ -98,7 +98,7 @@ fn a_table_shading_the_style_already_has_is_still_written() {
     select(&mut e, 5, 5);
     let out = e.execute(shade(ShadingTarget::Table, 0xD9E2F3), fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let doc = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("document");
     assert!(doc.contains("D9E2F3"), "the table's own shading is written: {doc}");
 }
@@ -174,7 +174,7 @@ fn a_fill_alone_keeps_the_pattern_the_style_gives() {
         let out = e.execute(fill(target), fonts());
         assert!(matches!(out, Outcome::Changed(_)), "{target:?}: {out:?}");
     }
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let xml = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("document");
     for pattern in ["horzStripe", "thinHorzStripe", "diagStripe"] {
         assert!(xml.contains(&format!(r#"<w:shd w:val="{pattern}" w:color="auto" w:fill="00B050"/>"#)), "{pattern}: {xml}");

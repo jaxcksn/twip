@@ -25,7 +25,7 @@ pub fn open_pkg(bytes: &[u8]) -> Editor {
 }
 
 pub fn reopened(e: &Editor) -> Editor {
-    open_pkg(&crate::docx::write::save(e.document()).expect("saves"))
+    open_pkg(&crate::docx::write::save(e.document(), e.docx()).expect("saves"))
 }
 
 fn first_para(e: &Editor) -> &crate::docx::Paragraph {
@@ -33,7 +33,7 @@ fn first_para(e: &Editor) -> &crate::docx::Paragraph {
 }
 
 fn styles(e: &Editor) -> Styles {
-    crate::docx::baseline::Baseline::of(e.document()).frozen.styles
+    crate::docx::baseline::Baseline::of(e.document(), e.docx()).frozen.styles
 }
 
 fn colours() -> crate::docx::props::ThemeColours {
@@ -270,7 +270,7 @@ fn deleting_a_style_takes_it_out_of_the_paragraphs_and_runs_naming_it() {
     e.execute(Command::DeleteStyle(id("Mark")), fonts());
     let doc = {
         use std::io::Read;
-        let bytes = crate::docx::write::save(e.document()).expect("saves");
+        let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
         let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).expect("a package");
         let mut s = String::new();
         z.by_name("word/document.xml").expect("the body").read_to_string(&mut s).expect("text");
@@ -515,7 +515,7 @@ fn a_table_style_edit_keeps_the_tables_own_alignment_and_row_heights() {
     assert_eq!(look(&reopened(&e)), own);
     let xml = {
         use std::io::Read;
-        let bytes = crate::docx::write::save(e.document()).expect("saves");
+        let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
         let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).expect("a package");
         let mut s = String::new();
         z.by_name("word/document.xml").expect("the body").read_to_string(&mut s).expect("text");
@@ -678,7 +678,7 @@ fn defaults_set_in_a_self_closing_styles_part_save_well_formed() {
     let mut e = open_pkg(&bytes);
     let d = crate::api::command::DocumentDefaults { size: Some(crate::api::value::Points(14.0)), ..Default::default() };
     e.execute(Command::SetDocumentDefaults(d), fonts());
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut xml = String::new();
     std::io::Read::read_to_string(&mut zip::ZipArchive::new(std::io::Cursor::new(&saved)).unwrap().by_name("word/styles.xml").unwrap(), &mut xml)
         .unwrap();

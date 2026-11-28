@@ -13,7 +13,7 @@ fn surround(e: &Editor) -> Vec<Option<bool>> {
 }
 
 fn reopened(e: &Editor) -> Editor {
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     Editor::open(&saved, fonts()).expect("reopens")
 }
 
@@ -67,7 +67,7 @@ fn undoing_a_tracked_edit_leaves_no_new_person_in_the_saved_package() {
     e.execute(Command::SetTrackChanges(true), fonts());
     e.execute(Command::InsertText("y".into()), fonts());
     let people = |e: &Editor| {
-        let saved = crate::docx::write::save(e.document()).expect("saves");
+        let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
         let z = zip::ZipArchive::new(std::io::Cursor::new(saved)).expect("a package");
         z.file_names().filter_map(|n| n.ok()).any(|n| n.contains("people"))
     };
@@ -99,7 +99,7 @@ fn page_borders_set_without_a_shadow_keep_each_edges_own() {
 /// Each section's `w:pgBorders` in the saved main part, as written.
 fn saved_page_borders(e: &Editor) -> Vec<String> {
     use std::io::Read;
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut xml = String::new();
     zip::ZipArchive::new(std::io::Cursor::new(saved)).expect("a package").by_name("word/document.xml").unwrap().read_to_string(&mut xml).unwrap();
     let mut out = Vec::new();
@@ -249,7 +249,7 @@ fn page_borders_edited_lose_what_isnt_modelled_and_kept_keep_it() {
 fn typed_page_borders_with_no_xml_behind_them_are_written() {
     use crate::docx::page_borders::PageBordersDirect;
     use crate::format::{Color, PageBorderOffset, PageBorderProps, TextBorder};
-    let mut doc = crate::docx::read_editable(&blank_body(TWO)).expect("reads");
+    let (mut doc, mut docx) = crate::docx::read_editable(&blank_body(TWO)).expect("reads");
     let mut page = doc.sections[0].page();
     let edge =
         TextBorder { style: crate::document::line::BorderStyle::Dotted, width: 1.0, space: 3.0, shadow: false, color: Some(Color::Rgb(0x00B050)) };
@@ -257,8 +257,8 @@ fn typed_page_borders_with_no_xml_behind_them_are_written() {
     page.page_borders_direct = PageBordersDirect::typed(Some(typed));
     page.page_borders = Some(std::rc::Rc::new(crate::docx::PageBorders { offset_from_page: true, ..Default::default() }));
     doc.sections[0].set_page(page);
-    doc.edited_sections.insert(0);
-    let saved = crate::docx::write::save(&doc).expect("saves");
+    docx.edited_sections.insert(0);
+    let saved = crate::docx::write::save(&doc, &docx).expect("saves");
     let e = Editor::open(&saved, fonts()).expect("reopens");
     let edge = |side: &str| format!(r#"<w:{side} w:val="dotted" w:sz="8" w:space="3" w:color="00B050"/>"#);
     assert_eq!(saved_page_borders(&e), [format!(r#"<w:pgBorders w:offsetFrom="page">{}{}</w:pgBorders>"#, edge("left"), edge("right"))]);

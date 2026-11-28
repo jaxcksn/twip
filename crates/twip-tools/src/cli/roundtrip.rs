@@ -283,7 +283,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
         let bytes = std::fs::read(&f).map_err(|e| format!("{}: {e}", f.display()))?;
         let name = f.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
         if edits.is_none() {
-            match twip::internal::docx::read_editable(&bytes).and_then(|d| twip::internal::docx::write::save(&d)) {
+            match twip::internal::docx::read_editable(&bytes).and_then(|(d, s)| twip::internal::docx::write::save(&d, &s)) {
                 Ok(out) if out == bytes => ok += 1,
                 Ok(_) => failed.push(format!("{}: unedited save changed the bytes", f.display())),
                 Err(e) => failed.push(format!("{}: {e}", f.display())),
@@ -305,8 +305,8 @@ pub fn run(args: &[String]) -> Result<(), String> {
             }
             let want = dump(&mut e);
             let want_merge = (edits.as_deref() == Some("merge")).then(|| merge_state(&e));
-            let saved =
-                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| twip::internal::docx::write::save(e.document()))).unwrap_or_else(|p| {
+            let saved = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| twip::internal::docx::write::save(e.document(), e.docx())))
+                .unwrap_or_else(|p| {
                     Err(format!(
                         "the writer panicked: {}",
                         p.downcast_ref::<String>().cloned().or_else(|| p.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default()

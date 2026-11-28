@@ -629,7 +629,7 @@ fn selecting_an_earlier_note_does_not_lay_out_the_rest_of_the_document() {
 
 /// The main part's XML as saved.
 fn saved_document(e: &Editor) -> String {
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part")
 }
 

@@ -75,7 +75,7 @@ fn story_name(e: &Editor, s: StoryId) -> Option<&'static str> {
         StoryId::BuildingBlock(_) => return None,
         StoryId::Body => "Body",
         StoryId::HeaderFooter(i) => {
-            match e.document().stories.keys().nth(i as usize).and_then(|id| crate::docx::write::story_part(e.document(), *id)) {
+            match e.document().stories.keys().nth(i as usize).and_then(|id| crate::docx::write::story_part(e.document(), e.docx(), *id)) {
                 Some(name) if name.contains("footer") => "Footer",
                 _ => "Header",
             }

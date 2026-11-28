@@ -28,7 +28,7 @@ fn control_marks(e: &Editor, n: usize) -> (usize, usize) {
 }
 
 fn saved(e: &Editor) -> Editor {
-    Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens")
+    Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens")
 }
 
 #[test]
@@ -120,7 +120,7 @@ fn a_box_whose_symbols_are_one_keeps_its_state_given_a_new_symbol() {
     let out = e.execute(Command::SetControl(serde_json::from_value(set).unwrap()), fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
     assert_eq!(value(&e), Some(false), "still unchecked");
-    let main = crate::docx::write::main_xml(e.document()).expect("writes").expect("changed");
+    let main = crate::docx::write::main_xml(e.document(), e.docx()).expect("writes").expect("changed");
     let want = r#"<w14:checkedState w14:val="2610" w14:font="MS Gothic"/><w14:uncheckedState w14:val="2610" w14:font="Segoe UI Symbol"/>"#;
     assert!(main.contains(want), "saved with its new symbol: {main}");
 }

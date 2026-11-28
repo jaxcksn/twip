@@ -45,16 +45,16 @@ pub struct Origin {
 
 impl Origin {
     /// The origin of `f`, read from `doc` (a document no editor has open): its images move into it.
-    pub(super) fn of_document(mut doc: crate::docx::Document, f: &mut Fragment) -> Rc<Origin> {
+    pub(super) fn of_document(mut doc: crate::docx::Document, src: Option<&crate::docx::Source>, f: &mut Fragment) -> Rc<Origin> {
         let images = used_images(f).into_iter().filter_map(|k| Some((k, doc.images.remove(k)?))).collect();
-        let main = root_tag(&doc);
+        let main = root_tag(src);
         Rc::new(Origin { key: next_key(), images, resolver: doc.resolver, people: doc.people, main })
     }
 }
 
-/// The start tag of `doc`'s main part's root, as read.
-fn root_tag(doc: &crate::docx::Document) -> String {
-    let Some(x) = doc.source.as_ref().map(|s| s.xml.as_str()) else { return String::new() };
+/// The start tag of the main part's root `src` read.
+fn root_tag(src: Option<&crate::docx::Source>) -> String {
+    let Some(x) = src.map(|s| s.xml.as_str()) else { return String::new() };
     let start = x.char_indices().find(|&(i, c)| c == '<' && x[i + 1..].starts_with(|c: char| c.is_alphabetic())).map_or(0, |(i, _)| i);
     x[start..x[start..].find('>').map_or(start, |e| start + e + 1)].to_string()
 }
@@ -504,7 +504,13 @@ impl Editor {
     /// Where a fragment copied from this document comes from: this document, and the images it shows.
     pub(super) fn origin_of(&self, f: &mut Fragment) -> Rc<Origin> {
         let images = used_images(f).into_iter().filter_map(|k| Some((k, self.doc.images.get(k)?.to_vec()))).collect();
-        Rc::new(Origin { key: self.key, images, resolver: self.doc.resolver.clone(), people: self.doc.people.clone(), main: root_tag(&self.doc) })
+        Rc::new(Origin {
+            key: self.key,
+            images,
+            resolver: self.doc.resolver.clone(),
+            people: self.doc.people.clone(),
+            main: root_tag(self.docx.source.as_deref()),
+        })
     }
 
     /// Makes pasted `blocks`, and the bodies of the notes and comments they refer to, this document's: the images they
@@ -643,7 +649,7 @@ impl Editor {
         }
         let mut next = (*res).clone();
         let (ListDefId(mut free_abstract), ListId(mut free_num)) = next.cascade().lists.free_ids();
-        for l in &self.doc.added_lists {
+        for l in &self.docx.added_lists {
             free_abstract = free_abstract.max(l.abstract_id + 1);
             free_num = free_num.max(l.num_id + 1);
         }
@@ -654,7 +660,7 @@ impl Editor {
         #[cfg(test)]
         xml_route::check(&copy, was, &next, brought);
         renumber_blocks(blocks, refs, pcx, &brought.nums);
-        let added = self.doc.added_lists.clone();
+        let added = self.docx.added_lists.clone();
         if self.step(tx, Step::Resolver { resolver: Some(Rc::new(next)), added }).is_ok() {
             tx.stale_paras.extend(paras);
             tx.stale_tables.extend(tables);
@@ -1227,7 +1233,7 @@ mod tests {
         paths.retain(|p| !p.ends_with("FX-REVIEW-STORIES.docx"));
         let seen = par_map(&paths, |path| {
             let bytes = std::fs::read(path).expect("reads");
-            if crate::docx::read_editable(&bytes).ok().and_then(|d| d.resolver).is_none() {
+            if crate::docx::read_editable(&bytes).ok().and_then(|(d, _)| d.resolver).is_none() {
                 return (0, Vec::new());
             }
             let name = path.strip_prefix(crate::layout::tests::output::root()).unwrap_or(path).display().to_string();

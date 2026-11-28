@@ -87,10 +87,10 @@ impl Element {
 
 /// A story's name: a header's or footer's is its part's.
 #[cfg(test)]
-pub(super) fn story_name(s: StoryId, doc: &Document, idx: &DocIndex) -> String {
+pub(super) fn story_name(s: StoryId, doc: &Document, docx: &crate::docx::Session, idx: &DocIndex) -> String {
     match s {
         StoryId::Body => "body".into(),
-        StoryId::HeaderFooter(k) => idx.part(k).and_then(|id| crate::docx::write::story_part(doc, id)).unwrap_or_else(|| "header".into()),
+        StoryId::HeaderFooter(k) => idx.part(k).and_then(|id| crate::docx::write::story_part(doc, docx, id)).unwrap_or_else(|| "header".into()),
         StoryId::Footnote(id) => format!("footnote {id}"),
         StoryId::Endnote(id) => format!("endnote {id}"),
         StoryId::TextBox(f) => format!("text box {}", f.0),

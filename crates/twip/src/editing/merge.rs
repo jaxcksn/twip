@@ -1254,24 +1254,26 @@ impl Editor {
 
     /// [`Editor::fragment_of`], and with `sections` the section breaks between its sections, but the last.
     fn file_fragment(&self, bytes: &[u8], fonts: &Fonts, sections: bool) -> Result<(super::clipboard::Fragment, FileBreaks), Refused> {
-        let doc = crate::docx::read_editable(bytes).map_err(|_| bad("docx"))?;
-        self.document_fragment(doc, fonts, sections)
+        let (doc, docx) = crate::docx::read_editable(bytes).map_err(|_| bad("docx"))?;
+        self.document_fragment(doc, docx, fonts, sections)
     }
 
     /// [`Editor::fragment_of`] of a document read.
     pub(super) fn document_body(&self, doc: crate::docx::Document, fonts: &Fonts) -> Result<super::clipboard::Fragment, Refused> {
-        self.document_fragment(doc, fonts, false).map(|(f, _)| f)
+        self.document_fragment(doc, crate::docx::Session::default(), fonts, false).map(|(f, _)| f)
     }
 
     /// [`Editor::file_fragment`] of a document read.
     fn document_fragment(
         &self,
         mut doc: crate::docx::Document,
+        docx: crate::docx::Session,
         fonts: &Fonts,
         sections: bool,
     ) -> Result<(super::clipboard::Fragment, FileBreaks), Refused> {
+        let src = docx.source.clone();
         if !doc.alt_chunks.is_empty() {
-            doc = Editor::with_document(doc, fonts).into_document();
+            doc = Editor::with_session(doc, docx, fonts).into_document();
         }
         let n = doc.sections.len();
         let mut breaks = FileBreaks::default();
@@ -1325,7 +1327,7 @@ impl Editor {
             controls.extend(super::clipboard::controls_of(b, &doc));
         }
         let mut f = super::clipboard::Fragment { id: 0, blocks, open_end: true, controls, refs, ..Default::default() };
-        f.origin = Some(super::import::Origin::of_document(doc, &mut f));
+        f.origin = Some(super::import::Origin::of_document(doc, src.as_deref(), &mut f));
         breaks.parts = f.blocks.split_off(body);
         Ok((f, breaks))
     }

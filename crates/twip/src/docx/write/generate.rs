@@ -6,6 +6,7 @@ use crate::docx::table_props::TableXml;
 use std::fmt;
 use std::rc::Rc;
 
+use super::super::Session;
 use super::super::model::{Block, Cell, Document, Inline, Origin, Paragraph, Row, Run, RunStyle, Section, Table};
 use super::super::para_props::ParaDirect;
 use super::super::review::RangeKind;
@@ -40,8 +41,8 @@ impl std::error::Error for GenerateError {}
 /// defaults, latent styles, list definitions and lists, each written from its definition. Anything else is an error
 /// that names it; nothing is left out.
 pub fn generate(doc: &Document) -> Result<Vec<u8>, GenerateError> {
-    let blank = super::super::read_editable(&super::super::blank::blank_docx()).map_err(GenerateError::Write)?;
-    let (Some(src), Some(new_res)) = (blank.source.clone(), blank.resolver.as_deref()) else {
+    let (blank, blank_session) = super::super::read_editable(&super::super::blank::blank_docx()).map_err(GenerateError::Write)?;
+    let (Some(src), Some(new_res)) = (blank_session.source, blank.resolver.as_deref()) else {
         return Err(GenerateError::Write("the blank package reads without its source".into()));
     };
     let res = doc.resolver.as_deref().ok_or(GenerateError::Unsupported("a document without styles"))?;
@@ -63,12 +64,11 @@ pub fn generate(doc: &Document) -> Result<Vec<u8>, GenerateError> {
         properties: doc.properties.clone(),
         settings: doc.settings.clone(),
         resolver: Some(Rc::new(res)),
-        source: Some(src),
-        edited_sections: if edited { [0].into() } else { Default::default() },
         ..Default::default()
     };
-    let bytes = super::save(&out).map_err(GenerateError::Write)?;
-    let back = super::super::read_editable(&bytes).map_err(GenerateError::Write)?;
+    let session = Session { source: Some(src), edited_sections: if edited { [0].into() } else { Default::default() }, ..Default::default() };
+    let bytes = super::save(&out, &session).map_err(GenerateError::Write)?;
+    let (back, _) = super::super::read_editable(&bytes).map_err(GenerateError::Write)?;
     reads_back(&out.sections[0], &back)?;
     definitions_read_back(out.resolver.as_deref(), back.resolver.as_deref())?;
     Ok(bytes)

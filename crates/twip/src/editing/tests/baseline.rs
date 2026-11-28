@@ -23,7 +23,7 @@ use crate::docx::style_xml::StylesPart;
 use crate::docx::styles::{Region, Styles};
 use crate::docx::write::props::{Cx, Props};
 use crate::docx::xml::{attr, is_w};
-use crate::docx::{Block, Document, Inline, Paragraph, Run, RunStyle};
+use crate::docx::{Block, Document, Inline, Paragraph, Run, RunStyle, Session};
 use crate::docx::{char_props, page_borders, para_props, para_xml, run_xml, style_xml_tests};
 use crate::format::cascade::{Cascade, Rules, TableRegion};
 use crate::format::resolve::{self, RunEnv};
@@ -35,8 +35,8 @@ fn model(name: &str) -> Vec<u8> {
     std::fs::read(&path).unwrap_or_else(|e| panic!("fixture {}: {e}", path.display()))
 }
 
-fn cx(d: &Document) -> Cx {
-    Cx::of_xml(&d.source.as_ref().expect("read for editing").xml)
+fn cx(dx: &Session) -> Cx {
+    Cx::of_xml(&dx.source.as_ref().expect("read for editing").xml)
 }
 
 // Re-resolution from the property XML each node holds
@@ -49,28 +49,28 @@ fn written(res: &Baseline, cx: &Cx, r: &RunStyle) -> Option<String> {
 
 /// Every body paragraph, mark and text run resolved again from its own property XML gives the format it holds.
 /// Paragraphs joined through vanished marks are skipped, as the as-read harness skips them (`docx::resolve`).
-fn check(d: &Document, what: &str) -> usize {
-    let b = Baseline::of(d);
+fn check(d: &Document, dx: &Session, what: &str) -> usize {
+    let b = Baseline::of(d, dx);
     let res = &b;
-    let cx = cx(d);
+    let cx = cx(dx);
     let mut checked = 0;
     for s in &d.sections {
         check_blocks(res, &cx, &s.blocks, None, what, &mut checked);
     }
-    carried_matches(d, what);
+    carried_matches(d, dx, what);
     checked
 }
 
 /// The document's carried typed definitions cascade as its carried resolver does: every definition, and every
 /// paragraph, run, label and cell of it.
-fn carried_matches(d: &Document, what: &str) -> CascadeCounts {
-    let b = Baseline::of(d);
+fn carried_matches(d: &Document, dx: &Session, what: &str) -> CascadeCounts {
+    let b = Baseline::of(d, dx);
     let res = &b;
     let typed = res.typed();
     let mut n = CascadeCounts::default();
     let what = format!("{what}: carried");
     definitions_match(res, &typed.cascade, &typed.numbering, false, &what, &mut n);
-    let (cx, mut counters) = (cx(d), Default::default());
+    let (cx, mut counters) = (cx(dx), Default::default());
     for s in &d.sections {
         document_matches(res, &typed.cascade, &cx, &s.blocks, None, &mut counters, &what, &mut n);
     }
@@ -114,7 +114,7 @@ fn check_blocks(res: &Baseline, cx: &Cx, blocks: &[Block], region: Option<&Regio
 /// Each body paragraph's authored XML: its own, its mark's and its text runs', in order.
 type Authored = Vec<(u64, Option<Rc<str>>, Option<Rc<str>>, Vec<Option<Rc<str>>>)>;
 
-fn authored(d: &Document) -> Authored {
+fn authored(d: &Document, dx: &Session) -> Authored {
     fn walk(res: &Baseline, cx: &Cx, blocks: &[Block], out: &mut Authored) {
         let rpr = |r: &RunStyle| written(res, cx, r).map(|x| Rc::from(x.as_str()));
         for b in blocks {
@@ -129,8 +129,8 @@ fn authored(d: &Document) -> Authored {
             }
         }
     }
-    let b = Baseline::of(d);
-    let (res, cx) = (&b, cx(d));
+    let b = Baseline::of(d, dx);
+    let (res, cx) = (&b, cx(dx));
     let mut out = Vec::new();
     d.sections.iter().for_each(|s| walk(res, &cx, &s.blocks, &mut out));
     out
@@ -422,8 +422,8 @@ fn run(edit: &Edit) {
     let what = edit.name;
     let mut e = Editor::open(&model(edit.fixture), fonts()).expect("opens");
     e.complete(fonts());
-    assert!(check(e.document(), &format!("{what}: as read")) > 0, "{what}: nothing checked");
-    let read = authored(e.document());
+    assert!(check(e.document(), e.docx(), &format!("{what}: as read")) > 0, "{what}: nothing checked");
+    let read = authored(e.document(), e.docx());
     let target = select(&mut e, edit.at);
     let before = find(e.document(), target).expect("the target").clone();
     let mut steps = 0;
@@ -435,11 +435,11 @@ fn run(edit: &Edit) {
         }
     }
     e.complete(fonts());
-    check(e.document(), &format!("{what}: edited"));
-    let edited = authored(e.document());
+    check(e.document(), e.docx(), &format!("{what}: edited"));
+    let edited = authored(e.document(), e.docx());
     let d = e.document();
-    let b = Baseline::of(d);
-    let (res, cx) = (&b, cx(d));
+    let b = Baseline::of(d, e.docx());
+    let (res, cx) = (&b, cx(e.docx()));
     if edit.runs.is_some() || edit.para.is_some() {
         let after = find(d, target).expect("the target");
         if edit.runs.is_some() {
@@ -457,14 +457,14 @@ fn run(edit: &Edit) {
         assert!(matches!(e.execute(Command::Undo(Default::default()), fonts()), Outcome::Changed(_)), "{what}: undo {n}");
     }
     e.complete(fonts());
-    check(e.document(), &format!("{what}: undone"));
-    assert_eq!(authored(e.document()), read, "{what}: undo restores the authored XML as read");
+    check(e.document(), e.docx(), &format!("{what}: undone"));
+    assert_eq!(authored(e.document(), e.docx()), read, "{what}: undo restores the authored XML as read");
     for n in 0..steps {
         assert!(matches!(e.execute(Command::Redo(Default::default()), fonts()), Outcome::Changed(_)), "{what}: redo {n}");
     }
     e.complete(fonts());
-    check(e.document(), &format!("{what}: redone"));
-    assert_eq!(authored(e.document()), edited, "{what}: redo restores the edited XML");
+    check(e.document(), e.docx(), &format!("{what}: redone"));
+    assert_eq!(authored(e.document(), e.docx()), edited, "{what}: redo restores the edited XML");
 }
 
 #[test]
@@ -483,7 +483,7 @@ fn content_pasted_from_another_document_resolves_as_its_xml_does() {
     let first = texts_ids(&dst)[0];
     dst.select_range(first, Unit(0), Unit(0), fonts());
     assert!(matches!(dst.paste_fragment(&frag, fonts()), Outcome::Changed(_)), "pasted");
-    check(dst.document(), "pasted from another document");
+    check(dst.document(), dst.docx(), "pasted from another document");
 }
 
 /// Runs pasted from a document that binds the main namespace to another prefix keep their formatting and are written
@@ -498,8 +498,8 @@ fn runs_pasted_from_another_prefix_are_written_in_this_ones() {
     dst.select_range(first, Unit(0), Unit(0), fonts());
     assert!(matches!(dst.paste_fragment(&frag, fonts()), Outcome::Changed(_)), "pasted");
     let d = dst.document();
-    let b = Baseline::of(d);
-    let (res, cx) = (&b, cx(d));
+    let b = Baseline::of(d, dst.docx());
+    let (res, cx) = (&b, cx(dst.docx()));
     let mut styled = 0;
     for p in d.sections.iter().flat_map(|s| &s.blocks).filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None }) {
         for r in std::iter::once(&p.mark).chain(p.inlines.iter().filter_map(Inline::run)) {
@@ -515,8 +515,8 @@ fn runs_pasted_from_another_prefix_are_written_in_this_ones() {
         paras.filter(|p| p.style.style_id.as_deref() == Some("SourceQuote")).count()
     };
     assert_eq!(quote(d), 1, "the pasted paragraph keeps its style");
-    let saved = crate::docx::write::save(d).expect("saves");
-    let again = crate::docx::read_editable(&saved).expect("reads back");
+    let saved = crate::docx::write::save(d, dst.docx()).expect("saves");
+    let (again, _) = crate::docx::read_editable(&saved).expect("reads back");
     assert_eq!(quote(&again), 1, "the pasted paragraph keeps its style, saved");
     let main = crate::docx::package::read(&saved, &[], "word/document.xml").expect("reads").expect("the main part");
     assert!(main.contains("<m:oMath xmlns:m="), "the equation comes, its namespace declared");
@@ -529,7 +529,7 @@ fn pasted_html_resolves_as_its_xml_does() {
     e.select_range(first, Unit(0), Unit(0), fonts());
     let html = r#"<p style="text-align:center"><b>Bold</b> and <span style="color:#c00000;font-size:16pt">red</span></p><ul><li>item</li></ul>"#;
     assert!(matches!(e.paste_html(html, fonts()), Outcome::Changed(_)), "pasted HTML");
-    check(e.document(), "pasted HTML");
+    check(e.document(), e.docx(), "pasted HTML");
 }
 
 #[test]
@@ -538,7 +538,7 @@ fn an_inserted_file_resolves_as_its_xml_does() {
     let first = texts_ids(&e)[0];
     e.select_range(first, Unit(0), Unit(0), fonts());
     assert!(matches!(e.execute(C::InsertFile(InsertFile { from: Bytes(model(TOGGLES)) }), fonts()), Outcome::Changed(_)), "inserted");
-    check(e.document(), "an inserted file");
+    check(e.document(), e.docx(), "an inserted file");
 }
 
 #[test]
@@ -546,7 +546,7 @@ fn an_imported_chunk_resolves_as_its_xml_does() {
     let body = r#"<w:p><w:r><w:t>before</w:t></w:r></w:p><w:altChunk r:id="rIdChunk"/><w:p><w:r><w:t>after</w:t></w:r></w:p>"#;
     let html = b"<html><body><p><b>chunk</b> <i>text</i></p></body></html>";
     let e = Editor::open(&with_html_chunk(body, html), fonts()).expect("opens");
-    assert!(check(e.document(), "an imported chunk") >= 4, "the chunk's runs are checked");
+    assert!(check(e.document(), e.docx(), "an imported chunk") >= 4, "the chunk's runs are checked");
 }
 
 /// A blank document with `body`, its `w:altChunk r:id="rIdChunk"` relating to `html`.
@@ -572,12 +572,12 @@ fn with_html_chunk(body: &str, html: &[u8]) -> Vec<u8> {
 }
 
 /// Every fixture's documents, read for editing, with their resolver and the main part's namespaces.
-fn fixtures() -> impl Iterator<Item = (std::path::PathBuf, Document)> {
+fn fixtures() -> impl Iterator<Item = (std::path::PathBuf, Document, Session)> {
     let mut paths = Vec::new();
     crate::layout::tests::output::fixtures(&crate::layout::tests::output::root().join("fixtures"), &mut paths);
     paths.into_iter().filter_map(|path| {
-        let d = crate::docx::read_editable(&std::fs::read(&path).expect("reads")).ok()?;
-        (d.resolver.is_some() && d.source.is_some()).then_some((path, d))
+        let (d, dx) = crate::docx::read_editable(&std::fs::read(&path).expect("reads")).ok()?;
+        (d.resolver.is_some() && dx.source.is_some()).then_some((path, d, dx))
     })
 }
 
@@ -646,12 +646,12 @@ fn typed_ppr_round_trip(ppr: roxmltree::Node, cx: &Cx, colours: &ThemeColours, w
 #[test]
 fn page_border_xml_round_trips_through_the_typed_writer() {
     let mut n = 0;
-    for (path, d) in fixtures() {
-        let b = Baseline::as_read(&d);
+    for (path, d, dx) in fixtures() {
+        let b = Baseline::as_read(&d, &dx);
         let res = &b;
-        let cx = cx(&d);
+        let cx = cx(&dx);
         let colours = &res.styles.colours;
-        let src = &d.source.as_ref().expect("a source").xml;
+        let src = &dx.source.as_ref().expect("a source").xml;
         let doc = roxmltree::Document::parse(src).expect("the main part parses");
         let what = |raw: &str| format!("{}: {raw}", path.display());
         let (mut body, mut earlier) = (Vec::new(), Vec::new());
@@ -684,13 +684,13 @@ fn page_border_xml_round_trips_through_the_typed_writer() {
 #[test]
 fn paragraph_property_xml_round_trips_through_the_typed_writer() {
     let mut n = 0;
-    for (path, d) in fixtures() {
-        let b = Baseline::as_read(&d);
+    for (path, d, dx) in fixtures() {
+        let b = Baseline::as_read(&d, &dx);
         let res = &b;
-        let cx = cx(&d);
+        let cx = cx(&dx);
         let colours = &res.styles.colours;
         let what = |raw: &str| format!("{}: {raw}", path.display());
-        let src = &d.source.as_ref().expect("a source").xml;
+        let src = &dx.source.as_ref().expect("a source").xml;
         let doc = roxmltree::Document::parse(src).expect("the main part parses");
         for p in doc.descendants().filter(|n| crate::docx::xml::is_w(*n, "pPr")) {
             typed_ppr_round_trip(p, &cx, colours, &what(&src[p.range()]));
@@ -799,13 +799,13 @@ fn typed_table_round_trip(el: roxmltree::Node, cx: &Cx, colours: &ThemeColours, 
 fn table_property_xml_round_trips_through_the_typed_writer() {
     let mut counts = TableCounts::default();
     let table = |n: &roxmltree::Node| ["tblPr", "tblPrEx", "trPr", "tcPr"].iter().any(|name| crate::docx::xml::is_w(*n, name));
-    for (path, d) in fixtures() {
-        let b = Baseline::as_read(&d);
+    for (path, d, dx) in fixtures() {
+        let b = Baseline::as_read(&d, &dx);
         let res = &b;
-        let cx = cx(&d);
+        let cx = cx(&dx);
         let colours = &res.styles.colours;
         let what = |raw: &str| format!("{}: {raw}", path.display());
-        let src = &d.source.as_ref().expect("a source").xml;
+        let src = &dx.source.as_ref().expect("a source").xml;
         let doc = roxmltree::Document::parse(src).expect("the main part parses");
         for p in doc.descendants().filter(table) {
             typed_table_round_trip(p, &cx, colours, &what(&src[p.range()]), &mut counts);
@@ -835,10 +835,10 @@ fn table_property_xml_round_trips_through_the_typed_writer() {
 #[test]
 fn typed_table_resolution_gives_what_reading_resolved() {
     let mut n = [0usize; 4];
-    for (path, d) in fixtures() {
-        let b = Baseline::as_read(&d);
+    for (path, d, dx) in fixtures() {
+        let b = Baseline::as_read(&d, &dx);
         let res = &b;
-        let cx = cx(&d);
+        let cx = cx(&dx);
         for s in &d.sections {
             resolve_tables(res, &cx, &s.blocks, &path.display().to_string(), &mut n);
         }
@@ -917,13 +917,13 @@ fn property_xml_round_trips_through_the_writer() {
     let (had, has) = (roxmltree::Document::parse(&had).expect("parses"), roxmltree::Document::parse(&has).expect("parses"));
     assert_eq!(char_props::tests::lost(had.root_element(), has.root_element()).len(), 1, "a value left out is lost");
     let (mut ppr, mut rpr) = (0, 0);
-    for (path, d) in fixtures() {
-        let b = Baseline::as_read(&d);
+    for (path, d, dx) in fixtures() {
+        let b = Baseline::as_read(&d, &dx);
         let res = &b;
-        let cx = cx(&d);
+        let cx = cx(&dx);
         let colours = &res.styles.colours;
         let what = |raw: &str| format!("{}: {raw}", path.display());
-        for p in authored(&d) {
+        for p in authored(&d, &dx) {
             if let Some(raw) = p.1.as_deref() {
                 let again = Props::parse(Some(raw), "pPr", &cx).xml();
                 let parse = |x: Option<&str>| x.and_then(|x| cx.parse(x, |_, el| ParaProps::parse(Some(el), colours)));
@@ -935,7 +935,7 @@ fn property_xml_round_trips_through_the_writer() {
             cx.parse(raw, |_, el| typed_round_trip(el, &cx, colours, &what(raw))).unwrap_or_else(|| panic!("{}: parses", what(raw)));
             rpr += 1;
         });
-        let src = &d.source.as_ref().expect("a source").xml;
+        let src = &dx.source.as_ref().expect("a source").xml;
         let doc = roxmltree::Document::parse(src).expect("the main part parses");
         for n in doc.descendants().filter(|n| crate::docx::xml::is_w(*n, "rPr") && !in_change(*n)) {
             typed_round_trip(n, &cx, colours, &what(&src[n.range()]));
@@ -987,10 +987,10 @@ fn each_rpr(d: &Document, f: &mut dyn FnMut(&str)) {
 #[test]
 fn typed_resolution_gives_what_reading_resolved() {
     let (mut runs, mut marks, mut changes) = (0, 0, 0);
-    for (path, d) in fixtures() {
-        let b = Baseline::as_read(&d);
+    for (path, d, dx) in fixtures() {
+        let b = Baseline::as_read(&d, &dx);
         let res = &b;
-        let cx = cx(&d);
+        let cx = cx(&dx);
         let env = RunEnv { colours: &res.styles.colours, fonts: &res.theme, categories: &res.categories, open_type: res.styles.open_type };
         let mut counts = (&mut runs, &mut marks, &mut changes);
         for s in &d.sections {
@@ -1067,10 +1067,10 @@ fn resolve_blocks(
 #[test]
 fn typed_paragraph_resolution_gives_what_reading_resolved() {
     let (mut paras, mut changes) = (0, 0);
-    for (path, d) in fixtures() {
-        let b = Baseline::as_read(&d);
+    for (path, d, dx) in fixtures() {
+        let b = Baseline::as_read(&d, &dx);
         let res = &b;
-        let cx = cx(&d);
+        let cx = cx(&dx);
         for s in &d.sections {
             resolve_paras(res, &cx, &s.blocks, None, &path.display().to_string(), &mut (&mut paras, &mut changes));
         }
@@ -1202,15 +1202,16 @@ fn bold_on_a_run_under_a_locally_bound_prefix_keeps_its_underline() {
     let mut e = Editor::open(&model("namespace-dependencies.docx"), fonts()).expect("opens");
     select(&mut e, At::Text(label));
     assert!(matches!(e.execute(C::SetBold(true), fonts()), Outcome::Changed(_)));
-    let holds = |d: &Document| {
-        let ids: Vec<ParaId> = authored(d).iter().map(|p| ParaId(p.0)).collect();
+    let holds = |d: &Document, dx: &Session| {
+        let ids: Vec<ParaId> = authored(d, dx).iter().map(|p| ParaId(p.0)).collect();
         let (_, p) = para_by_label(d, &ids, label);
         let run = p.inlines.iter().find_map(Inline::run).expect("a run");
         assert!(run.bold && run.underline.is_some(), "the run is bold and keeps its underline: {:?}", run.direct.as_read());
     };
-    holds(e.document());
-    let saved = crate::docx::write::save(e.document()).expect("saves");
-    holds(&crate::docx::read_editable(&saved).expect("the saved package reads"));
+    holds(e.document(), e.docx());
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
+    let (again, again_docx) = crate::docx::read_editable(&saved).expect("the saved package reads");
+    holds(&again, &again_docx);
 }
 
 // Typed cascade
@@ -1218,10 +1219,10 @@ fn bold_on_a_run_under_a_locally_bound_prefix_keeps_its_underline() {
 /// Fixture `d`'s typed definitions, read from its package's parts apart from the reader: the styles and numbering
 /// parts and the glossary's, merged as the reader merges them; picture bullets' images, the theme, the settings'
 /// rules, the font categories and the divisions as the reader's resolver holds them.
-fn typed_cascade(d: &Document) -> (Cascade, StylesPart, NumberingXml) {
-    let b = Baseline::as_read(d);
+fn typed_cascade(d: &Document, dx: &Session) -> (Cascade, StylesPart, NumberingXml) {
+    let b = Baseline::as_read(d, dx);
     let res = &b;
-    let src = d.source.as_ref().expect("a source");
+    let src = dx.source.as_ref().expect("a source");
     let pkg = &src.package;
     let read = |name: Option<String>| name.and_then(|n| crate::docx::package::read(pkg, &[], &n).ok().flatten());
     let styles = StylesPart::parse(read(related(pkg, &src.main, "styles")).as_deref());
@@ -1434,13 +1435,13 @@ fn document_matches(
 #[test]
 fn typed_cascade_gives_what_the_resolver_gives() {
     let mut n = CascadeCounts::default();
-    for (path, d) in fixtures() {
-        let b = Baseline::as_read(&d);
+    for (path, d, dx) in fixtures() {
+        let b = Baseline::as_read(&d, &dx);
         let res = &b;
-        let (c, _, numbering) = typed_cascade(&d);
+        let (c, _, numbering) = typed_cascade(&d, &dx);
         let what = path.display().to_string();
         definitions_match(res, &c, &numbering, true, &what, &mut n);
-        let cx = cx(&d);
+        let cx = cx(&dx);
         let mut counters = Default::default();
         for s in &d.sections {
             document_matches(res, &c, &cx, &s.blocks, None, &mut counters, &what, &mut n);
@@ -1563,23 +1564,23 @@ fn carried_cascade_matches_after_edits() {
     for (what, fixture, at, commands) in edits {
         let mut e = Editor::open(&model(fixture), fonts()).expect("opens");
         e.complete(fonts());
-        carried_matches(e.document(), &format!("{what}: as read"));
+        carried_matches(e.document(), e.docx(), &format!("{what}: as read"));
         select(&mut e, at);
         let (mut steps, commands_len) = (0, commands.len());
         for c in commands {
             if let Outcome::Changed(_) = e.execute(c.clone(), fonts()) {
                 steps += 1;
             }
-            carried_matches(e.document(), &format!("{what}: {c:?}"));
+            carried_matches(e.document(), e.docx(), &format!("{what}: {c:?}"));
         }
         assert!(steps == commands_len, "{what}: only {steps} of {commands_len} changed");
         for _ in 0..steps {
             e.execute(Command::Undo(Default::default()), fonts());
-            carried_matches(e.document(), &format!("{what}: undone"));
+            carried_matches(e.document(), e.docx(), &format!("{what}: undone"));
         }
         for _ in 0..steps {
             e.execute(Command::Redo(Default::default()), fonts());
-            carried_matches(e.document(), &format!("{what}: redone"));
+            carried_matches(e.document(), e.docx(), &format!("{what}: redone"));
         }
     }
 }

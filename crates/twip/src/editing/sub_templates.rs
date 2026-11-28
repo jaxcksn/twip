@@ -668,7 +668,7 @@ impl Editor {
     /// `bytes`' body, read from the DOCX: its pictures added, its blocks written afresh, a last paragraph after a
     /// last table; with the notes, comments and lists it refers to there.
     fn imported_body(&mut self, bytes: &[u8]) -> Option<Imported> {
-        let mut read = crate::docx::read_editable(bytes).ok()?;
+        let (mut read, _) = crate::docx::read_editable(bytes).ok()?;
         let mut blocks: Vec<Block> = std::mem::take(&mut read.sections).into_iter().flat_map(|s| s.blocks).collect();
         self.pending_images.extend(std::mem::take(&mut read.images));
         detach(&mut blocks);
@@ -746,9 +746,9 @@ impl Editor {
         let mut next = res.clone();
         let r = Rc::make_mut(&mut next);
         let ours = r.cascade();
-        let next_num = ours.lists.lists.keys().map(|k| k.0).chain(self.doc.added_lists.iter().map(|l| l.num_id)).max().unwrap_or(0).max(0) + 1;
+        let next_num = ours.lists.lists.keys().map(|k| k.0).chain(self.docx.added_lists.iter().map(|l| l.num_id)).max().unwrap_or(0).max(0) + 1;
         let next_abstract =
-            ours.lists.defs.keys().map(|k| k.0).chain(self.doc.added_lists.iter().map(|l| l.abstract_id)).max().unwrap_or(-1).max(-1) + 1;
+            ours.lists.defs.keys().map(|k| k.0).chain(self.docx.added_lists.iter().map(|l| l.abstract_id)).max().unwrap_or(-1).max(-1) + 1;
         #[cfg(test)]
         let was = r.clone();
         let nums = copy_lists(r, &theirs, &used, (next_abstract, next_num));
@@ -771,7 +771,7 @@ impl Editor {
         renumber(&mut im.blocks);
         im.refs.notes.iter_mut().for_each(|n| renumber(&mut n.2));
         im.refs.comments.iter_mut().for_each(|c| renumber(&mut c.body));
-        let added = self.doc.added_lists.clone();
+        let added = self.docx.added_lists.clone();
         self.step(tx, Step::Resolver { resolver: Some(next), added }).map(|_| ()).map_err(|_| "the lists changed meanwhile")
     }
 
@@ -822,7 +822,8 @@ impl Editor {
         let failed = |e: String| Error::new(ErrorCode::ExportFailed, e);
         let k = self.named_part(name, category).ok_or_else(|| Error::invalid(format!("no sub-template {name}")))? as usize;
         let mut doc = self.doc.clone();
-        let read = doc.source.as_ref().map_or(1, |s| s.blocks.len());
+        let mut docx = self.docx.clone();
+        let read = docx.source.as_ref().map_or(1, |s| s.blocks.len());
         let g = doc.glossary.as_mut().ok_or_else(|| Error::invalid("no glossary"))?;
         let mut body = g.parts[k].body.clone();
         g.parts.iter_mut().for_each(|b| b.state = crate::docx::PartState::Removed);
@@ -831,11 +832,11 @@ impl Editor {
         let mut sec = doc.sections.swap_remove(last);
         sec.blocks = body;
         doc.sections = vec![sec];
-        doc.section_sources = vec![read];
-        doc.edited_sections = doc.edited_sections.contains(&last).then_some(0).into_iter().collect();
-        let bytes = crate::docx::write::save(&doc).map_err(failed)?;
+        docx.section_sources = vec![read];
+        docx.edited_sections = docx.edited_sections.contains(&last).then_some(0).into_iter().collect();
+        let bytes = crate::docx::write::save(&doc, &docx).map_err(failed)?;
         // The template's headers and footers aren't the body's: their references go (their parts stay, unused).
-        let main = doc.source.as_ref().map(|s| s.main.clone()).ok_or_else(|| failed("not read for editing".into()))?;
+        let main = docx.source.as_ref().map(|s| s.main.clone()).ok_or_else(|| failed("not read for editing".into()))?;
         let mut xml = String::new();
         let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).map_err(|e| failed(e.to_string()))?;
         std::io::Read::read_to_string(&mut zip.by_name(&main).map_err(|e| failed(e.to_string()))?, &mut xml).map_err(|e| failed(e.to_string()))?;

@@ -2309,15 +2309,8 @@ pub struct Document {
     pub data_parts: Vec<DataPart>,
     /// The glossary part's building blocks, when the package has one.
     pub glossary: Option<Glossary>,
-    /// The item parts of data parts removed since reading (taken out of the package on save).
-    pub removed_data: Vec<String>,
     /// Placeholders filled since reading, by image: drawn as their image, saved without `w:showingPlcHdr`.
     pub filled: std::collections::HashSet<ResourceId>,
-    /// Sections whose page ([`SectionPage`]) was edited: saving writes their `w:sectPr` page properties.
-    pub edited_sections: std::collections::HashSet<usize>,
-    /// How many sections as read each section holds: more than one once section breaks were deleted. Empty: one
-    /// each (nothing deleted).
-    pub section_sources: Vec<usize>,
     /// Pictures that can't be deleted, by image: those in picture controls that can't be deleted (`w:lock`
     /// `sdtLocked` or `sdtContentLocked`).
     pub undeletable: std::collections::HashSet<ResourceId>,
@@ -2325,18 +2318,11 @@ pub struct Document {
     pub controlled: HashMap<ResourceId, Vec<ControlId>>,
     pub settings: Settings,
     pub line_number_run: Option<Run>,
-    /// What the document was read from, when read for editing.
-    pub source: Option<Rc<Source>>,
     /// The styles, numbering and theme it resolves with. `Rc`: clipboard fragments carry their source
     /// document's resolver to resolve pasted formatting.
     pub resolver: Option<Rc<super::resolvers::Resolvers>>,
     /// The font table's description of each family, by lowercase name: what a resolver is told about a missing one.
     pub font_descriptions: HashMap<String, super::font_table::FontDescription>,
-    /// Families the style, numbering, theme and font table parts were rewritten from and to, in order: the save
-    /// rewrites those parts.
-    pub font_renames: Vec<super::font_table::FontRename>,
-    /// Lists made by the Numbering and Bullets commands since reading: written into the numbering part.
-    pub added_lists: Vec<AddedList>,
     /// Who made the document's revisions and comments.
     pub people: People,
     pub comments: Comments,
@@ -2347,8 +2333,6 @@ pub struct Document {
     pub hides_white_space: bool,
     /// New revision, comment and paragraph ids, past those read.
     pub review_ids: IdCounter,
-    /// What reading couldn't keep or make sense of.
-    pub diagnostics: super::diagnostics::Diagnostics,
 }
 
 impl Document {

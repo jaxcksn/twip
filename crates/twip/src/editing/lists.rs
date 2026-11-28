@@ -249,14 +249,14 @@ impl Editor {
     fn add_new_list(&mut self, tx: &mut Tx, multi: MultiLevelType, levels: [Option<Rc<ListLevel>>; 9]) -> i64 {
         let Some(res) = self.doc.resolver.clone() else { return 0 };
         let lists = res.cascade().lists.clone();
-        let abstract_id = lists.defs.keys().map(|k| k.0).chain(self.doc.added_lists.iter().map(|l| l.abstract_id)).max().unwrap_or(-1) + 1;
-        let num_id = lists.lists.keys().map(|k| k.0).chain(self.doc.added_lists.iter().map(|l| l.num_id)).max().unwrap_or(0) + 1;
+        let abstract_id = lists.defs.keys().map(|k| k.0).chain(self.docx.added_lists.iter().map(|l| l.abstract_id)).max().unwrap_or(-1) + 1;
+        let num_id = lists.lists.keys().map(|k| k.0).chain(self.docx.added_lists.iter().map(|l| l.num_id)).max().unwrap_or(0) + 1;
         let def = added_definition(abstract_id, multi, levels);
         let mut r = (*res).clone();
         let abstract_xml = def.xml(&r.colours(), &r.typed().numbering.cx()).into_owned();
         r.set_list_def(def);
         r.set_list(super::list_defs::new_list(num_id, abstract_id, &[]));
-        let mut added = self.doc.added_lists.clone();
+        let mut added = self.docx.added_lists.clone();
         added.push(crate::docx::AddedList { abstract_id, num_id, abstract_xml });
         if self.step(tx, Step::Resolver { resolver: Some(Rc::new(r)), added }).is_err() {
             return 0;

@@ -648,7 +648,7 @@ fn white_space_opens_hidden_as_the_document_saved_it() {
     let mut e = open("<w:doNotDisplayPageBoundaries/>");
     assert!(e.white_space_hidden());
     e.set_white_space_hidden(false);
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(saved)).expect("a package");
     let mut settings = String::new();
     std::io::Read::read_to_string(&mut z.by_name("word/settings.xml").expect("settings"), &mut settings).expect("reads");

@@ -235,7 +235,7 @@ fn a_tracked_column_deletion_marks_its_cells_deleted() {
     e.execute(cmd(serde_json::json!({"type":"deleteColumns"})), fonts());
     assert_eq!(cell_marks(table(&e)), vec![vec![None, Some(Delete), None]; 2]);
     assert_eq!(table(&e).grid.len(), 3, "the column stays until the deletion is accepted");
-    let back = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    let back = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens");
     assert_eq!(cell_marks(table(&back)), cell_marks(table(&e)), "saved as cellDel");
     let mut rejected = back;
     rejected.resolve_revisions(false, &Scope::All, fonts());
@@ -267,7 +267,7 @@ fn insert_table_beside_a_table_survives_save_and_reopen() {
     e.execute(cmd(serde_json::json!({"type":"insertTable","rows":2,"columns":2})), fonts());
     let n = |e: &Editor| e.document().sections[0].blocks.iter().filter(|b| matches!(b, Block::Table(_))).count();
     assert_eq!(n(&e), 2, "two tables in the session");
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let back = Editor::open(&bytes, fonts()).expect("reopens");
     assert_eq!(n(&back), 2, "still two tables after reopen");
 }
@@ -553,7 +553,7 @@ fn autofit_fixed_pins_the_drawn_column_widths() {
     assert!(t.fixed);
     assert_eq!(t.grid.len(), 2, "{:?}", t.grid);
     assert!(t.rows[0].cells.iter().zip(&t.grid).all(|(c, w)| c.width == Some(crate::docx::props::Width::Dxa(*w))));
-    let back = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    let back = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens");
     assert!(table(&back).fixed, "saved as tblLayout fixed");
     e.execute(Command::Undo(Default::default()), fonts());
     assert!(!table(&e).fixed, "undo restores the layout");
@@ -612,7 +612,7 @@ fn setting_one_cell_edge_keeps_the_cells_other_borders_as_written() {
     assert!(raw.contains("<w:top "), "{raw}");
     assert!(raw.contains("<w:start ") && raw.contains("<w:insideH "), "the cell's own borders stay: {raw}");
     assert!(!raw.contains("<w:left ") && !raw.contains("<w:bottom ") && !raw.contains("<w:right "), "only the edge set is written: {raw}");
-    let back = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    let back = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens");
     assert_eq!(texts(&back), texts(&e));
     assert!(table(&back).rows[0].cells[0].left.as_ref().is_some_and(|b| b.style == crate::docx::props::BorderStyle::Double));
 }
@@ -687,7 +687,7 @@ fn a_numbered_paragraph_converts_to_one_numbered_cell() {
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
     assert_eq!(cell_text(table(&e), 0, 1), "b");
     assert_eq!(num(&e), [true, false], "the first piece keeps the numbering");
-    let back = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    let back = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens");
     assert_eq!(num(&back), [true, false], "saved so");
 }
 
@@ -697,7 +697,7 @@ fn text_beside_a_table_converts_to_a_separate_table() {
     select_paras(&mut e, 1, 1);
     e.execute(cmd(serde_json::json!({"type":"convertTextToTable","separator":"other","character":";"})), fonts());
     assert_eq!(body_shape(&e), ["table 1x1", "", "table 1x2", ""]);
-    let back = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    let back = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens");
     assert_eq!(body_shape(&back), body_shape(&e));
 }
 
@@ -720,7 +720,7 @@ fn selected_rows_convert_to_text_between_the_rest() {
     e.execute(cmd(serde_json::json!({"type":"convertTableToText","separator":"paragraphs"})), fonts());
     assert_eq!(body_shape(&e), ["table 1x2", "c", "d", "table 1x2", "end"]);
     assert_eq!(violations(&e), Vec::<String>::new());
-    let back = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    let back = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens");
     assert_eq!(body_shape(&back), body_shape(&e));
 }
 
@@ -744,7 +744,7 @@ fn a_table_in_a_content_control_converts_to_text_inside_it() {
             let out = e.execute(cmd(serde_json::json!({"type":"convertTableToText","separator":"paragraphs"})), fonts());
             assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
             assert_eq!(violations(&e), Vec::<String>::new(), "{picked:?} of {body}");
-            let back = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+            let back = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens");
             assert_eq!(body_shape(&back), body_shape(&e));
             let live = controlled(&e);
             assert_eq!(live.iter().map(|b| b.1).collect::<Vec<_>>(), want, "{picked:?} of {body}: {live:?}");
@@ -855,7 +855,7 @@ fn merging_cells_keeps_each_cell_content_control_whole() {
 fn region_checks_take_linear_time_in_the_rows() {
     let time = |n: usize| {
         let rows: String = (0..n / 2).map(|_| tr("", &[tc("x", "")])).collect();
-        let doc = crate::docx::read_editable(&blank_body(&format!("{}{END}", tbl(1, &[sdt(1, &rows), rows.clone()])))).expect("reads");
+        let (doc, _) = crate::docx::read_editable(&blank_body(&format!("{}{END}", tbl(1, &[sdt(1, &rows), rows.clone()])))).expect("reads");
         let Some(Block::Table(t)) = doc.sections[0].blocks.first() else { panic!("a table") };
         assert_eq!(t.rows.iter().filter(|r| r.controls.len() == 1).count(), n / 2, "setup: half the rows in the control");
         (0..3)
@@ -916,7 +916,7 @@ fn zero_cell_spacing_holds_over_a_styles_spacing() {
     let out = e.execute(cmd(serde_json::json!({"type":"setTableStyleOptions","totalRow":true})), fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
     assert_eq!(table(&e).cell_spacing, 0.0, "resolving the style again keeps the table's own");
-    let back = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
+    let back = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reopens");
     assert_eq!(table(&back).cell_spacing, 0.0, "saved as the table's own");
     let out = e.execute(cmd(serde_json::json!({"type":"setTableCellSpacing","value":0})), fonts());
     assert!(matches!(out, Outcome::Unchanged(_)), "{out:?}");
@@ -1011,7 +1011,7 @@ fn text_to_table_sizes_its_columns_as_its_autofit_says() {
     assert_eq!((table(&e).grid.clone(), table(&e).width), (vec![90.0, 90.0], Width::Auto));
     assert!(table(&e).fixed, "a fixed layout");
     assert_eq!(e.table_readback().map(|r| r.fit), Some(crate::editing::table_readback::TableFit::Fixed));
-    let saved = crate::docx::write::save(e.document()).expect("saves");
+    let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     assert!(
         crate::docx::read(&saved).expect("reads").sections[0].blocks.iter().any(|b| matches!(b, crate::docx::Block::Table(t) if t.fixed)),
         "saved fixed"

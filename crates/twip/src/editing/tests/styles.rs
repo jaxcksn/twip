@@ -32,7 +32,7 @@ fn formatting(e: &Editor) -> Vec<String> {
 }
 
 fn read_again(e: &Editor) -> Editor {
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut again = Editor::open(&bytes, fonts()).expect("reads again");
     again.complete(fonts());
     again

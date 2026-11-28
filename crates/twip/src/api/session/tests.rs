@@ -2587,8 +2587,8 @@ fn style_options_and_document_defaults_change_and_save() {
     s.find(&FindQuery { text: "Normal text,".into(), match_case: None, whole_words: None, ..FindQuery::default() }, Order::Next).expect("finds");
     assert_eq!(s.state().formatting.size, Tri::Uniform(Points(14.0)), "text with no other size takes the default");
     let saved = s.export(&ExportOptions::Docx).expect("exports").bytes.0;
-    let doc = crate::docx::read_editable(&saved).expect("reads again");
-    let baseline = crate::docx::baseline::Baseline::as_read(&doc);
+    let (doc, docx) = crate::docx::read_editable(&saved).expect("reads again");
+    let baseline = crate::docx::baseline::Baseline::as_read(&doc, &docx);
     let styles = &baseline.styles;
     assert_eq!(styles.doc_rpr.size, Some(14.0));
     assert!(styles.get("Draft").is_some_and(|d| d.meta.locked && !d.meta.semi_hidden && d.quick));
@@ -2628,7 +2628,7 @@ fn manage_styles_lists_sorts_and_applies_visibility_priority_and_defaults() {
     s.dialog_apply(m).expect("applies");
     let draft = s.styles(None).into_iter().find(|st| st.id.0 == "Draft").expect("Draft");
     assert_eq!((draft.visibility, draft.priority), (StyleVisibility::Show, 3));
-    assert_eq!(crate::docx::baseline::Baseline::of(s.editor.document()).styles.doc_rpr.size, Some(13.0));
+    assert_eq!(crate::docx::baseline::Baseline::of(s.editor.document(), s.editor.docx()).styles.doc_rpr.size, Some(13.0));
 }
 
 #[test]
@@ -3216,7 +3216,7 @@ fn table_styles_format_their_parts_and_relay_the_tables_using_them() {
     s.dialog_apply(m).expect("applies");
     assert_eq!(header_fill(s), Some(0xD9E2F3), "the table takes the new style");
     let saved = s.export(&ExportOptions::Docx).expect("saves").bytes.0;
-    let doc = crate::docx::read_editable(&saved).expect("reads again");
+    let (doc, _) = crate::docx::read_editable(&saved).expect("reads again");
     let st = doc.resolver.as_ref().expect("styles").style_xml("GridAccent2").expect("the new style");
     assert!(st.contains("w:type=\"table\"") && st.contains("firstRow") && st.contains("D9E2F3") && st.contains("band1Horz"), "{st}");
 }
@@ -3264,7 +3264,7 @@ fn list_styles_define_their_list_and_number_the_paragraphs() {
     s.dialog_apply(m).expect("applies");
     assert_eq!(label(s).as_deref(), Some("Step A:"));
     let saved = s.export(&ExportOptions::Docx).expect("saves").bytes.0;
-    let doc = crate::docx::read_editable(&saved).expect("reads again");
+    let (doc, _) = crate::docx::read_editable(&saved).expect("reads again");
     let res = doc.resolver.as_ref().expect("styles");
     assert!(res.cascade().lists.defs.values().any(|a| a.style_link.as_deref() == Some("OutlineSteps")), "the definition is the style's");
 }
@@ -3547,7 +3547,7 @@ fn form_protection_leaves_the_sections_it_is_told_to_open() {
     let mut xml = String::new();
     z.by_name("word/document.xml").unwrap().read_to_string(&mut xml).unwrap();
     assert_eq!(xml.matches(r#"<w:formProt w:val="0"/>"#).count(), 1, "{xml}");
-    let doc = crate::docx::read_editable(&saved).expect("reads back");
+    let (doc, _) = crate::docx::read_editable(&saved).expect("reads back");
     assert_eq!(doc.sections.iter().map(|s| s.form_protected).collect::<Vec<_>>(), [true, false, true, true]);
     assert!(doc.settings.protection.and_then(|p| p.password).is_some_and(|p| p.matches("Example")));
 }
@@ -3567,7 +3567,7 @@ fn page_setup_applies_from_this_point_forward() {
     assert_eq!(tops.len(), 2);
     assert!(tops[0] != 100.0 && tops[1] == 100.0, "{tops:?}");
     let saved = s.export(&ExportOptions::Docx).expect("saves").bytes.0;
-    let again = crate::docx::read_editable(&saved).expect("reads back");
+    let (again, _) = crate::docx::read_editable(&saved).expect("reads back");
     assert_eq!(again.sections.iter().map(|x| x.top).collect::<Vec<_>>(), tops);
 }
 
@@ -3605,7 +3605,7 @@ fn a_new_document_saves_its_protection_in_a_settings_part_it_adds() {
     }))
     .expect("protects");
     let saved = s.export(&ExportOptions::Docx).expect("saves").bytes.0;
-    let doc = crate::docx::read_editable(&saved).expect("reads back");
+    let (doc, _) = crate::docx::read_editable(&saved).expect("reads back");
     assert!(doc.settings.track_revisions);
     let p = doc.settings.protection.expect("protection");
     assert!(p.enforced && p.password.is_some_and(|p| p.matches("Example")));
@@ -3715,7 +3715,7 @@ fn the_page_fill_effects_dialog_makes_word_s_gradients_and_patterns() {
     };
     fill(s, one);
     let saved = s.export(&ExportOptions::Docx).expect("saves").bytes.0;
-    let doc = crate::docx::read_editable(&saved).expect("reads back");
+    let (doc, _) = crate::docx::read_editable(&saved).expect("reads back");
     assert!(doc.page_fill.is_some() && doc.settings.display_background_shape);
     let m = s.dialog_open(DialogKind::FillEffects).expect("opens");
     assert!(

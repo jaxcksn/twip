@@ -20,6 +20,7 @@ use super::review::{
     SectionChange, ShowMarkup, TableChange, Timestamp,
 };
 use super::run_xml;
+use super::session::Session;
 use super::styles::ThemeFonts;
 use super::table_props::{self, CellDirect, ExceptionsDirect, PreviousDirect, RowDirect, TableDirect};
 use super::xml::*;
@@ -199,13 +200,18 @@ fn resolve_path(dir: &str, target: &str) -> String {
 }
 
 pub fn read(bytes: &[u8]) -> Result<Document, String> {
+    read_with(bytes, false, now_local()).map(|(doc, _)| doc)
+}
+
+/// As [`read`], with the session reading leaves: what it reported, without the package.
+pub fn read_reported(bytes: &[u8]) -> Result<(Document, Session), String> {
     read_with(bytes, false, now_local())
 }
 
 /// As [`read`], with `DATE`/`TIME` fields and date blocks computed at `now` (seconds since 1970, local time) instead
 /// of the system clock, so the layout is the same on every run.
 pub fn read_at(bytes: &[u8], now: i64) -> Result<Document, String> {
-    read_with(bytes, false, now)
+    read_with(bytes, false, now).map(|(doc, _)| doc)
 }
 
 /// Seconds since 1970, UTC, by the system clock.
@@ -272,9 +278,10 @@ fn native_offset(t: i64) -> i64 {
     days * 86_400 + i64::from(tm.hour) * 3600 + i64::from(tm.min) * 60 + i64::from(tm.sec) - t
 }
 
-/// As [`read`], keeping what saving needs: the package, the main part's XML, where each body paragraph and table came
-/// from ([`Paragraph::src`], [`Table::src`]) and each run's direct formatting ([`RunStyle::direct`]).
-pub fn read_editable(bytes: &[u8]) -> Result<Document, String> {
+/// As [`read`], keeping what saving needs: the package and the main part's XML in the session's source, where each
+/// body paragraph and table came from ([`Paragraph::src`], [`Table::src`]) and each run's direct formatting
+/// ([`RunStyle::direct`]).
+pub fn read_editable(bytes: &[u8]) -> Result<(Document, Session), String> {
     read_with(bytes, true, now_local())
 }
 
@@ -378,7 +385,7 @@ pub fn frozen_resolver(bytes: &[u8]) -> Option<super::resolve::Resolver> {
     Some(res)
 }
 
-fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<Document, String> {
+fn read_with(bytes: &[u8], editable: bool, now: i64) -> Result<(Document, Session), String> {
     read_nested(bytes, editable, now, &mut PACKAGE_BUDGET.clone(), 0)
 }
 
@@ -396,13 +403,13 @@ fn read_alt_doc(pkg: &mut Package, target: &str, left: u64, now: i64, depth: u8)
     pkg.budget += rest;
     match doc {
         _ if cost > left => Err("too much to import"),
-        Some(doc) => Ok((Rc::new(doc), cost)),
+        Some((doc, _)) => Ok((Rc::new(doc), cost)),
         None => Err("missing or not a readable document"),
     }
 }
 
 /// [`read_with`] for a package `depth` documents in (a `w:altChunk`'s), its reads taken from `budget`.
-fn read_nested(bytes: &[u8], editable: bool, now: i64, budget: &mut u64, depth: u8) -> Result<Document, String> {
+fn read_nested(bytes: &[u8], editable: bool, now: i64, budget: &mut u64, depth: u8) -> Result<(Document, Session), String> {
     let zip = zip::ZipArchive::new(Cursor::new(bytes.to_vec())).map_err(|e| e.to_string())?;
     let mut pkg = Package { zip, budget: *budget };
     let doc = read_package(bytes, &mut pkg, editable, now, depth);
@@ -410,7 +417,7 @@ fn read_nested(bytes: &[u8], editable: bool, now: i64, budget: &mut u64, depth: 
     doc
 }
 
-fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth: u8) -> Result<Document, String> {
+fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth: u8) -> Result<(Document, Session), String> {
     let root_rels = pkg.rels("");
     let main = root_rels.values().find(|(k, _)| k == "officeDocument").map(|(_, t)| t.clone()).unwrap_or_else(|| "word/document.xml".into());
     let rels = pkg.rels(&main);
@@ -754,7 +761,7 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
     }
     doc.people = r.people;
     doc.review_ids = r.ids;
-    doc.diagnostics = r.diagnostics;
+    let mut session = Session { diagnostics: r.diagnostics, ..Session::default() };
     if cfg!(debug_assertions) {
         r.res.typed();
     }
@@ -776,7 +783,7 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
         let stories = story_xml.into_iter().map(|(id, x)| (id, (x, doc.stories[&id].clone()))).collect();
         let (footnotes, endnotes) = (doc.footnotes.clone(), doc.endnotes.clone());
         let controls = doc.controls.clone();
-        doc.source = Some(Rc::new(Source {
+        session.source = Some(Rc::new(Source {
             package: bytes.to_vec(),
             main,
             xml,
@@ -795,7 +802,7 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
             separator_defaults,
         }));
     }
-    Ok(doc)
+    Ok((doc, session))
 }
 
 fn has_content(p: Node) -> bool {
@@ -4364,7 +4371,7 @@ mod tests {
         ];
         let files: Vec<(&str, &str)> = files.iter().map(|(n, x)| (n.as_str(), x.as_str())).collect();
         let bytes = crate::layout::tests::package_bytes(&files).expect("a package");
-        for doc in [crate::docx::read(&bytes).expect("reads"), crate::docx::read_editable(&bytes).expect("reads for editing")] {
+        for doc in [crate::docx::read(&bytes).expect("reads"), crate::docx::read_editable(&bytes).expect("reads for editing").0] {
             let header = doc.stories.values().next().expect("the header");
             for (part, blocks) in [("body", &doc.sections[0].blocks), ("header", header)] {
                 let Some(crate::docx::Block::Para(p)) = blocks.first() else { panic!("a paragraph") };

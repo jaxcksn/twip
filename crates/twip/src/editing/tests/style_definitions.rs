@@ -440,7 +440,7 @@ fn a_table_overrides_its_styles_band_sizes() {
     assert_eq!((b.rows, b.columns, b.own_rows, b.own_columns), (2, 3, Some(2), Some(3)));
     let doc = {
         use std::io::Read;
-        let bytes = crate::docx::write::save(e.document()).expect("saves");
+        let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
         let mut s = String::new();
         zip::ZipArchive::new(std::io::Cursor::new(bytes))
             .expect("a zip")
@@ -490,7 +490,7 @@ fn a_tracked_band_size_change_records_the_tables_previous_properties() {
 
 fn body_xml(e: &Editor) -> String {
     use std::io::Read;
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut s = String::new();
     zip::ZipArchive::new(std::io::Cursor::new(bytes))
         .expect("a zip")

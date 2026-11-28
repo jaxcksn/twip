@@ -42,26 +42,27 @@ use props::{Cx, Props};
 pub use generate::{GenerateError, generate};
 
 /// The edited document as package bytes: the original package when nothing changed.
-pub fn save(doc: &Document) -> Result<Vec<u8>, String> {
-    let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
-    let parts = edited_parts(doc)?;
-    if parts.is_empty() && doc.removed_data.is_empty() {
+pub fn save(doc: &Document, session: &Session) -> Result<Vec<u8>, String> {
+    let src = session.source.as_ref().ok_or("the document was not read for editing")?;
+    let parts = edited_parts(doc, session)?;
+    if parts.is_empty() && session.removed_data.is_empty() {
         return Ok(src.package.clone());
     }
-    repackage_without(&src.package, &parts, &removed_data_files(doc), zip::CompressionMethod::Deflated)
+    repackage_without(&src.package, &parts, &removed_data_files(session), zip::CompressionMethod::Deflated)
 }
 
 /// The parts the edits changed, with their new XML: the main part, headers and footers, and the notes parts.
-pub fn edited_parts(doc: &Document) -> Result<Vec<(String, Vec<u8>)>, String> {
-    let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
+pub fn edited_parts(doc: &Document, session: &Session) -> Result<Vec<(String, Vec<u8>)>, String> {
+    let src = session.source.as_ref().ok_or("the document was not read for editing")?;
     let mut parts = Vec::new();
-    if let Some(xml) = main_xml(doc)? {
+    if let Some(xml) = main_xml(doc, session)? {
         parts.push((src.main.clone(), xml.into_bytes()));
     }
     for (id, (xml, orig)) in &src.stories {
         let Some(name) = src.story_parts.get(id) else { continue };
         let now = doc.stories.get(id).map_or(&[][..], Vec::as_slice);
-        if let Some(xml) = part_xml(xml, &boxes(&[orig], &[now]), &[(orig, now)], &doc.controls, &gone_controls(doc), &doc.people, &colours_of(doc))?
+        if let Some(xml) =
+            part_xml(xml, &boxes(&[orig], &[now]), &[(orig, now)], &doc.controls, &gone_controls(doc, src), &doc.people, &colours_of(doc))?
         {
             parts.push((name.clone(), xml.into_bytes()));
         }
@@ -80,7 +81,7 @@ pub fn edited_parts(doc: &Document) -> Result<Vec<(String, Vec<u8>)>, String> {
         let tag = if *foot { "footnote" } else { "endnote" };
         let seps = separator_edits(doc, src, tag);
         let edits = NoteEdits { tag, added: &added, removed: &removed, separators: &seps };
-        let (out, listing) = notes_xml(xml, &boxes(&o, &n), &lists, &edits, doc)?;
+        let (out, listing) = notes_xml(xml, &boxes(&o, &n), &lists, &edits, doc, src)?;
         if let Some(xml) = out {
             parts.push((name.clone(), xml.into_bytes()));
         }
@@ -103,19 +104,19 @@ pub fn edited_parts(doc: &Document) -> Result<Vec<(String, Vec<u8>)>, String> {
             .collect();
         list_notes(doc, src, &mut parts, tag, &listing)?;
     }
-    section_pages(doc, &mut parts)?;
-    new_stories(doc, &mut parts)?;
-    numbering::numbering(doc, &mut parts)?;
-    styles::styles(doc, &mut parts)?;
-    fonts::font_renames(doc, &mut parts)?;
-    filled_placeholders(doc, &mut parts)?;
-    review_parts(doc, &mut parts)?;
-    settings_part(doc, &mut parts)?;
-    page_background(doc, &mut parts)?;
+    section_pages(doc, session, &mut parts)?;
+    new_stories(doc, session, &mut parts)?;
+    numbering::numbering(doc, session, &mut parts)?;
+    styles::styles(doc, session, &mut parts)?;
+    fonts::font_renames(session, &mut parts)?;
+    filled_placeholders(doc, session, &mut parts)?;
+    review_parts(doc, session, &mut parts)?;
+    settings_part(doc, session, &mut parts)?;
+    page_background(doc, session, &mut parts)?;
     add_images(&src.package, &doc.images, &mut parts)?;
     unique_ids(src, &mut parts)?;
-    data_parts(doc, &mut parts)?;
-    property_parts(doc, &mut parts)?;
+    data_parts(doc, session, &mut parts)?;
+    property_parts(doc, session, &mut parts)?;
     Ok(parts)
 }
 
@@ -287,9 +288,9 @@ fn tag_ids(xml: &str, (ns, names, id_ns): IdTags) -> Vec<(Range<usize>, i64)> {
 
 /// The document properties parts, when the properties changed or anything else did: an edited document's last saved
 /// time and revision follow.
-fn property_parts(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
+fn property_parts(doc: &Document, session: &Session, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
     use super::properties as p;
-    let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
+    let src = session.source.as_ref().ok_or("the document was not read for editing")?;
     let part = |rel: &str, parts: &[(String, Vec<u8>)]| package::related(&src.package, parts, "", rel);
     let (core, app, custom) = (part(p::CORE, parts)?, part(p::APP, parts)?, part(p::CUSTOM, parts)?);
     let read_of =
@@ -344,8 +345,8 @@ const SETTINGS: &str = "http://schemas.openxmlformats.org/officeDocument/2006/re
 /// document read again from its package, so a part the reader can't make the same again is never rewritten.
 // shortcut: the package is read again to compare (only for documents with comment or people parts, review content, or
 // a tracking setting that seems changed); keeping the review as read on `Source` would save the read.
-fn review_parts(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
-    let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
+fn review_parts(doc: &Document, session: &Session, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
+    let src = session.source.as_ref().ok_or("the document was not read for editing")?;
     let settings = package::related(&src.package, parts, &src.main, SETTINGS)?;
     let settings_xml = match &settings {
         Some(n) => package::read(&src.package, parts, n)?,
@@ -363,7 +364,7 @@ fn review_parts(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<()
     if !has_parts && !review && doc.settings.track_revisions == tracking {
         return Ok(());
     }
-    let read = super::read_editable(&src.package)?;
+    let (read, _) = super::read_editable(&src.package)?;
     if doc.settings.track_revisions != read.settings.track_revisions
         && let (Some(name), Some(xml)) = (settings, settings_xml)
     {
@@ -461,8 +462,8 @@ const TAB_AND_HYPHENATION: &[&str] = &[
 
 /// The settings part with the default tab spacing and the hyphenation settings, where they changed since reading; a
 /// document without one gets one when a setting is written.
-fn settings_part(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
-    let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
+fn settings_part(doc: &Document, session: &Session, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
+    let src = session.source.as_ref().ok_or("the document was not read for editing")?;
     let existing = package::related(&src.package, parts, &src.main, SETTINGS)?;
     let xml = match &existing {
         Some(n) => package::read(&src.package, parts, n)?.unwrap_or_default(),
@@ -591,8 +592,8 @@ fn add_settings_part(src: &Source, parts: &mut Vec<(String, Vec<u8>)>) -> Result
 /// The fill's markup as read is kept when it still reads as the model's fill under the new colour (a gradient or
 /// pattern that names no colour of its own takes the page's); else the fill is written from the model, as Word writes
 /// it. An untouched background keeps its markup.
-fn page_background(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
-    let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
+fn page_background(doc: &Document, session: &Session, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
+    let src = session.source.as_ref().ok_or("the document was not read for editing")?;
     if src.page_background.0 == doc.page_colour && src.page_background.1 == doc.page_fill && src.page_theme == doc.page_colour_theme {
         return Ok(());
     }
@@ -874,10 +875,10 @@ fn with_track_revisions(xml: &str, on: bool) -> Result<String, String> {
 }
 
 /// The files of the data parts removed since reading: each item, its properties and its relationships.
-fn removed_data_files(doc: &Document) -> Vec<String> {
-    let Some(src) = doc.source.as_ref() else { return Vec::new() };
+fn removed_data_files(session: &Session) -> Vec<String> {
+    let Some(src) = session.source.as_ref() else { return Vec::new() };
     let mut out = Vec::new();
-    for item in &doc.removed_data {
+    for item in &session.removed_data {
         out.push(item.clone());
         if let Some((props, rels)) = item_parts(&src.package, item) {
             out.push(props);
@@ -903,10 +904,10 @@ fn item_parts(package: &[u8], item: &str) -> Option<(String, String)> {
 /// the main part's relationship and their content type; removed ones lose the main part's relationship and their
 /// content type (their files go in [`removed_data_files`]).
 // shortcut: its relationship and content-type edits are its own; they move to `package::add_part` when next changed.
-fn data_parts(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
-    let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
+fn data_parts(doc: &Document, session: &Session, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
+    let src = session.source.as_ref().ok_or("the document was not read for editing")?;
     let changed: Vec<&DataPart> = doc.data_parts.iter().filter(|p| p.changed).collect();
-    if changed.is_empty() && doc.removed_data.is_empty() {
+    if changed.is_empty() && session.removed_data.is_empty() {
         return Ok(());
     }
     let mut zin = zip::ZipArchive::new(Cursor::new(&src.package)).map_err(|e| e.to_string())?;
@@ -931,7 +932,7 @@ fn data_parts(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), 
     let main_dir = src.main.rsplit_once('/').map_or("", |(d, _)| d);
     let target_of = |item: &str| if main_dir.is_empty() { item.to_string() } else { format!("../{item}") };
     let props_type = "application/vnd.openxmlformats-officedocument.customXmlProperties+xml";
-    for item in &doc.removed_data {
+    for item in &session.removed_data {
         let t = target_of(item);
         if let Some(k) = rels.find(&format!("Target=\"{t}\"")) {
             let a = rels[..k].rfind("<Relationship").unwrap_or(k);
@@ -1018,13 +1019,13 @@ fn section_props(dom: &roxmltree::Document) -> Vec<Range<usize>> {
     out
 }
 
-/// Sections whose page was edited ([`Document::edited_sections`]): their `w:sectPr` with the page size, margins,
+/// Sections whose page was edited ([`Session::edited_sections`]): their `w:sectPr` with the page size, margins,
 /// columns and different first page set, everything else in it kept.
-fn section_pages(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
-    if doc.edited_sections.is_empty() {
+fn section_pages(doc: &Document, session: &Session, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
+    if session.edited_sections.is_empty() {
         return Ok(());
     }
-    let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
+    let src = session.source.as_ref().ok_or("the document was not read for editing")?;
     let mut xml = match parts.iter().find(|(n, _)| *n == src.main) {
         Some((_, b)) => String::from_utf8(b.clone()).map_err(|e| e.to_string())?,
         None => src.xml.clone(),
@@ -1037,7 +1038,7 @@ fn section_pages(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
     let sects = section_props(&dom);
     drop(dom);
     let (cx, colours) = (Cx::of_xml(&xml), colours_of(doc));
-    let mut edited: Vec<usize> = doc.edited_sections.iter().copied().filter(|&k| k < sects.len().min(doc.sections.len())).collect();
+    let mut edited: Vec<usize> = session.edited_sections.iter().copied().filter(|&k| k < sects.len().min(doc.sections.len())).collect();
     edited.sort_unstable_by(|a, b| b.cmp(a));
     for k in edited {
         let r = sects[k].clone();
@@ -1333,11 +1334,11 @@ fn sect_with_page(sect: &str, w: &str, page: SectPage, change: Option<&SectionCh
 /// relationships pointing there and its content type added, when the image type changed), and in every part showing
 /// it, the picture's extents as fitted and its content control without `w:showingPlcHdr`.
 // shortcut: its relationship and content-type edits are its own; they move to `package::add_part` when next changed.
-fn filled_placeholders(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
+fn filled_placeholders(doc: &Document, session: &Session, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
     if doc.filled.is_empty() {
         return Ok(());
     }
-    let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
+    let src = session.source.as_ref().ok_or("the document was not read for editing")?;
     let mut zin = zip::ZipArchive::new(Cursor::new(&src.package[..])).map_err(|e| e.to_string())?;
     let mut read = |parts: &[(String, Vec<u8>)], n: &str| -> Result<Option<String>, String> {
         if let Some((_, b)) = parts.iter().find(|(m, _)| m == n) {
@@ -1446,10 +1447,10 @@ fn filled_placeholders(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Re
 }
 
 /// The part name of header or footer `id`: as read, else [`story_parts`]'s.
-pub fn story_part(doc: &Document, id: HeaderFooterId) -> Option<String> {
-    match doc.source.as_ref().and_then(|s| s.story_parts.get(&id)) {
+pub fn story_part(doc: &Document, session: &Session, id: HeaderFooterId) -> Option<String> {
+    match session.source.as_ref().and_then(|s| s.story_parts.get(&id)) {
         Some(name) => Some(name.clone()),
-        None => story_parts(doc).remove(&id),
+        None => story_parts(doc, session).remove(&id),
     }
 }
 
@@ -1457,8 +1458,8 @@ pub fn story_part(doc: &Document, id: HeaderFooterId) -> Option<String> {
 /// shows it as one) is named beside the main part, in id order, with a number no other part's name has: no part
 /// made before it, read, a section referred to as read (a part that didn't load), or the package holds (a removed
 /// part's name names that part's relationship).
-pub fn story_parts(doc: &Document) -> HashMap<HeaderFooterId, String> {
-    let src = doc.source.as_deref();
+pub fn story_parts(doc: &Document, session: &Session) -> HashMap<HeaderFooterId, String> {
+    let src = session.source.as_deref();
     let mut out: HashMap<HeaderFooterId, String> = src.map(|s| s.story_parts.clone()).unwrap_or_default();
     let refs = || doc.sections.iter().flat_map(|s| s.headers.iter().chain(&s.footers)).flatten();
     let mut made: Vec<HeaderFooterId> = doc.stories.keys().chain(refs()).filter(|id| !out.contains_key(id)).copied().collect();
@@ -1490,9 +1491,9 @@ pub fn story_parts(doc: &Document) -> HashMap<HeaderFooterId, String> {
 /// the section references to it (inserted first in their sections' `w:sectPr`, where CT_SectPr has them). A section
 /// whose slot shows another part read than it did gets a reference to that part's relationship too.
 // shortcut: its relationship and content-type edits are its own; they move to `package::add_part` when next changed.
-fn new_stories(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
-    let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
-    let names = story_parts(doc);
+fn new_stories(doc: &Document, session: &Session, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(), String> {
+    let src = session.source.as_ref().ok_or("the document was not read for editing")?;
+    let names = story_parts(doc, session);
     // In part name order
     let mut made: Vec<(HeaderFooterId, &String)> =
         doc.stories.keys().filter(|id| !src.stories.contains_key(*id)).filter_map(|id| Some((*id, names.get(id)?))).collect();
@@ -1707,8 +1708,9 @@ fn notes_xml(
     lists: &[(&[Block], &[Block])],
     e: &NoteEdits,
     doc: &Document,
+    src: &Source,
 ) -> Result<(Option<String>, Vec<(i64, bool)>), String> {
-    let (controls, gone, people, colours) = (&doc.controls, &gone_controls(doc), &doc.people, &colours_of(doc));
+    let (controls, gone, people, colours) = (&doc.controls, &gone_controls(doc, src), &doc.people, &colours_of(doc));
     let tag = e.tag;
     let dom = roxmltree::Document::parse(xml).map_err(|e| e.to_string())?;
     let root = dom.root_element();
@@ -1859,8 +1861,8 @@ fn list_notes(doc: &Document, src: &Source, parts: &mut Vec<(String, Vec<u8>)>, 
 }
 
 /// The controls read that the document no longer has (removed, or emptied of every member).
-fn gone_controls(doc: &Document) -> Vec<Control> {
-    doc.source.as_ref().map_or(Vec::new(), |s| s.controls.iter().filter(|(id, _)| !doc.controls.contains_key(id)).map(|(_, c)| c.clone()).collect())
+fn gone_controls(doc: &Document, src: &Source) -> Vec<Control> {
+    src.controls.iter().filter(|(id, _)| !doc.controls.contains_key(id)).map(|(_, c)| c.clone()).collect()
 }
 
 /// The theme colours `doc`'s styles resolve with.
@@ -2006,10 +2008,10 @@ fn take_closing(qs: &mut Vec<&Paragraph>) -> Option<Range<usize>> {
 }
 
 /// The main part's XML after the edits; `None` when nothing changed.
-pub fn main_xml(doc: &Document) -> Result<Option<String>, String> {
+pub fn main_xml(doc: &Document, session: &Session) -> Result<Option<String>, String> {
     use std::borrow::Cow;
-    let src = doc.source.as_ref().ok_or("the document was not read for editing")?;
-    let sources = if doc.section_sources.is_empty() { vec![1; doc.sections.len()] } else { doc.section_sources.clone() };
+    let src = session.source.as_ref().ok_or("the document was not read for editing")?;
+    let sources = if session.section_sources.is_empty() { vec![1; doc.sections.len()] } else { session.section_sources.clone() };
     if sources.len() != doc.sections.len() || sources.iter().sum::<usize>() != src.blocks.len() || sources.last() == Some(&0) {
         return Err("the sections don't match the source's".into());
     }
@@ -2062,7 +2064,7 @@ pub fn main_xml(doc: &Document) -> Result<Option<String>, String> {
     }
     let lists: Vec<(&[Block], &[Block])> = orig.iter().zip(&now).map(|(a, b)| (a.as_ref(), b.as_ref())).collect();
     let (o, n): (Vec<&[Block]>, Vec<&[Block]>) = lists.iter().copied().unzip();
-    part_xml_with(&src.xml, &boxes(&o, &n), &lists, &[], &edits, &doc.controls, &gone_controls(doc), &doc.people, &colours_of(doc))
+    part_xml_with(&src.xml, &boxes(&o, &n), &lists, &[], &edits, &doc.controls, &gone_controls(doc, src), &doc.people, &colours_of(doc))
 }
 
 /// A part's XML with its block lists (as read, now) written back; `None` when none changed.
@@ -7410,10 +7412,10 @@ mod tests {
         assert_eq!(tag_ids(&xml, BOOKMARK_TAGS).into_iter().map(|(_, id)| id).collect::<Vec<_>>(), [6]);
     }
 
-    fn render_fixture(name: &str) -> (Vec<u8>, Document) {
+    fn render_fixture(name: &str) -> (Vec<u8>, Document, Session) {
         let bytes = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/render").join(name)).expect("fixture");
-        let doc = crate::docx::read_editable(&bytes).expect("reads");
-        (bytes, doc)
+        let (doc, docx) = crate::docx::read_editable(&bytes).expect("reads");
+        (bytes, doc, docx)
     }
 
     fn part_text(package: &[u8], name: &str) -> String {
@@ -7434,14 +7436,14 @@ mod tests {
 
     #[test]
     fn an_untouched_page_background_keeps_its_markup_and_a_changed_one_is_written() {
-        let (bytes, mut doc) = render_fixture("page-pattern.docx");
-        assert_eq!(save(&doc).expect("saves"), bytes, "untouched");
+        let (bytes, mut doc, docx) = render_fixture("page-pattern.docx");
+        assert_eq!(save(&doc, &docx).expect("saves"), bytes, "untouched");
         // A new colour: the fill as read is kept, the theme attributes go with the old colour.
         let was = part_text(&bytes, "word/document.xml");
         let fill = &was[was.find("<v:background").unwrap()..was.find("</v:background>").unwrap() + 15];
         doc.page_colour = Some(0x12_3456);
         doc.settings.display_background_shape = false;
-        let saved = save(&doc).expect("saves");
+        let saved = save(&doc, &docx).expect("saves");
         let xml = part_text(&saved, "word/document.xml");
         assert!(xml.contains(&format!(r#"<w:background w:color="123456">{fill}</w:background>"#)), "{xml}");
         assert!(!part_text(&saved, "word/settings.xml").contains("displayBackgroundShape"));
@@ -7453,17 +7455,17 @@ mod tests {
         // No colour and no fill: no background.
         doc.page_colour = None;
         doc.page_fill = None;
-        let xml = part_text(&save(&doc).expect("saves"), "word/document.xml");
+        let xml = part_text(&save(&doc, &docx).expect("saves"), "word/document.xml");
         assert!(!xml.contains("<w:background"), "{xml}");
     }
 
     #[test]
     fn a_fill_that_takes_the_page_colour_is_written_from_the_model_when_the_colour_changes() {
         // The gradient names no first colour: it starts from the page's white.
-        let (_, mut doc) = render_fixture("page-gradient.docx");
+        let (_, mut doc, docx) = render_fixture("page-gradient.docx");
         let fill = doc.page_fill.clone();
         doc.page_colour = Some(0x12_3456);
-        let saved = save(&doc).expect("saves");
+        let saved = save(&doc, &docx).expect("saves");
         let xml = part_text(&saved, "word/document.xml");
         let el = &xml[xml.find("<w:background").unwrap()..xml.find("</w:background>").unwrap()];
         assert!(!el.contains("xmlns") && !el.contains("opacity"), "as Word writes it: {el}");
@@ -7473,15 +7475,15 @@ mod tests {
 
     #[test]
     fn a_fill_on_a_part_without_vml_declares_its_namespaces_on_the_root() {
-        let (bytes, _) = render_fixture("page-colour.docx");
+        let (bytes, ..) = render_fixture("page-colour.docx");
         let xml = part_text(&bytes, "word/document.xml");
         let bare =
             xml.replace(r#" xmlns:v="urn:schemas-microsoft-com:vml""#, "").replace(r#" xmlns:o="urn:schemas-microsoft-com:office:office""#, "");
         assert!(!bare.contains("xmlns:v="));
         let package = repackage(&bytes, &[("word/document.xml".into(), bare.into_bytes())], zip::CompressionMethod::Deflated).expect("repackages");
-        let mut doc = crate::docx::read_editable(&package).expect("reads");
+        let (mut doc, docx) = crate::docx::read_editable(&package).expect("reads");
         doc.page_fill = render_fixture("page-gradient.docx").1.page_fill;
-        let saved = save(&doc).expect("saves");
+        let saved = save(&doc, &docx).expect("saves");
         let again = crate::docx::read(&saved).expect("reads again");
         assert_eq!(again.page_fill, doc.page_fill);
         let xml = part_text(&saved, "word/document.xml");
@@ -7493,12 +7495,12 @@ mod tests {
     fn a_page_background_made_since_reading_is_written_in_its_model_form() {
         use crate::drawing::paint::Fill;
         // A gradient on a page that had none, its colour, shown.
-        let (_, mut doc) = render_fixture("watermark-text.docx");
-        let (_, gradient) = render_fixture("page-gradient.docx");
+        let (_, mut doc, docx) = render_fixture("watermark-text.docx");
+        let (_, gradient, _) = render_fixture("page-gradient.docx");
         doc.page_colour = Some(0xFF_FFFF);
         doc.page_fill = gradient.page_fill.clone();
         doc.settings.display_background_shape = true;
-        let saved = save(&doc).expect("saves");
+        let saved = save(&doc, &docx).expect("saves");
         let xml = part_text(&saved, "word/document.xml");
         let el = &xml[xml.find("<w:background").unwrap()..xml.find("</w:background>").unwrap()];
         assert!(
@@ -7511,18 +7513,18 @@ mod tests {
         assert_eq!((a.kind, a.tile, a.flip), (b.kind, b.tile, b.flip));
         assert_eq!(a.stops.len(), b.stops.len());
         // A tiled picture: the image goes with the part.
-        let (_, picture) = render_fixture("page-picture.docx");
-        let mut doc = render_fixture("watermark-text.docx").1;
+        let (_, picture, _) = render_fixture("page-picture.docx");
+        let (_, mut doc, docx) = render_fixture("watermark-text.docx");
         doc.images = picture.images.clone();
         doc.page_fill = picture.page_fill.clone();
-        let saved = save(&doc).expect("saves");
+        let saved = save(&doc, &docx).expect("saves");
         let again = crate::docx::read(&saved).expect("reads again");
         let Some(Fill::Blip(b)) = &again.page_fill else { panic!("{:?}", again.page_fill) };
         assert_eq!(again.images.get(b.image.expect("its picture")).unwrap(), picture.images.iter().next().unwrap().1);
     }
 
     /// A blank document's body as `body`, read for editing.
-    fn body_doc(body: &str) -> Document {
+    fn body_doc(body: &str) -> (Document, Session) {
         crate::docx::read_editable(&crate::editing::tests::blank_body(body)).expect("reads")
     }
 
@@ -7546,14 +7548,14 @@ mod tests {
 
     #[test]
     fn a_kept_rows_alignment_is_written_and_taken_off() {
-        let mut doc = body_doc(&format!("{}<w:p/>", one_cell("", "<w:tc>", "a")));
+        let (mut doc, docx) = body_doc(&format!("{}<w:p/>", one_cell("", "<w:tc>", "a")));
         first_table(&mut doc).rows[0].jc = Some(Jc::Center);
-        let saved = save(&doc).expect("saves");
-        let mut again = crate::docx::read_editable(&saved).expect("reads again");
+        let saved = save(&doc, &docx).expect("saves");
+        let (mut again, again_docx) = crate::docx::read_editable(&saved).expect("reads again");
         assert_eq!(first_table(&mut again).rows[0].jc, Some(Jc::Center), "{}", part_text(&saved, "word/document.xml"));
         first_table(&mut again).rows[0].jc = None;
-        let saved = save(&again).expect("saves");
-        let mut back = crate::docx::read_editable(&saved).expect("reads again");
+        let saved = save(&again, &again_docx).expect("saves");
+        let (mut back, _) = crate::docx::read_editable(&saved).expect("reads again");
         assert_eq!(first_table(&mut back).rows[0].jc, None, "{}", part_text(&saved, "word/document.xml"));
     }
 
@@ -7566,11 +7568,11 @@ mod tests {
             row("a"),
             row("b")
         );
-        let mut doc = body_doc(&body);
+        let (mut doc, docx) = body_doc(&body);
         let t = first_table(&mut doc);
         assert!(!t.rows[0].controls.is_empty() && t.rows[1].controls.is_empty(), "the first row is in the control");
         t.rows[1].jc = Some(Jc::Center);
-        let saved = save(&doc).expect("saves");
+        let saved = save(&doc, &docx).expect("saves");
         let xml = part_text(&saved, "word/document.xml");
         roxmltree::Document::parse(&xml).unwrap_or_else(|e| panic!("well formed: {e}: {xml}"));
         let at = |s: &str| xml.find(s).unwrap_or_else(|| panic!("{s} in {xml}"));
@@ -7579,7 +7581,7 @@ mod tests {
 
     #[test]
     fn a_header_reference_goes_by_its_parsed_slot() {
-        let doc = body_doc("<w:p/>");
+        let (doc, _) = body_doc("<w:p/>");
         let mut was = doc.sections[0].page();
         was.headers = [Some(HeaderFooterId::next()), Some(HeaderFooterId::next()), None];
         let mut now = was.clone();
@@ -7647,12 +7649,12 @@ mod tests {
         let shd = |fill: &str| format!(r#"<w:shd w:val="clear" w:color="auto" w:fill="{fill}"/>"#);
         for (later, want) in [(shd("0000FF"), (Some(0x00_00FF), None)), (String::new(), (None, Some((None, None))))] {
             let body = format!("{}{}<w:p/>", one_cell(&shd("FF0000"), "<w:tc>", "a"), one_cell(&later, "<w:tc>", "b"));
-            let mut doc = body_doc(&body);
+            let (mut doc, docx) = body_doc(&body);
             let t = first_table(&mut doc);
             assert_eq!(t.rows.len(), 2, "read as one");
             edit_first_cell(t);
-            let saved = save(&doc).expect("saves");
-            let mut again = crate::docx::read_editable(&saved).expect("reads again");
+            let saved = save(&doc, &docx).expect("saves");
+            let (mut again, _) = crate::docx::read_editable(&saved).expect("reads again");
             let t = first_table(&mut again);
             assert_eq!(t.rows[0].shading, None);
             let row = &t.rows[1];
@@ -7664,12 +7666,12 @@ mod tests {
     #[test]
     fn a_joined_table_s_later_rows_stay_unshaded_under_shading_the_first_takes_since_reading() {
         let body = format!("{}{}<w:p/>", one_cell("", "<w:tc>", "a"), one_cell("", "<w:tc>", "b"));
-        let mut doc = body_doc(&body);
+        let (mut doc, docx) = body_doc(&body);
         let t = first_table(&mut doc);
         assert_eq!(t.rows[1].table_shading, Some((None, None)));
         t.direct = crate::docx::table_props::TableDirect::in_w(r#"<w:tblPr><w:shd w:val="clear" w:color="auto" w:fill="00FF00"/></w:tblPr>"#);
-        let saved = save(&doc).expect("saves");
-        let mut again = crate::docx::read_editable(&saved).expect("reads again");
+        let saved = save(&doc, &docx).expect("saves");
+        let (mut again, _) = crate::docx::read_editable(&saved).expect("reads again");
         let t = first_table(&mut again);
         assert_eq!(t.rows[1].table_shading, Some((None, None)), "{}", part_text(&saved, "word/document.xml"));
     }
@@ -7681,13 +7683,13 @@ mod tests {
         for (tr, edit) in [("<w:tr>", false), ("<w:tr>", true), ("<w:tr><w:tblPrEx/>", false)] {
             let later = one_cell(&format!("<w:jc w:val=\"center\"/>{shd}{mar}"), "<w:tc>", "b").replace("<w:tr>", tr);
             let body = format!("{}{later}<w:p/>", one_cell(shd, "<w:tc>", "a"));
-            let mut doc = body_doc(&body);
+            let (mut doc, docx) = body_doc(&body);
             let t = first_table(&mut doc);
             if edit {
                 let cell = t.rows[1].cells[0].clone();
                 t.rows[1].cells.push(cell);
             }
-            let saved = save(&doc).expect("saves");
+            let saved = save(&doc, &docx).expect("saves");
             let xml = part_text(&saved, "word/document.xml");
             let ex = &xml[xml.find("<w:tblPrEx>").expect("exceptions")..xml.find("</w:tblPrEx>").unwrap()];
             let at = |name: &str| ex.find(&format!("<w:{name}")).unwrap_or_else(|| panic!("{name} in {ex}"));
@@ -7698,11 +7700,11 @@ mod tests {
     #[test]
     fn a_table_s_width_and_shading_change_together_in_a_self_closing_tbl_pr() {
         let body = r#"<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:p/></w:tc></w:tr></w:tbl><w:p/>"#;
-        let mut doc = body_doc(body);
+        let (mut doc, docx) = body_doc(body);
         let t = first_table(&mut doc);
         t.width = Width::Dxa(144.0);
         t.direct = crate::docx::table_props::TableDirect::in_w(r#"<w:tblPr><w:shd w:val="clear" w:color="auto" w:fill="00FF00"/></w:tblPr>"#);
-        let saved = save(&doc).expect("saves");
+        let saved = save(&doc, &docx).expect("saves");
         let xml = part_text(&saved, "word/document.xml");
         assert!(
             xml.contains(r#"<w:tblPr><w:tblW w:w="2880" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="00FF00"/></w:tblPr>"#),
@@ -7714,14 +7716,14 @@ mod tests {
     fn a_cell_s_id_alone_changing_is_written_over_its_own_however_quoted() {
         let body = format!("{}<w:p/>", one_cell("", "<w:tc w:id='old'>", "a"));
         for id in [Some("new"), None] {
-            let mut doc = body_doc(&body);
+            let (mut doc, docx) = body_doc(&body);
             let cell = &mut first_table(&mut doc).rows[0].cells[0];
             assert_eq!(cell.ids.as_ref().and_then(|i| i.id.as_deref()), Some("old"));
             cell.ids = id.map(|v| Rc::new(crate::docx::CellIds { id: Some(v.into()), headers: Vec::new() }));
-            let saved = save(&doc).expect("saves");
+            let saved = save(&doc, &docx).expect("saves");
             let xml = part_text(&saved, "word/document.xml");
             roxmltree::Document::parse(&xml).expect("well formed");
-            let mut again = crate::docx::read_editable(&saved).expect("reads again");
+            let (mut again, _) = crate::docx::read_editable(&saved).expect("reads again");
             let ids = first_table(&mut again).rows[0].cells[0].ids.clone();
             assert_eq!(ids.and_then(|i| i.id.clone()).as_deref(), id, "{xml}");
         }
@@ -7731,27 +7733,27 @@ mod tests {
     fn a_page_fill_takes_a_free_prefix_and_kept_markup_keeps_its_own() {
         use crate::drawing::paint::Fill;
         // The root's `v` is another namespace's: the fill's VML takes a free prefix.
-        let (bytes, _) = render_fixture("page-colour.docx");
+        let (bytes, ..) = render_fixture("page-colour.docx");
         let xml = part_text(&bytes, "word/document.xml").replace(r#"xmlns:v="urn:schemas-microsoft-com:vml""#, r#"xmlns:v="urn:example:other""#);
         let package = repackage(&bytes, &[("word/document.xml".into(), xml.into_bytes())], zip::CompressionMethod::Deflated).expect("repackages");
-        let mut doc = crate::docx::read_editable(&package).expect("reads");
+        let (mut doc, docx) = crate::docx::read_editable(&package).expect("reads");
         doc.page_fill = render_fixture("page-gradient.docx").1.page_fill;
-        let saved = save(&doc).expect("saves");
+        let saved = save(&doc, &docx).expect("saves");
         let out = part_text(&saved, "word/document.xml");
         roxmltree::Document::parse(&out).expect("well formed");
         assert!(out.contains(r#"xmlns:v1="urn:schemas-microsoft-com:vml""#) && out.contains("<v1:background"), "{out}");
         assert_eq!(fill_by_place(&crate::docx::read(&saved).expect("reads again")), fill_by_place(&doc));
         // VML declared on the `w:background` alone: a colour change keeps the fill, and its declaration.
-        let (bytes, read) = render_fixture("page-picture.docx");
+        let (bytes, read, _) = render_fixture("page-picture.docx");
         let xml = part_text(&bytes, "word/document.xml");
         let decl = r#" xmlns:v="urn:schemas-microsoft-com:vml""#;
         let local = xml.replacen(decl, "", 1).replacen("<w:background ", &format!("<w:background{decl} "), 1);
         assert!(!local[..local.find("<w:body").unwrap()].contains(&format!("<w:document{decl}")));
         let package = repackage(&bytes, &[("word/document.xml".into(), local.into_bytes())], zip::CompressionMethod::Deflated).expect("repackages");
-        let mut doc = crate::docx::read_editable(&package).expect("reads");
+        let (mut doc, docx) = crate::docx::read_editable(&package).expect("reads");
         assert!(matches!(doc.page_fill, Some(Fill::Blip(_))), "{:?}", doc.page_fill);
         doc.page_colour = read.page_colour.map(|c| c ^ 0x10);
-        let saved = save(&doc).expect("saves");
+        let saved = save(&doc, &docx).expect("saves");
         let out = part_text(&saved, "word/document.xml");
         roxmltree::Document::parse(&out).expect("well formed");
         assert!(out.contains(&format!("<w:background w:color=\"FFFFEF\"{decl}><v:background")), "{out}");
@@ -7761,7 +7763,7 @@ mod tests {
     #[test]
     fn a_kept_page_fill_s_local_declarations_leave_the_background_wordprocessingml() {
         use crate::drawing::paint::Fill;
-        let (bytes, read) = render_fixture("page-picture.docx");
+        let (bytes, read, _) = render_fixture("page-picture.docx");
         let xml = part_text(&bytes, "word/document.xml");
         let open = r#"<w:background w:color="FFFFFF">"#;
         assert!(xml.contains(open));
@@ -7773,10 +7775,10 @@ mod tests {
             );
             let package =
                 repackage(&bytes, &[("word/document.xml".into(), local.into_bytes())], zip::CompressionMethod::Deflated).expect("repackages");
-            let mut doc = crate::docx::read_editable(&package).expect("reads");
+            let (mut doc, docx) = crate::docx::read_editable(&package).expect("reads");
             assert!(matches!(doc.page_fill, Some(Fill::Blip(_))), "{:?}", doc.page_fill);
             doc.page_colour = read.page_colour.map(|c| c ^ 0x10);
-            let saved = save(&doc).expect("saves");
+            let saved = save(&doc, &docx).expect("saves");
             let out = part_text(&saved, "word/document.xml");
             roxmltree::Document::parse(&out).expect("well formed");
             assert!(out.contains(r#"xmlns:w="urn:example:other""#), "{out}");
@@ -7788,12 +7790,12 @@ mod tests {
     #[test]
     fn a_replaced_tiled_picture_is_written_with_its_new_image() {
         use crate::drawing::paint::Fill;
-        let (_, mut doc) = render_fixture("page-picture.docx");
+        let (_, mut doc, docx) = render_fixture("page-picture.docx");
         let Some(Fill::Blip(mut b)) = doc.page_fill.clone() else { panic!("{:?}", doc.page_fill) };
         let png = crate::render::svg::png(2, 2, &[0, 128, 255, 255].repeat(4));
         b.image = Some(doc.images.add(png.clone()));
         doc.page_fill = Some(Fill::Blip(b));
-        let saved = save(&doc).expect("saves");
+        let saved = save(&doc, &docx).expect("saves");
         let again = crate::docx::read(&saved).expect("reads again");
         let Some(Fill::Blip(b)) = &again.page_fill else { panic!("{:?}", again.page_fill) };
         assert_eq!(again.images.get(b.image.expect("its picture")).unwrap(), png);

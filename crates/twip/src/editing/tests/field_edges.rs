@@ -285,7 +285,7 @@ fn a_made_end_saves_after_its_paragraph_is_edited() {
     let ps = texts_ids(&e);
     e.select_between((ps[1], Unit(1)), (ps[1], Unit(1)), fonts());
     e.execute(Command::InsertText("x".into()), fonts());
-    let saved = crate::docx::write::save(e.document()).unwrap();
+    let saved = crate::docx::write::save(e.document(), e.docx()).unwrap();
     let xml = {
         use std::io::Read;
         let mut z = zip::ZipArchive::new(std::io::Cursor::new(&saved)).unwrap();
@@ -390,7 +390,7 @@ fn a_shown_code_saves_the_runs_beside_its_start_in_its_insertion() {
     let doc = format!("<w:p>{ins}{}</w:p><w:p>{}</w:p><w:p>{END}</w:p>", run("One"), run("Two"));
     let mut e = Editor::open(&doc_with(&doc, HEADINGS), fonts()).unwrap();
     assert!(matches!(show_codes(&mut e, true), Outcome::Changed(_)));
-    let saved = crate::docx::write::save(e.document()).unwrap();
+    let saved = crate::docx::write::save(e.document(), e.docx()).unwrap();
     let xml = {
         use std::io::Read;
         let mut z = zip::ZipArchive::new(std::io::Cursor::new(&saved)).unwrap();

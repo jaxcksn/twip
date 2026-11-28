@@ -127,7 +127,6 @@ fn a_document_built_from_typed_properties_lays_out_and_edits_without_xml() {
     let bold = RunProps { toggles_set: toggle::B, toggles: toggle::B, size: Some(14.0), ..Default::default() };
     let id = next_para_id();
     let doc = sourceless(vec![paragraph(&res, &centred, &[("Built without ", RunProps::default()), ("XML", bold)], id)], &res);
-    assert!(doc.source.is_none(), "no package");
     let (_, run) = &runs(&doc, 0)[1];
     assert!(run.bold && run.size == 14.0 && run.direct.props().is_none(), "typed props resolve with no XML: {run:?}");
 
@@ -145,6 +144,7 @@ fn a_document_built_from_typed_properties_lays_out_and_edits_without_xml() {
 
     // The editor on the sourceless document: typing, a formatting command, incremental against fresh layout, undo.
     let mut e = Editor::with_document(edited, fonts);
+    assert!(e.docx().source.is_none(), "no package");
     assert!(matches!(e.execute(Command::InsertText("Typed. ".into()), fonts), Outcome::Changed(_)));
     e.execute(Command::SelectAll, fonts);
     assert!(matches!(e.execute(C::SetBold(true), fonts), Outcome::Changed(_)));
@@ -305,8 +305,8 @@ fn select_first(e: &mut Editor) {
 }
 
 fn reread(e: &Editor) -> Document {
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
-    crate::docx::read_editable(&bytes).expect("reads back")
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
+    crate::docx::read_editable(&bytes).expect("reads back").0
 }
 
 fn state(e: &Editor, t: Target) -> (String, bool) {
@@ -415,7 +415,7 @@ fn stale_formats_in_the_cache(t: Target) {
     e.complete(fonts);
     select_first(&mut e);
     e.complete(fonts);
-    let saved_before = crate::docx::write::save(e.document()).expect("saves");
+    let saved_before = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let work = layout_work(&e);
 
     let out = e.execute(set_inherited(t), fonts);
@@ -469,7 +469,7 @@ fn stale_formats_in_the_cache(t: Target) {
     assert!(!authored(para(e.document(), 0), t).contains(second_marker(t)), "the second command is undone");
     e.execute(Command::Undo(Default::default()), fonts);
     assert!(!authored(para(e.document(), 0), t).contains(inherited_marker(t)), "the explicit value is undone");
-    assert!(crate::docx::write::save(e.document()).expect("saves") == saved_before, "the saved bytes equal those before the edits");
+    assert!(crate::docx::write::save(e.document(), e.docx()).expect("saves") == saved_before, "the saved bytes equal those before the edits");
 }
 
 #[test]
@@ -697,8 +697,8 @@ pub(crate) fn generated_package() -> Vec<u8> {
 fn a_document_built_from_typed_properties_generates_a_package_that_reads_back_the_same() {
     let fonts = fonts();
     let doc = built();
-    assert!(doc.source.is_none(), "no package");
     let mut e = labelled(doc, fonts);
+    assert!(e.docx().source.is_none(), "no package");
     e.complete(fonts);
     let read = reads_back_as_built(&mut e);
     assert!(read.iter().any(|r| r.color_theme.is_some()) && read.iter().any(|r| r.font_theme.is_some()), "a theme colour and a theme font");
@@ -822,8 +822,7 @@ fn a_built_table_and_page_setup_generate_a_package_that_reads_back_the_same() {
 fn generating_names_what_it_cannot_write() {
     let unsupported = |d: &Document| crate::docx::write::generate(d).expect_err("not generated");
     let table = r#"<w:tbl><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:trPr><w:ins w:id="1" w:author="A"/></w:trPr><w:tc><w:p/></w:tc></w:tr></w:tbl><w:p/>"#;
-    let mut doc = crate::docx::read(&with_strong_style(table)).expect("reads");
-    doc.source = None;
+    let doc = crate::docx::read(&with_strong_style(table)).expect("reads");
     assert_eq!(unsupported(&doc), GenerateError::Unsupported("a tracked change"));
 
     let mut doc = built();

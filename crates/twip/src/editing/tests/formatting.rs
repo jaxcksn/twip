@@ -13,7 +13,7 @@ use crate::docx::{Block, Inline};
 use crate::layout::{TableId, Unit};
 
 fn doc_xml(e: &Editor) -> String {
-    let bytes = crate::docx::write::save(e.document()).expect("saves");
+    let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
     let mut s = String::new();
     z.by_name("word/document.xml").unwrap().read_to_string(&mut s).unwrap();
@@ -196,7 +196,7 @@ fn bold_reaches_a_rubys_base_text_and_saves() {
     let (r, _) = ruby(&e);
     assert!(r.base.iter().all(|(_, run)| run.bold), "the base text is bold");
     assert!(r.text.iter().all(|(_, run)| !run.bold), "the annotation keeps its own formatting");
-    let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reads");
+    let again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reads");
     let (r, _) = ruby(&again);
     assert!(r.base.iter().all(|(_, run)| run.bold), "as saved");
 }
@@ -426,7 +426,7 @@ fn a_font_replaced_in_a_rubys_annotation_and_base_keeps_its_xml() {
     assert_eq!(fonts_of(&r), ["Times New Roman", "Times New Roman"]);
     let xml = r.origin_xml().expect("its XML").to_string();
     assert_eq!(xml.matches("w:ascii=\"Times New Roman\"").count(), 2, "{xml}");
-    let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reads");
+    let again = Editor::open(&crate::docx::write::save(e.document(), e.docx()).expect("saves"), fonts()).expect("reads");
     assert_eq!(fonts_of(&ruby(&again).0), ["Times New Roman", "Times New Roman"], "as saved");
 }
 
@@ -449,7 +449,7 @@ fn a_font_the_built_in_defaults_name_is_replaced_where_the_part_writes_none() {
     let mut e = Editor::open(&super::style_model::pkg(styles, "<w:p><w:r><w:t>one</w:t></w:r></w:p>"), fonts()).expect("opens");
     e.complete(fonts());
     let part = |e: &Editor| {
-        let bytes = crate::docx::write::save(e.document()).expect("saves");
+        let bytes = crate::docx::write::save(e.document(), e.docx()).expect("saves");
         let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).expect("a package");
         let mut xml = String::new();
         z.by_name("word/styles.xml").expect("styles").read_to_string(&mut xml).expect("reads");
