@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 
 use super::{CharProps, DefinedIn, ForeignProps, ParaProps, ParaSet, Set};
+use crate::authored::Authored;
 use crate::paragraph::{ListId, ListJc, ListSuffix};
 
 /// A list definition, by the id its source format gives it.
@@ -435,6 +436,18 @@ pub enum OverrideProp {
     /// A property of the level it defines.
     Level(LevelProp),
 }
+
+/// A list definition: typed, with where it was read from in its origin.
+///
+/// The written form stands for the definition only while it is written alike; never part of equality: use
+/// [`Authored::authored_eq`].
+pub type ListDefDirect = Authored<Rc<ListDef>, ListDefProp>;
+
+/// A list: typed, with where it was read from in its origin, as [`ListDefDirect`].
+pub type ListDirect = Authored<Rc<List>, ListProp>;
+
+/// A picture bullet: typed, with where it was read from in its origin, as [`ListDefDirect`]. An edit replaces it whole.
+pub type PictureDirect = Authored<Rc<PictureBullet>, std::convert::Infallible>;
 
 // Names
 

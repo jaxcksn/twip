@@ -1277,14 +1277,7 @@ impl Element for PictureBullet {
 /// The written form stands for the value only while it is written alike; never part of equality.
 pub type Direct<T> = Authored<Rc<T>, <T as Element>::Set>;
 
-/// A `w:abstractNum`'s holder.
-pub type ListDefDirect = Direct<ListDef>;
-
-/// A `w:num`'s holder.
-pub type ListDirect = Direct<List>;
-
-/// A `w:numPicBullet`'s holder.
-pub type PictureDirect = Direct<PictureBullet>;
+pub use crate::format::{ListDefDirect, ListDirect, PictureDirect};
 
 /// What the WordprocessingML adapter adds to a definition, list or picture bullet: the element it was read from, and
 /// the element it is written as.
