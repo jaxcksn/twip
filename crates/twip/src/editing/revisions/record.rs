@@ -255,14 +255,14 @@ impl Recording {
     }
 
     fn section_change(&mut self, s: &Section, page: &SectionPage, ids: &mut IdCounter) -> Option<Rc<SectionChange>> {
-        if *page == s.page() || !self.track_formatting {
+        if crate::docx::page_borders::same_page(page, &s.page()) || !self.track_formatting {
             return s.change.clone();
         }
         let (previous, previous_raw) = match &s.change {
             Some(c) => (c.previous.clone(), c.previous_raw.clone()),
             None => (s.page(), Raw::default()),
         };
-        (previous != *page).then(|| Rc::new(SectionChange { mark: self.fmt_mark(ids), previous, previous_raw }))
+        (!crate::docx::page_borders::same_page(&previous, page)).then(|| Rc::new(SectionChange { mark: self.fmt_mark(ids), previous, previous_raw }))
     }
 
     // Inlines and blocks
@@ -1195,15 +1195,15 @@ mod tests {
         let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
         let read = crate::docx::read(&saved).expect("reads back");
         let c = read.sections[0].change.as_ref().expect("the change is saved");
-        assert_eq!((&c.previous, read.sections[0].page_w > read.sections[0].page_h), (&before, true));
+        assert!(crate::docx::page_borders::same_page(&c.previous, &before) && read.sections[0].page_w > read.sections[0].page_h, "{c:?}");
         let earlier = c.previous_raw.0.as_deref().expect("the earlier section");
         assert!(earlier.contains("cols") && !earlier.contains("headerReference"), "the section as read, its page earlier: {earlier}");
         let mut e = tracked(&saved);
         e.execute(Command::RejectAllRevisions(Default::default()), fonts());
-        assert!(e.document().sections[0].change.is_none() && e.document().sections[0].page() == before);
+        assert!(e.document().sections[0].change.is_none() && crate::docx::page_borders::same_page(&e.document().sections[0].page(), &before));
         let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
         let read = crate::docx::read(&saved).expect("reads back");
-        assert!(read.sections[0].change.is_none() && read.sections[0].page() == before);
+        assert!(read.sections[0].change.is_none() && crate::docx::page_borders::same_page(&read.sections[0].page(), &before));
     }
 
     #[test]

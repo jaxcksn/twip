@@ -357,7 +357,7 @@ impl Editor {
             if let Some(c) = p.columns {
                 page.footnote_columns = c;
             }
-            if page == s.page() {
+            if crate::docx::page_borders::same_page(&page, &s.page()) {
                 continue;
             }
             let change = s.change.clone();

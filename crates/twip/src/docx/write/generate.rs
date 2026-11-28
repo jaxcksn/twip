@@ -57,7 +57,7 @@ pub fn generate(doc: &Document) -> Result<Vec<u8>, GenerateError> {
     }
     let new = new_res.typed();
     let res = res.unanchored(new.styles.root.clone(), new.numbering.root.clone());
-    let edited = section.read_page().is_some_and(|was| *was != section.page())
+    let edited = section.read_page().is_some_and(|was| !super::super::page_borders::same_page(was, &section.page()))
         || (section.line_grid, section.rtl_gutter) != (blank.sections[0].line_grid, blank.sections[0].rtl_gutter);
     let out = Document {
         sections: vec![section],
@@ -145,7 +145,7 @@ fn page(s: &Section, blank: &Section, blocks: Vec<Block>) -> Result<Section, Gen
     if s.line_grid.is_some_and(|g| super::line_grid_of(super::line_pitch(g)) != g) {
         return fail("a line grid");
     }
-    let borders = super::super::page_borders::PageBordersDirect::typed(s.page_borders_direct.get().map(|b| (**b).clone()));
+    let borders = super::super::page_borders::PageBordersDirect::typed(s.page_borders_direct.get().clone());
     Ok(Section {
         blocks,
         page_borders_direct: borders,
@@ -161,12 +161,7 @@ fn page(s: &Section, blank: &Section, blocks: Vec<Block>) -> Result<Section, Gen
 fn reads_back(s: &Section, back: &Document) -> Result<(), GenerateError> {
     let [b] = back.sections.as_slice() else { return Err(GenerateError::Write("the package reads back without its section".into())) };
     // The page borders by their typed value: what is read back holds the element written too
-    let typed = |s: &Section| {
-        let mut p = s.page();
-        p.page_borders_direct = super::super::page_borders::PageBordersDirect::typed(p.page_borders_direct.get().map(|b| (**b).clone()));
-        p
-    };
-    if typed(b) != typed(s) || (b.line_grid, b.rtl_gutter) != (s.line_grid, s.rtl_gutter) {
+    if !b.page().authored_eq(&s.page()) || (b.line_grid, b.rtl_gutter) != (s.line_grid, s.rtl_gutter) {
         return Err(GenerateError::Unsupported("a page setup that reads back otherwise"));
     }
     if !same_tables(&s.blocks, &b.blocks) {

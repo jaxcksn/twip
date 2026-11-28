@@ -5,18 +5,21 @@
 //! pictures), modelled attributes written otherwise than the writer writes their value, unmodelled children and later
 //! duplicates of an edge (the first one counts) whole, and an edge with content whole beside its typed value.
 
+use std::borrow::Cow;
+use std::convert::Infallible;
 use std::fmt::Write as _;
 use std::rc::Rc;
 
 use roxmltree::Node;
 
 use super::as_read::AsRead;
-use super::model::PageBorders;
+use super::model::{PageBorders, Section, SectionPage};
 use super::prop_xml::{Compare, Out, Sink, border, border_attrs, foreign_child, push_esc};
 use super::props::{Border, ThemeColours};
+use super::review::SectionChange;
 use super::write::props::Cx;
 use super::xml::{W, attr, child};
-use crate::document::origin::Origin;
+use crate::document::authored::Authored;
 use crate::document::section::PageBorderDisplay;
 use crate::format::{ForeignAttr, ForeignChild, ForeignProps, PageBorderOffset, PageBorderProps, PageBorderZOrder, QName, TextBorder};
 
@@ -26,53 +29,68 @@ const EDGES: [&str; 4] = ["top", "left", "bottom", "right"];
 /// The modelled attributes of the element and of an edge, in the order they are written.
 const WRITTEN: [&str; 11] = ["offsetFrom", "display", "zOrder", "val", "sz", "space", "color", "themeColor", "themeTint", "themeShade", "shadow"];
 
-/// A section's authored page borders: typed, with the `w:pgBorders` they were read from in their origin. The written
-/// form stands for the borders only while they are the ones it was read as.
-#[derive(Clone, Debug, Default)]
-pub struct PageBordersDirect {
-    props: Option<Rc<PageBorderProps>>,
-    origin: Origin,
-}
+/// A section's authored page borders: typed (`None`: no `w:pgBorders`), with the `w:pgBorders` they were read from
+/// in their origin's [`AsRead`] record. Nothing records what edits set: an edit sets the borders whole.
+pub type PageBordersDirect = Authored<Option<Rc<PageBorderProps>>, Infallible>;
 
-impl PageBordersDirect {
+/// What the WordprocessingML adapter adds to a section's authored page borders: the `w:pgBorders` they were read from
+/// and are written as. The written form stands for the borders only while they are the ones it was read as.
+pub trait PageBordersXml {
     /// Borders read from `xml`, the `w:pgBorders` they were parsed from.
-    pub fn read(props: PageBorderProps, xml: Rc<str>) -> PageBordersDirect {
-        let props = Rc::new(props);
-        PageBordersDirect { origin: AsRead::origin(props.clone(), xml), props: Some(props) }
-    }
-
-    /// Typed borders with no written form; `None`: no `w:pgBorders`.
-    pub fn typed(props: Option<PageBorderProps>) -> PageBordersDirect {
-        PageBordersDirect { props: props.map(Rc::new), origin: Origin::NONE }
-    }
-
-    /// The typed borders; `None` for no `w:pgBorders`.
-    pub fn get(&self) -> Option<&Rc<PageBorderProps>> {
-        self.props.as_ref()
-    }
+    fn read(props: PageBorderProps, xml: Rc<str>) -> Self;
 
     /// The `w:pgBorders` as read, while the borders are the ones read from it.
-    pub fn as_read(&self) -> Option<&Rc<str>> {
-        let r = AsRead::<PageBorderProps>::of(&self.origin)?;
-        let now = self.props.as_ref()?;
-        (Rc::ptr_eq(&r.read, now) || *r.read == **now).then_some(&r.xml)
-    }
+    fn as_read(&self) -> Option<&Rc<str>>;
 
     /// The `w:pgBorders` to write in the part `cx` describes: as read while the borders are those, else written from
     /// them (a theme colour's value as `colours` resolve it); `None` for none.
-    pub fn xml(&self, colours: &ThemeColours, cx: &Cx) -> Option<std::borrow::Cow<'_, str>> {
+    fn xml(&self, colours: &ThemeColours, cx: &Cx) -> Option<Cow<'_, str>>;
+
+    /// The same typed borders, written alike.
+    fn written_alike(&self, o: &Self) -> bool;
+}
+
+impl PageBordersXml for PageBordersDirect {
+    fn read(props: PageBorderProps, xml: Rc<str>) -> PageBordersDirect {
+        let props = Rc::new(props);
+        Authored::new(Some(props.clone()), AsRead::origin(props, xml))
+    }
+
+    fn as_read(&self) -> Option<&Rc<str>> {
+        let r = AsRead::<PageBorderProps>::of(self.origin())?;
+        let now = self.get().as_ref()?;
+        (Rc::ptr_eq(&r.read, now) || *r.read == **now).then_some(&r.xml)
+    }
+
+    fn xml(&self, colours: &ThemeColours, cx: &Cx) -> Option<Cow<'_, str>> {
         if let Some(x) = self.as_read() {
-            return Some(std::borrow::Cow::Borrowed(x));
+            return Some(Cow::Borrowed(x));
         }
-        self.props.as_deref().map(|p| std::borrow::Cow::Owned(serialize(p, colours, cx)))
+        self.get().as_deref().map(|p| Cow::Owned(serialize(p, colours, cx)))
+    }
+
+    fn written_alike(&self, o: &PageBordersDirect) -> bool {
+        self.authored_eq(o) && self.as_read() == o.as_read()
     }
 }
 
-impl PartialEq for PageBordersDirect {
-    /// The same typed borders, written alike.
-    fn eq(&self, o: &PageBordersDirect) -> bool {
-        self.props == o.props && self.as_read() == o.as_read()
+/// Whether pages `a` and `b` are the same authored page, their borders written alike.
+pub fn same_page(a: &SectionPage, b: &SectionPage) -> bool {
+    a.authored_eq(b) && a.page_borders_direct.as_read() == b.page_borders_direct.as_read()
+}
+
+/// Whether tracked section changes `a` and `b` are the same authored change, the borders before them written alike.
+pub fn same_change(a: Option<&SectionChange>, b: Option<&SectionChange>) -> bool {
+    match (a, b) {
+        (Some(a), Some(b)) => a.authored_eq(b) && a.previous.page_borders_direct.as_read() == b.previous.page_borders_direct.as_read(),
+        (a, b) => a.is_none() && b.is_none(),
     }
+}
+
+/// Whether sections `a` and `b` are the same authored section, their borders and those before a tracked change
+/// written alike.
+pub fn same_section(a: &Section, b: &Section) -> bool {
+    a.authored_eq(b) && a.page_borders_direct.as_read() == b.page_borders_direct.as_read() && same_change(a.change.as_deref(), b.change.as_deref())
 }
 
 /// The page borders `b` (a `w:pgBorders`) draw, their colours as `colours` resolve them, around the header and the
@@ -324,20 +342,20 @@ mod tests {
         let x = r#"<w:pgBorders  w:offsetFrom='page'><w:left w:val="single" w:sz="4" w:space="24" w:color="auto"/></w:pgBorders>"#;
         let read = PageBordersDirect::read(super::tests::read(x), x.into());
         assert_eq!(read.xml(&colours, &cx).as_deref(), Some(x));
-        let typed = PageBordersDirect::typed(read.get().map(|p| (**p).clone()));
-        assert_ne!(read, typed, "written otherwise");
+        let typed = PageBordersDirect::typed(read.get().clone());
+        assert!(read.authored_eq(&typed) && !read.written_alike(&typed), "written otherwise");
         assert_eq!(
             typed.xml(&colours, &cx).as_deref(),
             Some(r#"<w:pgBorders w:offsetFrom="page"><w:left w:val="single" w:sz="4" w:space="24" w:color="auto"/></w:pgBorders>"#)
         );
         let theme = crate::docx::model::ThemeColourRef { slot: crate::drawing::colour::SchemeSlot::Accent(1), tint: Some(0x66), shade: None };
         let edge = TextBorder { style: BorderStyle::Wave, width: 0.75, space: 4.0, shadow: true, color: Some(Color::Theme(theme)) };
-        let set = PageBordersDirect::typed(Some(PageBorderProps {
+        let set = PageBordersDirect::typed(Some(Rc::new(PageBorderProps {
             bottom: Some(edge),
             display: Some(PageBorderDisplay::FirstPage),
             z_order: Some(PageBorderZOrder::Back),
             ..PageBorderProps::default()
-        }));
+        })));
         let rgb = colours.resolve(theme);
         assert_eq!(
             set.xml(&colours, &cx).as_deref(),

@@ -188,6 +188,11 @@ pub fn named_pages(e: &Editor) -> Vec<(crate::docx::SectionPage, Vec<Option<Stri
         .collect()
 }
 
+/// Whether [`named_pages`] `a` and `b` are the same pages, their borders written alike, with the same parts.
+pub fn same_named_pages(a: &[(crate::docx::SectionPage, Vec<Option<String>>)], b: &[(crate::docx::SectionPage, Vec<Option<String>>)]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).all(|((p, n), (q, m))| crate::docx::page_borders::same_page(p, q) && n == m)
+}
+
 /// The headers and footers whose part names hold `part`, in name order.
 pub fn parts_named(e: &Editor, part: &str) -> Vec<crate::docx::HeaderFooterId> {
     let names = crate::docx::write::story_parts(e.document(), e.docx());

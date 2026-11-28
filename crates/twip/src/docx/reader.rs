@@ -25,6 +25,7 @@ use super::styles::ThemeFonts;
 use super::table_props::{self, CellDirect, ExceptionsDirect, PreviousDirect, RowDirect, TableDirect};
 use super::xml::*;
 use crate::docx::char_props::RunXml;
+use crate::docx::page_borders::PageBordersXml;
 use crate::docx::para_props::ParaXml;
 use crate::docx::table_props::TableXml;
 use crate::format::CharProps;

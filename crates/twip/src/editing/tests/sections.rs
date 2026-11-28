@@ -544,7 +544,8 @@ fn columns_on_selected_text_ending_inside_a_table_are_refused() {
     let two = Columns { count: 2, spacing: None, separator: None, widths: None, apply_to: None, start_new_column: None };
     let out = e.set_columns_in(two, ColumnsScope::SelectedText, false, super::fonts());
     assert!(matches!(out, Outcome::Refused(_)), "{out:?}");
-    assert_eq!(e.document().sections, before, "nothing split or set");
+    let now = &e.document().sections;
+    assert!(now.len() == before.len() && now.iter().zip(&before).all(|(a, b)| crate::docx::page_borders::same_section(a, b)), "nothing split or set");
 }
 
 #[test]

@@ -107,7 +107,9 @@ fn every_step_inverts_exactly_and_keeps_layout_incremental() {
             dl.complete(&doc, fonts);
             assert_eq!(dump::page_text(&dl.snapshot(), &doc), dump::page_text(&layout(&doc, fonts), &doc), "{what}: incremental layout");
             applied.inverse.apply(&mut doc, &mut docx, &mut idx).unwrap_or_else(|e| panic!("{what}: inverse {e:?}"));
-            assert_eq!(doc.sections, doc0.sections, "{what}: the inverse restores the document");
+            let same = doc.sections.len() == doc0.sections.len()
+                && doc.sections.iter().zip(&doc0.sections).all(|(a, b)| crate::docx::page_borders::same_section(a, b));
+            assert!(same, "{what}: the inverse restores the document");
             assert_eq!(idx, idx0, "{what}: the inverse restores the index");
         }
     }

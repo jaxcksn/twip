@@ -10,6 +10,7 @@ use super::readback::BorderLine;
 use super::selection::{ObjectRef, Selection};
 use super::step::Step;
 use crate::docx::NoteKind;
+use crate::docx::page_borders::PageBordersXml;
 use crate::layout::Unit;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -377,7 +378,7 @@ impl Editor {
                 let Some(b) = page.page_borders.as_mut().map(std::rc::Rc::make_mut) else { continue };
                 b.surround_header = c.surround_header.unwrap_or(b.surround_header);
                 b.surround_footer = c.surround_footer.unwrap_or(b.surround_footer);
-                if page == s.page() {
+                if crate::docx::page_borders::same_page(&page, &s.page()) {
                     continue;
                 }
                 let change = s.change.clone();
@@ -457,12 +458,12 @@ impl Editor {
             b.right = set(&b.right, &c.right, 3, "right", true);
             let any = [&b.top, &b.left, &b.bottom, &b.right].iter().any(|x| x.is_some());
             // Written alike: the borders as they are
-            let set = crate::docx::page_borders::PageBordersDirect::typed(any.then(|| authored(&b)));
+            let set = crate::docx::page_borders::PageBordersDirect::typed(any.then(|| std::rc::Rc::new(authored(&b))));
             if set.xml(&theme, &cx) != page.page_borders_direct.xml(&theme, &cx) {
                 page.page_borders_direct = set;
             }
             page.page_borders = any.then(|| std::rc::Rc::new(b));
-            if page == s.page() {
+            if crate::docx::page_borders::same_page(&page, &s.page()) {
                 continue;
             }
             let change = s.change.clone();

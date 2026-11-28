@@ -2371,16 +2371,16 @@ fn select_all_delete_across_sections() {
     e.execute(Command::SelectAll, fonts());
     e.execute(crate::editing::tests::del(Dir::Forward, false), fonts());
     assert_eq!(texts(&e), vec![String::new()]);
-    assert_eq!(pages(&e), vec![was.last().unwrap().clone()]);
+    assert!(super::same_named_pages(&pages(&e), std::slice::from_ref(was.last().unwrap())));
     let saved = crate::docx::write::save(e.document(), e.docx()).expect("saves");
     let again = super::super::Editor::open(&saved, fonts()).expect("reopens");
     assert_eq!(texts(&again), vec![String::new()]);
-    assert_eq!(pages(&again), pages(&e));
+    assert!(super::same_named_pages(&pages(&again), &pages(&e)));
     let xml = crate::docx::write::main_xml(e.document(), e.docx()).unwrap().unwrap();
     assert_eq!(xml.matches("<w:sectPr").count(), 1, "{xml}");
     e.execute(Command::Undo(Default::default()), fonts());
     assert_eq!(texts(&e), before);
-    assert_eq!(pages(&e), was);
+    assert!(super::same_named_pages(&pages(&e), &was));
     assert!(crate::docx::write::main_xml(e.document(), e.docx()).unwrap().is_none(), "undone, nothing to save");
 }
 
@@ -2408,16 +2408,16 @@ fn backspace_and_delete_take_a_section_break() {
         assert_eq!(texts(&e).len() + 1, paras, "joined");
         assert_eq!(sects(&e), pages(&e).len());
         let again = super::super::Editor::open(&crate::docx::write::save(e.document(), e.docx()).unwrap(), fonts()).unwrap();
-        assert_eq!((pages(&again), texts(&again)), (pages(&e), texts(&e)), "reopened");
+        assert!(super::same_named_pages(&pages(&again), &pages(&e)) && texts(&again) == texts(&e), "reopened");
     }
-    assert_eq!(pages(&e), vec![was[1].clone(), was[3].clone()]);
+    assert!(super::same_named_pages(&pages(&e), &[was[1].clone(), was[3].clone()]));
     let (p, len) = para(&e, n - 3, true);
     e.selection = Selection::Caret(super::super::position::Position::text(StoryId::Body, p, len));
     e.execute(crate::editing::tests::del(Dir::Forward, false), fonts());
     assert_eq!(pages(&e).len(), n - 2);
     e.execute(Command::Undo(Default::default()), fonts());
     e.execute(Command::Undo(Default::default()), fonts());
-    assert_eq!((pages(&e), texts(&e)), (was, before));
+    assert!(super::same_named_pages(&pages(&e), &was) && texts(&e) == before);
 }
 
 #[test]

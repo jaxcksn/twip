@@ -254,7 +254,7 @@ fn typed_page_borders_with_no_xml_behind_them_are_written() {
     let edge =
         TextBorder { style: crate::document::line::BorderStyle::Dotted, width: 1.0, space: 3.0, shadow: false, color: Some(Color::Rgb(0x00B050)) };
     let typed = PageBorderProps { left: Some(edge), right: Some(edge), offset_from: Some(PageBorderOffset::Page), ..PageBorderProps::default() };
-    page.page_borders_direct = PageBordersDirect::typed(Some(typed));
+    page.page_borders_direct = PageBordersDirect::typed(Some(std::rc::Rc::new(typed)));
     page.page_borders = Some(std::rc::Rc::new(crate::docx::PageBorders { offset_from_page: true, ..Default::default() }));
     doc.sections[0].set_page(page);
     docx.edited_sections.insert(0);

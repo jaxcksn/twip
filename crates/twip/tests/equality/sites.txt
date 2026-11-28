@@ -1,6 +1,9 @@
 # relation	file	function	type	line (see audit.py for the relations)
 none	crates/twip/src/docx/merge_tests.rs	controls_read_with_their_properties	Inline	assert!(p.iter().any(|p| p.inlines.contains(&Inline::ControlStart(name)) && p.inlines.contains(&Inline::ControlEnd(name))));
 derive	crates/twip/src/docx/model.rs	-	Edge	#[derive(PartialEq)]
+derive	crates/twip/src/docx/model.rs	-	SectionPage	#[derive(PartialEq)]
+A	crates/twip/src/docx/model.rs	authored_eq	&Section	self == o
+A	crates/twip/src/docx/model.rs	authored_eq	&SectionPage	self == o && self.page_borders_direct.authored_eq(&o.page_borders_direct)
 A	crates/twip/src/docx/model.rs	authored_eq	(&Option<Rc<TableChange>>, &Option<Rc<GridChange>>)	&& (&self.change, &self.grid_change) == (&o.change, &o.grid_change)
 A	crates/twip/src/docx/model.rs	authored_eq	CellRevisions	&& self.rev == o.rev
 A	crates/twip/src/docx/model.rs	authored_eq	RowRevisions	&& self.rev == o.rev
@@ -64,10 +67,8 @@ none	crates/twip/src/editing/tests/fields.rs	spanning_fields_ending_in_one_run_k
 A	crates/twip/src/editing/tests/objects.rs	object_property_setters_respect_protection	Option<&Picture>	assert_eq!(selected_picture(&e), Some(&was));
 A	crates/twip/src/editing/tests/objects.rs	object_property_setters_respect_protection	Option<Float>	assert_eq!(e.float_of(FloatId(f)).cloned(), was);
 A	crates/twip/src/editing/tests/readback.rs	a_page_number_in_the_first_pages_own_header_can_t_be_left_off_the_first_page	(usize, &Vec<Block>)	assert_eq!((e.history().undo_depth(), &e.document().stories[&first]), (depth, &kept), "nothing changed");
-A	crates/twip/src/editing/tests/sections.rs	columns_on_selected_text_ending_inside_a_table_are_refused	Vec<Section>	assert_eq!(e.document().sections, before, "nothing split or set");
 A	crates/twip/src/editing/tests/shapes.rs	releasing_an_inline_drag_after_its_picture_changed_changes_nothing_more	Vec<Block>	assert_eq!(e.document().sections[0].blocks, before, "the changed picture doesn't turn");
 A	crates/twip/src/editing/tests/shapes.rs	releasing_an_inline_drag_after_the_selection_moved_changes_nothing	Vec<Block>	assert_eq!(e.document().sections[0].blocks, before, "neither shape turns");
-A	crates/twip/src/editing/tests/steps.rs	every_step_inverts_exactly_and_keeps_layout_incremental	Vec<Section>	assert_eq!(doc.sections, doc0.sections, "{what}: the inverse restores the document");
 A	crates/twip/src/editing/tests/stories_and_steps.rs	undoing_a_join_into_an_empty_paragraph_restores_its_empty_run	Vec<Inline>	assert_eq!(now.inlines, was.inlines);
 A	crates/twip/src/editing/tests/stories_and_steps.rs	undoing_typing_into_an_empty_paragraph_restores_its_empty_run	Vec<Inline>	assert_eq!(idx.para(&doc, id).expect("para").inlines, original);
 A	crates/twip/src/editing/tests/sub_templates.rs	a_click_on_a_shown_body_selects_its_reference_and_typing_is_refused	Block	assert_eq!(e.document().sections[0].blocks[1], before, "nothing changed");
@@ -96,7 +97,6 @@ L	crates/twip/src/layout/incremental.rs	changed_parts	HashMap<i64, Vec<Block>>	&
 L	crates/twip/src/layout/incremental.rs	changed_parts	LayoutEnv	&& self.env == *env
 L	crates/twip/src/layout/incremental.rs	preview	Option<&Preview>	if self.preview.as_deref() == preview.as_ref() {
 L	crates/twip/src/layout/incremental.rs	reuse_page	BodySpace	if space != body.space {
-L	crates/twip/src/layout/incremental.rs	same_props	Option<Rc<SectionChange>>	&& *change == b.change
 derive	crates/twip/src/layout/mod.rs	-	Preview	#[derive(PartialEq)]
 derive	crates/twip/src/layout/record.rs	-	PageEffects	#[derive(PartialEq)]
 derive	crates/twip/src/layout/space.rs	-	BodySpace	#[derive(PartialEq)]
@@ -122,6 +122,5 @@ L	crates/twip/src/layout/text.rs	with_stories_of	TextBox	Some((id, tb, _)) if t.
 L	crates/twip/src/tests/review_equivalence.rs	differs	Shape	if let Some(k) = (0..got.len().min(want.len())).find(|&k| got[k] != want[k]) {
 derive	crates/twip/src/tests/review_resolve.rs	-	Shape	#[derive(PartialEq)]
 L	crates/twip/src/tests/review_resolve.rs	accepting_or_rejecting_all_gives_the_twins	&Shape	assert_eq!(g, w, "{name} {twin}: block {k}");
-A	crates/twip/src/tests/review_resolve.rs	accepting_or_rejecting_all_gives_the_twins	Vec<(SectionPage, Option<Rc<SectionChange>>)>	assert!(now == pages, "{name} {twin}: undo restores the sections");
 A	crates/twip/src/tests/review_resolve.rs	accepting_or_rejecting_all_gives_the_twins	Vec<Block>	assert!(e.document().sections[0].blocks == blocks, "{name} {twin}: undo restores the blocks exactly");
 A	crates/twip/src/tests/review_resolve.rs	accepting_or_rejecting_all_gives_the_twins	Vec<Shape>	assert_eq!(body(e.document()), before, "{name} {twin}: undo");

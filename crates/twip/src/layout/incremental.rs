@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::docx::model::*;
+use crate::docx::page_borders::PageBordersXml;
 use crate::docx::review::ReviewView;
 use crate::font::Fonts;
 
@@ -157,7 +158,7 @@ fn same_props(a: &Section, b: &Section) -> bool {
         && *line_numbers == b.line_numbers
         && *v_align == b.v_align
         && *page_borders == b.page_borders
-        && *page_borders_direct == b.page_borders_direct
+        && page_borders_direct.written_alike(&b.page_borders_direct)
         && *line_grid == b.line_grid
         && *notes == b.notes
         && *no_endnote == b.no_endnote
@@ -165,7 +166,7 @@ fn same_props(a: &Section, b: &Section) -> bool {
         && *rtl_gutter == b.rtl_gutter
         && *footnote_columns == b.footnote_columns
         && *form_protected == b.form_protected
-        && *change == b.change
+        && crate::docx::page_borders::same_change(change.as_deref(), b.change.as_deref())
 }
 
 impl Extras {

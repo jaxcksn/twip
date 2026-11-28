@@ -58,7 +58,7 @@ impl Editor {
             let Some(s) = self.doc.sections.get(section) else { continue };
             let mut page = s.page();
             edit(&mut page);
-            if page == s.page() {
+            if crate::docx::page_borders::same_page(&page, &s.page()) {
                 continue;
             }
             let change = s.change.clone();

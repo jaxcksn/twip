@@ -503,7 +503,7 @@ impl Editor {
         s.doc.theme = self.doc.theme.clone();
         s.doc.colour_map = self.doc.colour_map;
         if let Some(entry) = self.doc.sections.get(s.section)
-            && entry.page() != s.doc.sections[0].page()
+            && !crate::docx::page_borders::same_page(&entry.page(), &s.doc.sections[0].page())
         {
             s.doc.sections[0].set_page(entry.page());
         }

@@ -809,12 +809,8 @@ fn a_built_table_and_page_setup_generate_a_package_that_reads_back_the_same() {
     let back = again.document();
     assert_eq!(bare(first_table(back)), bare(first_table(e.document())), "the table reads back");
     let (was, now) = (&e.document().sections[0], &back.sections[0]);
-    let typed = |s: &crate::docx::Section| {
-        let mut p = s.page();
-        p.page_borders_direct = crate::docx::page_borders::PageBordersDirect::typed(p.page_borders_direct.get().map(|b| (**b).clone()));
-        p
-    };
-    assert_eq!(typed(now), typed(was), "the page reads back");
+    // The page borders by their typed value: what is read back holds the element written too
+    assert!(now.page().authored_eq(&was.page()), "the page reads back: {:?}, {:?}", now.page(), was.page());
     assert_eq!((now.line_grid, now.rtl_gutter), (was.line_grid, was.rtl_gutter));
 }
 

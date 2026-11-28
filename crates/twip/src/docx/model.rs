@@ -2061,6 +2061,25 @@ impl Section {
     }
 }
 
+impl SectionPage {
+    /// Authored equality: the same settings and the same authored page borders.
+    pub fn authored_eq(&self, o: &SectionPage) -> bool {
+        self == o && self.page_borders_direct.authored_eq(&o.page_borders_direct)
+    }
+}
+
+impl Section {
+    /// Authored equality: the same settings, authored page borders, tracked change and blocks.
+    pub fn authored_eq(&self, o: &Section) -> bool {
+        self == o
+            && self.page_borders_direct.authored_eq(&o.page_borders_direct)
+            && match (&self.change, &o.change) {
+                (Some(a), Some(b)) => a.authored_eq(b),
+                (a, b) => a.is_none() && b.is_none(),
+            }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Columns {
     /// Column widths and the space after each (explicit for unequal columns).

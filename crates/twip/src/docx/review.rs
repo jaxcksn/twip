@@ -263,6 +263,13 @@ pub struct SectionChange {
     pub previous_raw: Raw,
 }
 
+impl SectionChange {
+    /// Authored equality: the same mark, earlier section as read and earlier page.
+    pub fn authored_eq(&self, o: &SectionChange) -> bool {
+        self.mark == o.mark && self.previous_raw == o.previous_raw && self.previous.authored_eq(&o.previous)
+    }
+}
+
 /// `w:tblPrChange`, `w:tblPrExChange`, `w:trPrChange` or `w:tcPrChange`: the properties before the change.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TableChange {

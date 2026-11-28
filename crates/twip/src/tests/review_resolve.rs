@@ -121,8 +121,9 @@ fn accepting_or_rejecting_all_gives_the_twins() {
             for (k, (g, w)) in got.iter().zip(&want).enumerate() {
                 assert_eq!(g, w, "{name} {twin}: block {k}");
             }
-            let page = |d: &Document| d.sections.iter().map(|s| s.page()).collect::<Vec<_>>();
-            assert_eq!(page(e.document()), page(twin_doc.document()), "{name} {twin}: section pages");
+            let (got, want) = (&e.document().sections, &twin_doc.document().sections);
+            let same = got.len() == want.len() && got.iter().zip(want).all(|(a, b)| crate::docx::page_borders::same_page(&a.page(), &b.page()));
+            assert!(same, "{name} {twin}: section pages");
             let left: Vec<_> = revisions(e.document(), e.index()).into_iter().filter(|r| r.story == StoryId::Body).map(|r| r.kind.name()).collect();
             assert!(left.is_empty(), "{name} {twin}: left {left:?}");
             // One undo step puts everything back.
@@ -130,7 +131,11 @@ fn accepting_or_rejecting_all_gives_the_twins() {
             assert_eq!(body(e.document()), before, "{name} {twin}: undo");
             assert!(e.document().sections[0].blocks == blocks, "{name} {twin}: undo restores the blocks exactly");
             let now: Vec<_> = e.document().sections.iter().map(|s| (s.page(), s.change.clone())).collect();
-            assert!(now == pages, "{name} {twin}: undo restores the sections");
+            let same = now.len() == pages.len()
+                && now.iter().zip(&pages).all(|((p, c), (q, d))| {
+                    crate::docx::page_borders::same_page(p, q) && crate::docx::page_borders::same_change(c.as_deref(), d.as_deref())
+                });
+            assert!(same, "{name} {twin}: undo restores the sections");
         }
     }
 }
