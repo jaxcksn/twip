@@ -2393,18 +2393,8 @@ impl<'a, 'i> Saver<'a, 'i> {
                     && x.cells.iter().zip(&y.cells).all(|(c, d)| c.controls == d.controls)
                     && same_src(x.src(), y.src())
                     && (x.hidden, x.jc) == (y.hidden, y.jc)
-                    && x.height == y.height
-                    && (x.header, x.cant_split) == (y.header, y.cant_split)
             })
-            && a.grid == b.grid
-            && (&a.change, &a.grid_change) == (&b.change, &b.grid_change)
-            && a.width == b.width
-            && (a.cell_spacing, &a.alt) == (b.cell_spacing, &b.alt)
-            && self.direct_shd(a) == self.direct_shd(b)
-            && self.direct_bands(a) == self.direct_bands(b)
-            && self.direct_cell_margins(a) == self.direct_cell_margins(b)
-            && (&a.style_id, a.look, a.jc, a.ind, a.ind_pct, a.floating) == (&b.style_id, b.look, b.jc, b.ind, b.ind_pct, b.floating)
-            && (a.fixed, a.cell_spacing, &a.alt) == (b.fixed, b.cell_spacing, &b.alt);
+            && a.authored_eq(b);
         // Tables read as one (nothing between them) are written as one.
         let joined = a.src().is_some_and(|r| self.tables.get(&r.start).is_some_and(|n| n.range().end != r.end));
         if !same_rows || joined {
@@ -3830,42 +3820,45 @@ fn marker(i: &Inline, pend: &mut Vec<Marker>) {
 
 fn same_inline(x: &Inline, y: &Inline) -> bool {
     match (x, y) {
-        (Inline::Text(s, r), Inline::Text(t, q)) => s == t && Rc::ptr_eq(r, q),
+        (Inline::Text(s, r), Inline::Text(t, q)) => s == t && as_read(r, q),
         (Inline::Foreign(a), Inline::Foreign(b)) => Rc::ptr_eq(a, b),
-        (Inline::FieldEdge { edge: a, run: r }, Inline::FieldEdge { edge: b, run: q }) => Rc::ptr_eq(a, b) && Rc::ptr_eq(r, q),
+        (Inline::FieldEdge { edge: a, run: r }, Inline::FieldEdge { edge: b, run: q }) => Rc::ptr_eq(a, b) && as_read(r, q),
         (Inline::NoteRef { kind: k, id: a, custom: c, run: r }, Inline::NoteRef { kind: l, id: b, custom: d, run: q }) => {
-            (k, a, c) == (l, b, d) && Rc::ptr_eq(r, q)
+            (k, a, c) == (l, b, d) && as_read(r, q)
         }
         (Inline::Range(a), Inline::Range(b)) => a == b && permission_ptr(a) == permission_ptr(b),
-        (Inline::CommentRef { id: a, run: r }, Inline::CommentRef { id: b, run: q }) => a == b && Rc::ptr_eq(r, q),
+        (Inline::CommentRef { id: a, run: r }, Inline::CommentRef { id: b, run: q }) => a == b && as_read(r, q),
         (Inline::ControlStart(a), Inline::ControlStart(b)) | (Inline::ControlEnd(a), Inline::ControlEnd(b)) => a == b,
         // A toggled checkbox keeps its run and changes its face.
-        (Inline::Sym { ch: a, font: f, run: r, .. }, Inline::Sym { ch: b, font: g, run: q, .. }) => a == b && f == g && Rc::ptr_eq(r, q),
+        (Inline::Sym { ch: a, font: f, run: r, .. }, Inline::Sym { ch: b, font: g, run: q, .. }) => a == b && f == g && as_read(r, q),
         // Moved or resized floats are written patched (their text boxes' content is its own container).
-        (Inline::Float(a, r), Inline::Float(b, q)) => {
-            a.id == b.id && Placement::changed(a, b).is_none() && !drawing::differs(a, b) && Rc::ptr_eq(r, q)
-        }
+        (Inline::Float(a, r), Inline::Float(b, q)) => a.id == b.id && Placement::changed(a, b).is_none() && !drawing::differs(a, b) && as_read(r, q),
         (Inline::FieldBegin { form: a, run: r, .. }, Inline::FieldBegin { form: b, run: q, .. }) => {
-            a.as_ref().map(|f| &f.data) == b.as_ref().map(|f| &f.data) && Rc::ptr_eq(r, q)
+            a.as_ref().map(|f| &f.data) == b.as_ref().map(|f| &f.data) && as_read(r, q)
         }
         // A resized or reformatted picture is written patched (its text's content is its own container).
-        (Inline::Picture(a, r), Inline::Picture(b, q)) => a.same_but_story(b) && Rc::ptr_eq(r, q),
+        (Inline::Picture(a, r), Inline::Picture(b, q)) => a.same_but_story(b) && as_read(r, q),
         // A ruby whose text was formatted is written anew.
-        (Inline::Ruby(a, r), Inline::Ruby(b, q)) => (Rc::ptr_eq(a, b) || a.origin_xml() == b.origin_xml()) && Rc::ptr_eq(r, q),
+        (Inline::Ruby(a, r), Inline::Ruby(b, q)) => (Rc::ptr_eq(a, b) || a.origin_xml() == b.origin_xml()) && as_read(r, q),
         _ => {
             std::mem::discriminant(x) == std::mem::discriminant(y)
                 && match (x.run(), y.run()) {
-                    (Some(r), Some(q)) => Rc::ptr_eq(r, q),
+                    (Some(r), Some(q)) => as_read(r, q),
                     _ => false,
                 }
         }
     }
 }
 
-/// Unchanged since reading (the same formatting objects, the same text).
+/// Authored equality of two run formats, the same allocation first: re-resolved formatting is as read.
+fn as_read(a: &Run, b: &Run) -> bool {
+    Rc::ptr_eq(a, b) || a.authored_eq(b)
+}
+
+/// Unchanged since reading: the same authored formatting, the same text and objects.
 fn same_para(a: &Paragraph, b: &Paragraph) -> bool {
-    Rc::ptr_eq(&a.style, &b.style)
-        && Rc::ptr_eq(&a.mark, &b.mark)
+    (Rc::ptr_eq(&a.style, &b.style) || a.style.authored_eq(&b.style))
+        && as_read(&a.mark, &b.mark)
         && a.inlines.len() == b.inlines.len()
         && a.inlines.iter().zip(&b.inlines).all(|(x, y)| same_inline(x, y))
 }

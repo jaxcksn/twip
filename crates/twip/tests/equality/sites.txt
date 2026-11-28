@@ -20,7 +20,6 @@ A	crates/twip/src/docx/write/mod.rs	row_fixes	Option<Rc<TableChange>>	let change
 A	crates/twip/src/docx/write/mod.rs	row_fixes	RowRevisions	if was.rev != now.rev {
 A	crates/twip/src/docx/write/mod.rs	row_props	RowRevisions	let same = was.is_some_and(|k| k.rev == row.rev);
 A	crates/twip/src/docx/write/mod.rs	separator_edits	Option<&Vec<Block>>	(now != src.separators.get(&key)).then(|| (t, now.map(Vec::as_slice)))
-A	crates/twip/src/docx/write/mod.rs	table	(&Option<Rc<TableChange>>, &Option<Rc<GridChange>>)	&& (&a.change, &a.grid_change) == (&b.change, &b.grid_change)
 A	crates/twip/src/docx/write/mod.rs	table_xml	Option<Rc<TableChange>>	if a.change != t.change {
 none	crates/twip/src/editing/elements.rs	para	Inline	let end = p.inlines[k..].iter().position(|x| *x == Inline::ControlEnd(*c)).map_or(p.inlines.len(), |e| k + e);
 L	crates/twip/src/editing/format.rs	reresolve_stale	TableProps	if props != TableProps::of(t) {

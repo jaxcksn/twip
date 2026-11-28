@@ -595,3 +595,92 @@ fn a_drop_cap_made_on_a_split_paragraph_goes_before_that_paragraph() {
     let (alpha, frame) = (xml.find("Alpha").expect("the first paragraph"), xml.find("w:dropCap").expect("the drop cap"));
     assert!(alpha < frame && frame < xml.find("ravo").expect("the second paragraph"), "{xml}");
 }
+
+const REUSE_STYLES: &str = concat!(
+    r#"<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>"#,
+    r#"<w:style w:type="paragraph" w:customStyle="1" w:styleId="Body"><w:name w:val="Body"/><w:basedOn w:val="Normal"/></w:style>"#,
+    r#"<w:style w:type="table" w:customStyle="1" w:styleId="Grid"><w:name w:val="Grid"/></w:style>"#,
+);
+
+const REUSE_BODY: &str = concat!(
+    r#"<w:p><w:r><w:t>one</w:t></w:r></w:p>"#,
+    r#"<w:p><w:pPr><w:pStyle w:val="Body"/></w:pPr><w:r><w:t>two</w:t></w:r></w:p>"#,
+    r#"<w:tbl><w:tblPr><w:tblStyle w:val="Grid"/><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid>"#,
+    r#"<w:tr><w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#,
+    r#"<w:p/>"#,
+);
+
+fn saved_body(e: &Editor) -> String {
+    part(&crate::docx::write::save(e.document()).expect("saves"), "word/document.xml")
+}
+
+fn reuse_editor() -> (Editor, String) {
+    let bytes = super::style_model::pkg(REUSE_STYLES, REUSE_BODY);
+    (super::style_model::open_pkg(&bytes), part(&bytes, "word/document.xml"))
+}
+
+fn style_change(id: &str, formatting: Vec<Command>) -> (crate::api::value::StyleId, crate::editing::style_defs::StyleChange) {
+    (crate::api::value::StyleId(id.into()), crate::editing::style_defs::StyleChange { formatting, ..Default::default() })
+}
+
+#[test]
+fn paragraphs_a_style_edit_reformats_save_their_source_and_an_authored_edit_rewrites_one() {
+    use crate::api::value::Points;
+    let (mut e, source) = reuse_editor();
+    let (id, change) = style_change("Normal", vec![Command::SetFontSize(Points(15.0)), Command::SetBold(true)]);
+    assert!(matches!(e.modify_style(&id, change, fonts()), Outcome::Changed(_)));
+    let ids = texts_ids(&e);
+    assert!(ids.iter().filter_map(|p| e.index().para(e.document(), *p)).all(|p| p.mark.size == 15.0 && p.mark.bold), "every paragraph re-resolved");
+    assert_eq!(saved_body(&e), source, "re-resolved paragraphs and the table keep their source bytes");
+    e.select_range(ids[1], Unit(0), Unit(3), fonts());
+    assert!(matches!(e.execute(Command::SetItalic(true), fonts()), Outcome::Changed(_)));
+    let xml = saved_body(&e);
+    assert!(xml.contains("<w:i/>") && xml.contains(r#"<w:p><w:r><w:t>one</w:t></w:r></w:p>"#), "{xml}");
+    assert!(!xml.contains(r#"<w:pStyle w:val="Body"/></w:pPr><w:r><w:t>two</w:t></w:r></w:p>"#), "{xml}");
+}
+
+#[test]
+fn a_table_its_style_edit_reformats_saves_its_source_and_an_authored_edit_rewrites_it() {
+    use crate::api::value::{HorizontalAlignment, Points};
+    let (mut e, source) = reuse_editor();
+    let formatting = vec![Command::SetTableAlignment(HorizontalAlignment::Center), Command::SetRowCanBreak(false), Command::SetFontSize(Points(9.0))];
+    let (id, change) = style_change("Grid", formatting);
+    assert!(matches!(e.modify_style(&id, change, fonts()), Outcome::Changed(_)));
+    let t = e.document().sections[0].blocks.iter().find_map(|b| if let Block::Table(t) = b { Some(t) } else { None }).expect("a table");
+    assert!(t.jc == crate::docx::props::Jc::Center && t.rows[0].cant_split, "the table re-resolved");
+    assert_eq!(saved_body(&e), source, "the re-resolved table keeps its source bytes");
+    first_cell(&mut e);
+    assert!(matches!(e.execute(Command::SetTableAlignment(HorizontalAlignment::Right), fonts()), Outcome::Changed(_)));
+    let xml = saved_body(&e);
+    assert!(xml.contains(r#"<w:jc w:val="right"/>"#) && xml.contains(r#"<w:p><w:r><w:t>one</w:t></w:r></w:p>"#), "{xml}");
+}
+
+#[test]
+fn paragraphs_a_theme_edit_reformats_save_their_source_and_an_authored_edit_rewrites_one() {
+    use crate::api::command::ReplaceFont;
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/model/theme-references.docx");
+    let body = concat!(
+        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>"#,
+        r#"<w:p><w:pPr><w:pStyle w:val="ThemeHeading"/></w:pPr><w:r><w:t>Heading</w:t></w:r></w:p>"#,
+        r#"<w:p><w:r><w:rPr><w:rFonts w:asciiTheme="majorHAnsi" w:hAnsiTheme="majorHAnsi"/></w:rPr><w:t>Major</w:t></w:r></w:p>"#,
+        r#"<w:p><w:r><w:t>Minor</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:body></w:document>"#,
+    );
+    let parts = [("word/document.xml".to_string(), body.as_bytes().to_vec())];
+    let bytes =
+        crate::docx::write::repackage(&std::fs::read(path).expect("the fixture"), &parts, zip::CompressionMethod::Deflated).expect("repackages");
+    let source = part(&bytes, "word/document.xml");
+    let mut e = super::style_model::open_pkg(&bytes);
+    let heading = texts_ids(&e)[0];
+    let run = |e: &Editor, k: usize| e.index().para(e.document(), texts_ids(e)[k]).and_then(|p| p.inlines[0].run().map(|r| r.ascii.clone()));
+    assert_eq!(run(&e, 1).as_deref(), Some("Cambria"), "a run of the theme's heading font");
+    let major = |e: &Editor| e.index().para(e.document(), heading).and_then(|p| p.inlines[0].run().map(|r| r.ascii.clone())).expect("a run");
+    assert_eq!(major(&e), "Cambria");
+    let r = ReplaceFont { from: "Cambria".into(), to: "Georgia".into(), scope: Default::default(), bold: None, italic: None };
+    assert!(matches!(e.execute(Command::ReplaceFont(r), fonts()), Outcome::Changed(_)));
+    assert_eq!(major(&e), "Georgia", "the heading re-resolved over the theme's new font");
+    assert_eq!(saved_body(&e), source, "paragraphs re-resolved over the theme keep their source bytes");
+    e.select_range(heading, Unit(0), Unit(5), fonts());
+    assert!(matches!(e.execute(Command::SetBold(true), fonts()), Outcome::Changed(_)));
+    let xml = saved_body(&e);
+    assert!(xml != source && xml.contains("<w:b/>"), "{xml}");
+}
