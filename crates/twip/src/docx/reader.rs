@@ -4090,8 +4090,17 @@ fn control_props(pr: Option<Node>, xml: &str) -> ControlProps {
             "alias" => p.alias = attr(c, "val").map(str::to_string),
             "lock" => p.lock = attr(c, "val").map_or(Lock::None, Lock::parse),
             "showingPlcHdr" => p.showing_placeholder = attr(c, "val").is_none_or(|v| v != "0" && v != "false"),
-            "placeholder" => p.placeholder = Some(raw()),
-            "dataBinding" => p.binding = Some(raw()),
+            // The last of each, typed and written as read.
+            "placeholder" => {
+                let part = c.children().find(|d| d.is_element() && d.tag_name().name() == "docPart");
+                p.placeholder = part.and_then(|d| d.attributes().find(|a| a.name() == "val")).map(|a| a.value().to_string());
+                p.rest.push((name.to_string(), raw()));
+            }
+            "dataBinding" => {
+                let a = |n: &str| c.attributes().find(|a| a.name() == n).map(|a| a.value().to_string());
+                p.binding = Some(ControlBinding { xpath: a("xpath"), prefix_mappings: a("prefixMappings"), store_item_id: a("storeItemID") });
+                p.rest.push((name.to_string(), raw()));
+            }
             "text" => {
                 let multi_line = attr(c, "multiLine").is_some_and(|v| v == "1" || v == "true");
                 kind = Some((ControlKind::PlainText { multi_line }, raw()));

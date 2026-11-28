@@ -107,17 +107,9 @@ fn lock_of(l: ControlLock) -> Lock {
     }
 }
 
-fn binding_xml(b: &DataBinding, w: &str) -> String {
-    let esc = crate::docx::write::props::esc;
-    let mut x = format!("<{w}dataBinding");
-    if let Some(p) = &b.prefix_mappings {
-        x.push_str(&format!(" {w}prefixMappings=\"{}\"", esc(p)));
-    }
-    x.push_str(&format!(" {w}xpath=\"{}\"", esc(&b.xpath)));
-    if let Some(i) = &b.store_item_id {
-        x.push_str(&format!(" {w}storeItemID=\"{}\"", esc(i)));
-    }
-    x + "/>"
+/// The engine's binding for the API's.
+fn control_binding(b: &DataBinding) -> crate::docx::ControlBinding {
+    crate::docx::ControlBinding { xpath: Some(b.xpath.clone()), prefix_mappings: b.prefix_mappings.clone(), store_item_id: b.store_item_id.clone() }
 }
 
 fn element_id(id: &crate::api::value::ElementId) -> Result<ElementId, Refused> {
@@ -2584,7 +2576,6 @@ impl Editor {
 
     // Content controls
     fn control_insert(&mut self, c: InsertControl, fonts: &Fonts) -> Result<Outcome, Refused> {
-        let w = self.cx().w;
         let mut checked_now = false;
         let (mut items, mut combo, mut kept) = (Vec::new(), false, None);
         let mut size = (144.0, 108.0);
@@ -2660,7 +2651,7 @@ impl Editor {
             tag: c.tag,
             alias: c.title,
             lock: c.lock.map(lock_of).unwrap_or_default(),
-            binding: c.binding.as_ref().map(|b| binding_xml(b, &w)),
+            binding: c.binding.as_ref().map(control_binding),
             items,
             combo,
             kept,
@@ -2988,7 +2979,6 @@ impl Editor {
         let (e, w) = self.element(&set.id)?;
         let ElementId::Control(c) = e else { return Err(Error::invalid("not a content control")) };
         let mut control = self.doc.controls.get(&c).cloned().ok_or_else(no_element)?;
-        let prefix = self.cx().w;
         let p = &mut control.props;
         let mut resize = None;
         // A checkbox's face for its state in its new symbols.
@@ -3003,7 +2993,7 @@ impl Editor {
             p.lock = lock_of(l);
         }
         if let Some(b) = set.binding {
-            p.binding = b.as_ref().map(|b| binding_xml(b, &prefix));
+            p.binding = b.as_ref().map(control_binding);
         }
         if let Some(o) = &set.options {
             match (&mut p.kind, o) {

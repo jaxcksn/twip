@@ -7224,8 +7224,17 @@ pub(crate) fn control_open(w: &str, id: ControlId, c: &Control) -> String {
     if let Some(v) = p.lock.val() {
         pr.push_str(&format!("<{w}lock {w}val=\"{v}\"/>"));
     }
-    if let Some(x) = &p.placeholder {
-        pr.push_str(x);
+    // `w:placeholder` and `w:dataBinding` as read (the last of each) while they are, else as set
+    let last = |name: &str| p.rest.iter().rfind(|(n, _)| n == name).map(|(_, x)| x.as_str());
+    let placeholder = last("placeholder");
+    let same = match &c.read {
+        Some(r) => r.placeholder == p.placeholder,
+        None => placeholder.and_then(controls::placeholder_of) == p.placeholder,
+    };
+    match (placeholder, &p.placeholder) {
+        (Some(x), _) if same => pr.push_str(x),
+        (_, Some(name)) => pr.push_str(&controls::placeholder_xml(w, name)),
+        _ => {}
     }
     // `w:temporary` as read while it is, else from the flag.
     match &c.read {
@@ -7236,8 +7245,15 @@ pub(crate) fn control_open(w: &str, id: ControlId, c: &Control) -> String {
     if p.showing_placeholder {
         pr.push_str(&format!("<{w}showingPlcHdr/>"));
     }
-    if let Some(x) = &p.binding {
-        pr.push_str(x);
+    let binding = last("dataBinding");
+    let same = match &c.read {
+        Some(r) => r.binding == p.binding,
+        None => binding.map(controls::binding_of) == p.binding,
+    };
+    match (binding, &p.binding) {
+        (Some(x), Some(_)) if same => pr.push_str(x),
+        (_, Some(b)) => pr.push_str(&controls::binding_xml(w, b)),
+        _ => {}
     }
     let w15 = "http://schemas.microsoft.com/office/word/2012/wordml";
     // `w15:appearance` and `w15:color` as read while they are, else as set, after the rest
@@ -7251,7 +7267,7 @@ pub(crate) fn control_open(w: &str, id: ControlId, c: &Control) -> String {
     };
     for (n, x) in &p.rest {
         let set = (n == "appearance" && appearance) || (n == "color" && color);
-        if !set && !matches!(n.as_str(), "rPr" | "id" | "temporary") {
+        if !set && !matches!(n.as_str(), "rPr" | "id" | "placeholder" | "temporary" | "dataBinding") {
             pr.push_str(x);
         }
     }

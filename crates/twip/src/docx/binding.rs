@@ -6,7 +6,7 @@ use std::ops::Range;
 
 use roxmltree::Node;
 
-use super::model::{BreakKind, Control, ControlId, ControlKind, ControlProps, DataPart, DateStorage, Inline, Paragraph, Run};
+use super::model::{BreakKind, Control, ControlBinding, ControlId, ControlKind, ControlProps, DataPart, DateStorage, Inline, Paragraph, Run};
 use super::write::props::esc;
 
 /// Steps an XPath may have; longer ones aren't evaluated.
@@ -90,13 +90,6 @@ pub(crate) fn unescape(s: &str) -> String {
     out
 }
 
-fn attr_of<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
-    let at = tag.find(&format!(":{name}=")).or_else(|| tag.find(&format!(" {name}=")))? + name.len() + 2;
-    let quote = tag[at..].chars().next()?;
-    let rest = &tag[at + quote.len_utf8()..];
-    Some(&rest[..rest.find(quote)?])
-}
-
 /// `xmlns:p='uri'` pairs.
 fn prefixes(mappings: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();
@@ -115,17 +108,15 @@ fn prefixes(mappings: &str) -> Vec<(String, String)> {
 }
 
 impl Binding {
-    /// From `w:dataBinding` as read; `None` for an XPath outside the subset.
-    pub fn parse(xml: &str) -> Option<Binding> {
-        let xpath = unescape(attr_of(xml, "xpath")?);
-        let maps = attr_of(xml, "prefixMappings").map(|m| prefixes(&unescape(m))).unwrap_or_default();
-        let store = attr_of(xml, "storeItemID").map(|s| s.to_string());
-        Some(Binding { path: Path::parse(&xpath, &maps)?, store })
+    /// From a control's `w:dataBinding`; `None` without an XPath, or for one outside the subset.
+    pub fn new(b: &ControlBinding) -> Option<Binding> {
+        let maps = b.prefix_mappings.as_deref().map(prefixes).unwrap_or_default();
+        Some(Binding { path: Path::parse(b.xpath.as_deref()?, &maps)?, store: b.store_item_id.clone() })
     }
 
     /// The control's binding (`None`: none, or one this doesn't evaluate).
     pub fn of(props: &ControlProps) -> Option<Binding> {
-        Binding::parse(props.binding.as_deref()?)
+        Binding::new(props.binding.as_ref()?)
     }
 
     /// The index of the data part it reads: the one its store item id names (compared without case), else the first
@@ -525,10 +516,12 @@ mod tests {
     fn bindings_read_and_write_their_node() {
         let xml =
             r#"<c:case xmlns:c="urn:case"><c:party role="plaintiff">Acme &amp; Co</c:party><c:party role="defendant"/><c:no>42</c:no></c:case>"#;
-        let b = |xpath: &str| {
-            Binding::parse(&format!(r#"<w:dataBinding w:prefixMappings="xmlns:ns0='urn:case'" w:xpath="{xpath}" w:storeItemID="{{A}}"/>"#))
-                .expect("in the subset")
+        let binding = |xpath: &str, store: Option<&str>| ControlBinding {
+            xpath: Some(xpath.into()),
+            prefix_mappings: Some("xmlns:ns0='urn:case'".into()),
+            store_item_id: store.map(str::to_string),
         };
+        let b = |xpath: &str| Binding::new(&binding(xpath, Some("{A}"))).expect("in the subset");
         assert_eq!(read(xml, &b("/ns0:case[1]/ns0:party[1]").path).as_deref(), Some("Acme & Co"));
         assert_eq!(read(xml, &b("/ns0:case[1]/ns0:party[2]/@role").path).as_deref(), Some("defendant"));
         assert_eq!(read(xml, &b("/ns0:case/ns0:no/text()").path).as_deref(), Some("42"));
@@ -539,7 +532,7 @@ mod tests {
         assert_eq!(read(&w, &b("/ns0:case[1]/ns0:party[1]/@role").path).as_deref(), Some("claimant"));
         assert_eq!(write(xml, &b("/ns0:case[1]").path, "x"), None, "an element holding elements");
         for bad in ["ns0:case", "/ns0:case[last()]", "//ns0:no", "/ns9:case"] {
-            assert!(Binding::parse(&format!(r#"<w:dataBinding w:prefixMappings="xmlns:ns0='urn:case'" w:xpath="{bad}"/>"#)).is_none(), "{bad}");
+            assert!(Binding::new(&binding(bad, None)).is_none(), "{bad}");
         }
         let deep = format!("/{}", vec!["a"; 65].join("/"));
         assert!(Path::parse(&deep, &[]).is_none());

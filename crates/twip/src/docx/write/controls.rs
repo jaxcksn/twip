@@ -1,7 +1,7 @@
 //! Content control kind elements
 
 use super::super::binding::{tag_attrs, tag_end, unescape};
-use super::super::model::{ControlKind, ControlProps, DateStorage, KindXml};
+use super::super::model::{ControlBinding, ControlKind, ControlProps, DateStorage, KindXml};
 use super::props::esc;
 
 /// A date control's `w:date`: as read while its settings are; else the element as read with the settings that changed
@@ -38,8 +38,51 @@ pub(super) fn date_xml(w: &str, p: &ControlProps) -> String {
 
 /// The `val` attribute (any prefix) of element `x`'s start tag, unescaped.
 pub(super) fn val(x: &str) -> Option<String> {
+    attribute(x, "val")
+}
+
+/// Attribute `local` (any prefix) of element `x`'s start tag, unescaped.
+fn attribute(x: &str, local: &str) -> Option<String> {
     let head = &x[..tag_end(x)?];
-    tag_attrs(head).find(|(name, ..)| name.rsplit(':').next() == Some("val")).map(|(_, v, _)| unescape(v))
+    tag_attrs(head).find(|(name, ..)| name.rsplit(':').next() == Some(local)).map(|(_, v, _)| unescape(v))
+}
+
+/// A `w:placeholder`'s building block name (its `w:docPart`'s `val`, any prefix).
+pub(super) fn placeholder_of(x: &str) -> Option<String> {
+    let mut from = 1;
+    while let Some(k) = x[from..].find('<').map(|k| from + k) {
+        let name = x[k + 1..].split(|c: char| c.is_whitespace() || c == '/' || c == '>').next().unwrap_or_default();
+        if name.rsplit(':').next() == Some("docPart") {
+            return val(&x[k..]);
+        }
+        from = k + 1;
+    }
+    None
+}
+
+/// A `w:dataBinding`'s attributes.
+pub(super) fn binding_of(x: &str) -> ControlBinding {
+    ControlBinding { xpath: attribute(x, "xpath"), prefix_mappings: attribute(x, "prefixMappings"), store_item_id: attribute(x, "storeItemID") }
+}
+
+/// A `w:placeholder` naming building block `name`, in the main namespace's prefix `w`.
+pub(super) fn placeholder_xml(w: &str, name: &str) -> String {
+    format!("<{w}placeholder><{w}docPart {w}val=\"{}\"/></{w}placeholder>", esc(name))
+}
+
+/// A `w:dataBinding` of `b`, in the main namespace's prefix `w`.
+pub(super) fn binding_xml(w: &str, b: &ControlBinding) -> String {
+    let mut x = format!("<{w}dataBinding");
+    if let Some(p) = &b.prefix_mappings {
+        x.push_str(&format!(" {w}prefixMappings=\"{}\"", esc(p)));
+    }
+    if let Some(p) = &b.xpath {
+        x.push_str(&format!(" {w}xpath=\"{}\"", esc(p)));
+    }
+    if let Some(i) = &b.store_item_id {
+        x.push_str(&format!(" {w}storeItemID=\"{}\"", esc(i)));
+    }
+    x + "/>"
 }
 
 /// A checkbox's `w14:checkbox` once its symbols are set (from its settings, `checked` as given; Word's font for a

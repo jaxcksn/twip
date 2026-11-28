@@ -1509,11 +1509,10 @@ pub struct ListEntry {
 }
 
 impl ControlProps {
-    /// The markup it keeps as read (placeholder, binding, kind element and other children), to declare the namespaces
-    /// it uses where it is written.
+    /// The markup it keeps as read (its kind element and other children), to declare the namespaces it uses where it
+    /// is written.
     pub fn kept_xml_mut(&mut self) -> impl Iterator<Item = &mut String> {
-        let kind = self.kind_xml.iter_mut().map(|k| &mut k.xml);
-        self.placeholder.iter_mut().chain(&mut self.binding).chain(kind).chain(self.rest.iter_mut().map(|(_, x)| x))
+        self.kind_xml.iter_mut().map(|k| &mut k.xml).chain(self.rest.iter_mut().map(|(_, x)| x))
     }
 
     /// A building block gallery (`w:docPartList`): `Some` of its category (`None`: any).
@@ -1548,10 +1547,10 @@ pub struct ControlProps {
     pub lock: Lock,
     /// `w:showingPlcHdr`.
     pub showing_placeholder: bool,
-    /// `w:placeholder` (its docPart reference) as read.
+    /// `w:placeholder`: the name of the building block it shows while empty (its `w:docPart`).
     pub placeholder: Option<String>,
-    /// `w:dataBinding` as read: kept, not evaluated.
-    pub binding: Option<String>,
+    /// `w:dataBinding`: the custom XML node it shows and writes.
+    pub binding: Option<ControlBinding>,
     /// The kind's element as read (`w:date` with its children, `w:dropDownList`, ...), with the kind it was read as:
     /// written back while the control's kind is that one, a drop-down's and a kept kind's while their typed settings
     /// are as read.
@@ -1572,9 +1571,20 @@ pub struct ControlProps {
     pub run: Option<ControlRun>,
     /// `w:id`: its number (`None`: none, or one this doesn't read).
     pub id: Option<i64>,
-    /// Every other `w:sdtPr` child (and `w:rPr`, `w:id`, `w:temporary`, `w15:appearance` and `w15:color` as read), by
-    /// local name, in reading order.
+    /// Every other `w:sdtPr` child (and `w:rPr`, `w:id`, `w:placeholder`, `w:temporary`, `w:dataBinding`,
+    /// `w15:appearance` and `w15:color` as read), by local name, in reading order.
     pub rest: Vec<(String, String)>,
+}
+
+/// A content control's data binding (`w:dataBinding`), its attributes as given.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ControlBinding {
+    /// `w:xpath`: the node, an XPath (`None`: not given, so not evaluated).
+    pub xpath: Option<String>,
+    /// `w:prefixMappings`: the XPath's namespace prefixes (`xmlns:p='uri'` pairs).
+    pub prefix_mappings: Option<String>,
+    /// `w:storeItemID`: the data part's item id.
+    pub store_item_id: Option<String>,
 }
 
 /// A content control's `w15:appearance`.

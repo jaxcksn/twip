@@ -104,7 +104,7 @@ fn controls_read_with_their_properties() {
     assert_eq!(by_tag("Lock/Both").props.lock, Lock::Both);
     let ph = &by_tag("Recipient/Middle").props;
     assert!(ph.showing_placeholder && ph.placeholder.is_some());
-    assert!(by_tag("Store/Bound").props.binding.as_deref().is_some_and(|b| b.contains("storeItemID")));
+    assert!(by_tag("Store/Bound").props.binding.as_ref().is_some_and(|b| b.store_item_id.is_some()));
     // Membership: inline markers, block lists, row and cell lists.
     let p = all_paras(&d);
     let id = |tag: &str| *d.controls.iter().find(|(_, c)| c.props.tag.as_deref() == Some(tag)).map(|(id, _)| id).unwrap_or_else(|| panic!("{tag}"));

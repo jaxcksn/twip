@@ -68,13 +68,6 @@ fn reference(s: &Session, f: crate::docx::FieldId, r: &crate::editing::sub_templ
     SubTemplateReference { name: r.name.clone(), resolution, near_match, expanded: s.editor.reference_expanded(f) }
 }
 
-/// The value of attribute `name` (`w:xpath`) in an element's XML as written.
-fn attribute(xml: &str, name: &str) -> Option<String> {
-    let at = xml.find(&format!("{name}=\""))? + name.len() + 2;
-    let end = xml[at..].find('"')?;
-    Some(xml[at..at + end].replace("&quot;", "\"").replace("&apos;", "'").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&"))
-}
-
 /// A control kind's settings.
 fn options(s: &Session, e: &Element) -> Option<ControlOptions> {
     let p = e.props.as_ref()?;
@@ -283,13 +276,9 @@ impl Session {
                 Lock::ContentLocked => ControlLock::Content,
                 Lock::Both => ControlLock::Both,
             },
-            placeholder: p.and_then(|p| p.placeholder.as_deref()).and_then(|x| attribute(x, "w:val").or_else(|| Some(x.to_string()))),
-            binding: p.and_then(|p| p.binding.as_deref()).and_then(|x| {
-                Some(DataBinding {
-                    xpath: attribute(x, "w:xpath")?,
-                    store_item_id: attribute(x, "w:storeItemID"),
-                    prefix_mappings: attribute(x, "w:prefixMappings"),
-                })
+            placeholder: p.and_then(|p| p.placeholder.clone()),
+            binding: p.and_then(|p| p.binding.as_ref()).and_then(|b| {
+                Some(DataBinding { xpath: b.xpath.clone()?, store_item_id: b.store_item_id.clone(), prefix_mappings: b.prefix_mappings.clone() })
             }),
             options: options(self, e),
             children: all.iter().filter(|c| c.parent == Some(want)).map(|c| ElementId(elements::id_str(c.id))).collect(),
