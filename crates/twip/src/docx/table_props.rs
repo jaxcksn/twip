@@ -25,7 +25,7 @@ use super::prop_xml::{Compare, FILL, LINE_COLOUR, Out, Sink, Twips, border, colo
 use super::props::{self as xml_props, Look, TableAnchor, TablePos, TblProps, TcProps, ThemeColours, TrProps};
 use super::write::props::{Cx, Props};
 use super::xml::{W, attr, attr_twips, child, int, on_off, twips, val};
-use crate::document::authored::{Authored, Empty};
+use crate::document::authored::Authored;
 use crate::document::format::{Jc, ShadingPattern, Width};
 use crate::document::line::BorderStyle;
 use crate::document::origin::Origin;
@@ -75,15 +75,6 @@ trait Kind {
     /// Writes the attributes of modelled child `key` of `p` to `s`; false when `p` doesn't set it.
     fn emit(p: &Self::Props, key: &str, s: &mut dyn Sink) -> bool;
     fn place(s: Self::Set) -> Place;
-}
-
-thread_local! {
-    /// No table properties, shared.
-    static NO_TABLE: Rc<TableProps> = Rc::new(TableProps::default());
-    /// No row properties, shared.
-    static NO_ROW: Rc<RowProps> = Rc::new(RowProps::default());
-    /// No cell properties, shared.
-    static NO_CELL: Rc<CellProps> = Rc::new(CellProps::default());
 }
 
 /// `w:tblPr`.
@@ -1136,24 +1127,6 @@ pub(super) fn drop_replaced_cell(was: &CellProps, p: &mut CellProps, set: &[Cell
 }
 
 // Holders
-
-impl Empty for TableProps {
-    fn empty() -> Rc<TableProps> {
-        NO_TABLE.with(Rc::clone)
-    }
-}
-
-impl Empty for RowProps {
-    fn empty() -> Rc<RowProps> {
-        NO_ROW.with(Rc::clone)
-    }
-}
-
-impl Empty for CellProps {
-    fn empty() -> Rc<CellProps> {
-        NO_CELL.with(Rc::clone)
-    }
-}
 
 /// What the WordprocessingML adapter adds to a table's, a row's exceptions', a row's and a cell's authored
 /// properties: the element they were read from, its parse and serializer, and the element they are written as.

@@ -8,6 +8,7 @@ use std::rc::Rc;
 use super::{
     CellProps, CellSet, CharProps, FontRef, ForeignProps, Origin, ParaProps, ParaSet, RowProps, RowSet, ScriptFonts, Set, TableProps, TableSet,
 };
+use crate::document::authored::Empty;
 use crate::document::format::LineRule;
 
 /// What a style formats.
@@ -350,4 +351,22 @@ pub fn sets_text(f: &StyleFormat) -> bool {
     let para = ParaProps { foreign: None, ..f.para.clone() } != ParaProps::default();
     let char = CharProps { foreign: None, ..f.char.clone() } != CharProps::default();
     para || char || unmodelled(f.para.foreign.as_deref()) || unmodelled(f.char.foreign.as_deref())
+}
+
+impl Empty for Style {
+    fn empty() -> Rc<Style> {
+        Rc::default()
+    }
+}
+
+impl Empty for Defaults {
+    fn empty() -> Rc<Defaults> {
+        Rc::default()
+    }
+}
+
+impl Empty for LatentStyles {
+    fn empty() -> Rc<LatentStyles> {
+        Rc::default()
+    }
 }

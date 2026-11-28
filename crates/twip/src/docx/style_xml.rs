@@ -38,7 +38,7 @@ use super::styles;
 use super::table_props::{self as tp, CellDirect, RowDirect, TableDirect};
 use super::write::props::{Cx, STYLE};
 use super::xml::{W, attr, child, children, is_w, on_off, on_off_str, val};
-use crate::document::authored::{Authored, Empty};
+use crate::document::authored::Authored;
 use crate::docx::table_props::TableXml;
 use crate::format::{
     CellSet, CharProps, Defaults, DefaultsSet, ForeignChild, ForeignProps, LatentStyle, LatentStyles, Origin, ParaProps, ParaSet, QName, Region,
@@ -1326,12 +1326,6 @@ macro_rules! holder {
         /// The written form stands for the definition only while it is the one it was read as; never part of
         /// equality: use [`Authored::authored_eq`].
         pub type $name = Authored<Rc<$t>, $set>;
-
-        impl Empty for $t {
-            fn empty() -> Rc<$t> {
-                Rc::default()
-            }
-        }
 
         impl StyleXml for $name {
             type Def = $t;

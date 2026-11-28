@@ -4,6 +4,7 @@
 use std::rc::Rc;
 
 use super::{ForeignProps, Shading, TextBorder};
+use crate::document::authored::Empty;
 use crate::document::format::{Jc, Leader, LineRule, TabKind};
 use crate::document::paragraph::{ListId, TextAlignment};
 use crate::docx::props::FramePr;
@@ -344,5 +345,16 @@ impl std::ops::Deref for ParaEdit {
 impl std::ops::DerefMut for ParaEdit {
     fn deref_mut(&mut self) -> &mut ParaProps {
         &mut self.props
+    }
+}
+
+thread_local! {
+    /// No properties, shared.
+    static EMPTY: Rc<ParaProps> = Rc::new(ParaProps::default());
+}
+
+impl Empty for ParaProps {
+    fn empty() -> Rc<ParaProps> {
+        EMPTY.with(Rc::clone)
     }
 }

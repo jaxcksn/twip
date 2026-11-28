@@ -4,6 +4,7 @@
 use std::rc::Rc;
 
 use super::{ForeignProps, Shading, TextBorder};
+use crate::document::authored::Empty;
 use crate::document::format::{Jc, Width};
 use crate::document::section::{HeightRule, VerticalAlignment};
 use crate::docx::props::Look;
@@ -601,5 +602,32 @@ impl<P, S> std::ops::Deref for PropsEdit<P, S> {
 impl<P, S> std::ops::DerefMut for PropsEdit<P, S> {
     fn deref_mut(&mut self) -> &mut P {
         &mut self.props
+    }
+}
+
+thread_local! {
+    /// No table properties, shared.
+    static NO_TABLE: Rc<TableProps> = Rc::new(TableProps::default());
+    /// No row properties, shared.
+    static NO_ROW: Rc<RowProps> = Rc::new(RowProps::default());
+    /// No cell properties, shared.
+    static NO_CELL: Rc<CellProps> = Rc::new(CellProps::default());
+}
+
+impl Empty for TableProps {
+    fn empty() -> Rc<TableProps> {
+        NO_TABLE.with(Rc::clone)
+    }
+}
+
+impl Empty for RowProps {
+    fn empty() -> Rc<RowProps> {
+        NO_ROW.with(Rc::clone)
+    }
+}
+
+impl Empty for CellProps {
+    fn empty() -> Rc<CellProps> {
+        NO_CELL.with(Rc::clone)
     }
 }
