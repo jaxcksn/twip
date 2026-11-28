@@ -4,8 +4,9 @@ use std::path::Path;
 
 use crate::docx::Document;
 use crate::layout::cache::LayoutCache;
+use crate::layout::dump;
 use crate::layout::ids::Revision;
-use crate::layout::{DocumentLayout, dump, layout, layout_with};
+use crate::layout::tests::{layout, layout_with};
 
 use super::{doc, fixture, fonts};
 
@@ -66,7 +67,7 @@ fn settings_sweeps_with_a_warm_cache() {
             change(&mut changed);
             let want = dump::page_text(&layout(&changed, &fonts), &changed);
             assert_eq!(dump::page_text(&layout_with(&changed, &fonts, &mut cache), &changed), want, "{name}: warm cache");
-            let mut dl = DocumentLayout::new();
+            let mut dl = crate::layout::tests::document_layout(&d);
             dl.edit(Revision(1), None);
             dl.complete(&d, &fonts);
             dl.edit(Revision(2), None);

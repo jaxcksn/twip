@@ -1,7 +1,7 @@
 //! Determinism
 
 use crate::layout::dump::page_text;
-use crate::layout::layout;
+use crate::layout::tests::layout;
 
 use super::{fonts, gate_set};
 

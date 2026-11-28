@@ -130,7 +130,7 @@ fn a_document_built_from_typed_properties_lays_out_and_edits_without_xml() {
     let (_, run) = &runs(&doc, 0)[1];
     assert!(run.bold && run.size == 14.0 && run.direct.props().is_none(), "typed props resolve with no XML: {run:?}");
 
-    let first = crate::layout::dump::page_text(&crate::layout::layout(&doc, fonts), &doc);
+    let first = crate::layout::dump::page_text(&crate::layout::tests::layout(&doc, fonts), &doc);
     assert_eq!(glyph_lines(&first).iter().filter(|l| l.starts_with("page ")).count(), 1, "one page:\n{first}");
 
     // A typed edit: the second run italic at 20pt, explicitly not bold.
@@ -139,7 +139,7 @@ fn a_document_built_from_typed_properties_lays_out_and_edits_without_xml() {
     edited.sections[0].blocks[0] = Block::Para(paragraph(&res, &centred, &[("Built without ", RunProps::default()), ("XML", italic)], id));
     let (_, run) = &runs(&edited, 0)[1];
     assert!(!run.bold && run.italic && run.size == 20.0, "{run:?}");
-    let second = crate::layout::dump::page_text(&crate::layout::layout(&edited, fonts), &edited);
+    let second = crate::layout::dump::page_text(&crate::layout::tests::layout(&edited, fonts), &edited);
     assert_ne!(glyph_lines(&first), glyph_lines(&second), "the edit moves the glyphs");
 
     // The editor on the sourceless document: typing, a formatting command, incremental against fresh layout, undo.
@@ -151,7 +151,7 @@ fn a_document_built_from_typed_properties_lays_out_and_edits_without_xml() {
     e.complete(fonts);
     assert!(runs(e.document(), 0).iter().all(|(_, r)| r.bold), "bold everywhere");
     let incremental = crate::layout::dump::page_text(&e.snapshot(), e.document());
-    let fresh = crate::layout::dump::page_text(&crate::layout::layout(e.document(), fonts), e.document());
+    let fresh = crate::layout::dump::page_text(&crate::layout::tests::layout(e.document(), fonts), e.document());
     assert_eq!(incremental, fresh, "incremental layout equals fresh layout");
     assert!(matches!(e.execute(Command::Undo(Default::default()), fonts), Outcome::Changed(_)));
     assert!(!runs(e.document(), 0).iter().all(|(_, r)| r.bold), "undone");
@@ -650,7 +650,7 @@ fn labelled(mut doc: Document, fonts: &crate::font::Fonts) -> Editor {
 /// The document dump, then every laid-out page.
 fn dump(e: &mut Editor) -> String {
     let v = crate::editing::inspect::inspect(e, "dump", true);
-    let pages = crate::layout::dump::page_text(&crate::layout::layout(e.document(), fonts()), e.document());
+    let pages = crate::layout::dump::page_text(&crate::layout::tests::layout(e.document(), fonts()), e.document());
     format!("{}\n{pages}", serde_json::to_string_pretty(&v["dump"]).expect("a dump"))
 }
 

@@ -477,10 +477,11 @@ impl Editor {
     pub fn with_session(doc: Document, docx: crate::docx::Session, fonts: &Fonts) -> Editor {
         let index = DocIndex::build(&doc);
         let doc_hides_white_space = doc.hides_white_space;
+        let layout = DocumentLayout::new(doc.review.clone());
         let mut e = Editor {
             doc,
             docx,
-            layout: DocumentLayout::new(),
+            layout,
             index,
             history: History::default(),
             selection: Selection::Caret(Position::text(StoryId::Body, ParaId(0), Unit(0))),
@@ -853,6 +854,7 @@ impl Editor {
     }
 
     fn relayout_review(&mut self) {
+        self.layout.set_view(self.doc.review.clone());
         self.relayout([None]);
     }
 

@@ -18,7 +18,7 @@ fn bullets() -> crate::docx::Document {
 
 /// Every drawn character with its face and glyph, page by page.
 fn drawn(fonts: &Fonts) -> Vec<(char, Rc<Face>, u32)> {
-    let snapshot = crate::layout::layout(&bullets(), fonts);
+    let snapshot = crate::layout::tests::layout(&bullets(), fonts);
     let mut out = Vec::new();
     for page in snapshot.pages() {
         paint(page, &mut |p| {

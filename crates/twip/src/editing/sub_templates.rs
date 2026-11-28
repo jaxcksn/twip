@@ -407,7 +407,7 @@ impl Editor {
         }
         path.pop();
         let nested = (!nested.paras.is_empty()).then_some(&nested);
-        let (height, content) = crate::layout::expansion::lay(&self.doc, body, width, fonts, nested, self.layout.hyphenation());
+        let (height, content) = crate::layout::expansion::lay(&self.doc, &self.doc.review, body, width, fonts, nested, self.layout.hyphenation());
         Some(Rc::new(Expansion { field: f, part, size: (width, height), content }))
     }
 
@@ -559,7 +559,7 @@ impl Editor {
             None => (std::mem::take(&mut self.layout), std::mem::take(&mut self.pages), self.expansions.take(), self.selection),
         };
         let hyphenation = template.hyphenation().cloned();
-        self.layout = DocumentLayout::new();
+        self.layout = DocumentLayout::new(self.doc.review.clone());
         self.layout.set_hyphenation(hyphenation);
         self.pages = Pages::default();
         self.pages.shows = Some(part);

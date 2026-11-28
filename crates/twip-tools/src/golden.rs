@@ -22,7 +22,7 @@ pub fn lay_out(
     fonts: &twip::internal::font::Fonts,
     hyphenation: Option<&Hyphenation>,
 ) -> (Vec<Vec<Ch>>, Vec<Vec<[f64; 4]>>) {
-    let snapshot = twip::internal::layout::layout_hyphenated(doc, fonts, hyphenation);
+    let snapshot = twip::internal::layout::layout_hyphenated(doc, &doc.review, fonts, hyphenation);
     let mut chars = Vec::new();
     let mut images = Vec::new();
     for page in snapshot.pages() {

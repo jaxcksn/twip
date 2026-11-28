@@ -20,15 +20,15 @@ fn read(name: &str) -> twip::internal::docx::Document {
 #[divan::bench(args = ["big.docx", "docx-feature-showcase.docx", "editor/FX-LONG-50.docx", "editor/FX-LONG-100.docx"], sample_count = 20)]
 fn full(bencher: Bencher, name: &str) {
     let (fonts, doc) = (crate::fonts(), read(name));
-    bencher.bench_local(|| layout(&doc, &fonts));
+    bencher.bench_local(|| layout(&doc, &doc.review, &fonts));
 }
 
 #[divan::bench(ignore = cfg!(codspeed_build), args = DOCS, sample_count = 20)]
 fn cached(bencher: Bencher, name: &str) {
     let (fonts, doc) = (crate::fonts(), read(name));
     let mut cache = LayoutCache::new();
-    layout_with(&doc, &fonts, &mut cache);
-    bencher.bench_local(|| layout_with(&doc, &fonts, &mut cache));
+    layout_with(&doc, &doc.review, &fonts, &mut cache);
+    bencher.bench_local(|| layout_with(&doc, &doc.review, &fonts, &mut cache));
 }
 
 /// The first text in a block (a paragraph or, depth-first, a table cell's).
@@ -46,7 +46,7 @@ fn first_text(b: &mut Block) -> Option<&mut String> {
 #[divan::bench(args = DOCS, sample_size = 1)]
 fn keystroke(bencher: Bencher, name: &str) {
     let (fonts, doc) = (crate::fonts(), RefCell::new(read(name)));
-    let mut dl = DocumentLayout::new();
+    let mut dl = DocumentLayout::new(doc.borrow().review.clone());
     let mut rev = 1;
     dl.edit(Revision(rev), None);
     dl.complete(&doc.borrow(), &fonts);
@@ -74,7 +74,7 @@ fn keystroke(bencher: Bencher, name: &str) {
 #[divan::bench(sample_size = 1)]
 fn reflow(bencher: Bencher) {
     let (fonts, doc) = (crate::fonts(), RefCell::new(read(LONG)));
-    let mut dl = DocumentLayout::new();
+    let mut dl = DocumentLayout::new(doc.borrow().review.clone());
     let mut rev = 1;
     dl.edit(Revision(rev), None);
     dl.complete(&doc.borrow(), &fonts);
@@ -105,7 +105,7 @@ fn first_page(bencher: Bencher, name: &str) {
     let (fonts, bytes) = (crate::fonts(), super::fixture(name));
     bencher.bench_local(|| {
         let doc = twip::internal::docx::read(&bytes).expect("the fixture reads");
-        let mut dl = DocumentLayout::new();
+        let mut dl = DocumentLayout::new(doc.review.clone());
         dl.edit(Revision(1), None);
         dl.through(&doc, &fonts, Target::Page(0));
         dl

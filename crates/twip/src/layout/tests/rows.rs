@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use crate::docx::{Block, Inline};
 use crate::layout::fragment::{Child, PageChild, PageFragment, RowFragment};
 use crate::layout::ids::{ParaId, TableId};
-use crate::layout::layout;
+use crate::layout::tests::layout;
 use crate::layout::traverse::semantic_chars;
 
 use super::{fixture, fonts};
@@ -771,7 +771,7 @@ pub(super) fn glyphs(doc: &crate::docx::Document) -> Vec<Vec<(char, f64)>> {
 mod floats {
     use crate::docx::{blank, write};
     use crate::layout::fragment::Item;
-    use crate::layout::layout;
+    use crate::layout::tests::layout;
     use crate::layout::traverse::paint_items;
 
     use super::super::fonts;

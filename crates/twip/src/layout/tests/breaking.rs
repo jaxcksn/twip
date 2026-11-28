@@ -3,7 +3,7 @@
 use crate::docx::blank::blank_docx;
 use crate::docx::write::repackage;
 use crate::layout::fragment::Item;
-use crate::layout::layout;
+use crate::layout::tests::layout;
 use crate::layout::traverse::paint;
 
 use super::fonts;
@@ -3967,7 +3967,7 @@ fn a_cells_number_cut_by_its_edge_keeps_what_shows_of_it() {
         r#"<w:tbl><w:tblPr><w:tblW w:w="2880" w:type="dxa"/><w:tblInd w:w="720" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="2880"/></w:tblGrid><w:tr>{cell}</w:tr></w:tbl><w:p/>"#
     );
     let Some(doc) = test_doc("", "", &body, numbering) else { return };
-    let snap = crate::layout::layout(&doc, &fonts());
+    let snap = crate::layout::tests::layout(&doc, &fonts());
     let mut labels = Vec::new();
     crate::layout::traverse::paint_lines(&snap.pages()[0], &mut |_| {}, &mut |_, _, l, dx, _| {
         labels.extend(l.line.label.map(|(a, b)| (a + dx, b + dx)));

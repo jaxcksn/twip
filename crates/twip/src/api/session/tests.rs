@@ -1652,7 +1652,7 @@ fn with_no_generic_defaults_layout_is_the_same_as_without_the_feature() {
         }
         fonts.set_settings(|s| s.classify_from_document = classify);
         let doc = crate::docx::read(&docx).expect("reads");
-        let text = format!("{:?}", crate::layout::layout(&doc, &fonts).pages());
+        let text = format!("{:?}", crate::layout::tests::layout(&doc, &fonts).pages());
         // Ids come from process-wide counters: integers are masked, floats compared as written.
         let mut out = String::with_capacity(text.len());
         let mut digits = false;
@@ -1848,7 +1848,7 @@ fn font_table_layout(extra: Option<Vec<u8>>, aliases: Vec<crate::api::fonts::Ali
     }
     fonts.set_settings(|s| s.aliases = aliases);
     let doc = crate::docx::read(&editor_fixture("FX-FONT-TABLE.docx")).expect("reads");
-    let text = format!("{:?}", crate::layout::layout(&doc, &fonts).pages());
+    let text = format!("{:?}", crate::layout::tests::layout(&doc, &fonts).pages());
     let mut out = String::with_capacity(text.len());
     let mut digits = false;
     for (k, c) in text.char_indices() {

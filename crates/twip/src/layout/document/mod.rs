@@ -25,6 +25,7 @@ use super::space::HfHeights;
 use super::text::PageRef;
 use super::token::{FlowToken, PageToken};
 use super::units::EPS;
+use crate::docx::review::{MarkupView, ReviewView};
 
 mod compose;
 mod notes;
@@ -35,22 +36,23 @@ pub use notes::JobNotes;
 
 use compose::{Chapters, chapters, compose_page};
 
-pub fn layout(doc: &Document, fonts: &Fonts) -> Snapshot {
+/// The document laid out in `view`.
+pub fn layout(doc: &Document, view: &ReviewView, fonts: &Fonts) -> Snapshot {
     let mut cache = LayoutCache::new();
-    layout_with(doc, fonts, &mut cache)
+    layout_with(doc, view, fonts, &mut cache)
 }
 
 /// [`layout`] with the host's hyphenation patterns.
-pub fn layout_hyphenated(doc: &Document, fonts: &Fonts, hyphenation: Option<&super::hyphenate::Hyphenation>) -> Snapshot {
-    layout_showing(doc, fonts, &mut LayoutCache::new(), None, hyphenation).0
+pub fn layout_hyphenated(doc: &Document, view: &ReviewView, fonts: &Fonts, hyphenation: Option<&super::hyphenate::Hyphenation>) -> Snapshot {
+    layout_showing(doc, view, fonts, &mut LayoutCache::new(), None, hyphenation).0
 }
 
 /// Stepped layout, stoppable between steps.
-pub fn layout_until(doc: &Document, fonts: &Fonts, mut stop: impl FnMut() -> bool) -> Option<Snapshot> {
-    let env = LayoutEnv::new(doc, None);
+pub fn layout_until(doc: &Document, view: &ReviewView, fonts: &Fonts, mut stop: impl FnMut() -> bool) -> Option<Snapshot> {
+    let env = LayoutEnv::new(doc, view, None);
     let ctx = LayoutCtx { fonts, env: &env, preview: None, expansions: None };
     let mut cache = LayoutCache::new();
-    let mut job = LayoutJob::new(doc, Revision(0));
+    let mut job = LayoutJob::new(doc, view, Revision(0));
     while job.run(doc, &ctx, &mut cache, None, Budget::Pages(4)) != Step::Done {
         if stop() {
             return None;
@@ -59,28 +61,30 @@ pub fn layout_until(doc: &Document, fonts: &Fonts, mut stop: impl FnMut() -> boo
     Some(job.finished().expect("a run that reports done completes the job").snapshot(Revision(0), LayoutRevision(0)))
 }
 
-pub fn layout_with(doc: &Document, fonts: &Fonts, cache: &mut LayoutCache) -> Snapshot {
-    layout_records(doc, fonts, cache).0
+/// [`layout`] with `cache`.
+pub fn layout_with(doc: &Document, view: &ReviewView, fonts: &Fonts, cache: &mut LayoutCache) -> Snapshot {
+    layout_records(doc, view, fonts, cache).0
 }
 
-pub(crate) fn layout_records(doc: &Document, fonts: &Fonts, cache: &mut LayoutCache) -> (Snapshot, Vec<PageRecord>) {
-    layout_showing(doc, fonts, cache, None, None)
+pub(crate) fn layout_records(doc: &Document, view: &ReviewView, fonts: &Fonts, cache: &mut LayoutCache) -> (Snapshot, Vec<PageRecord>) {
+    layout_showing(doc, view, fonts, cache, None, None)
 }
 
-pub fn layout_expanded(doc: &Document, fonts: &Fonts, expansions: &super::expansion::Expansions) -> Snapshot {
-    layout_showing(doc, fonts, &mut LayoutCache::new(), Some(expansions), None).0
+pub fn layout_expanded(doc: &Document, view: &ReviewView, fonts: &Fonts, expansions: &super::expansion::Expansions) -> Snapshot {
+    layout_showing(doc, view, fonts, &mut LayoutCache::new(), Some(expansions), None).0
 }
 
 fn layout_showing(
     doc: &Document,
+    view: &ReviewView,
     fonts: &Fonts,
     cache: &mut LayoutCache,
     expansions: Option<&super::expansion::Expansions>,
     hyphenation: Option<&super::hyphenate::Hyphenation>,
 ) -> (Snapshot, Vec<PageRecord>) {
-    let env = LayoutEnv::new(doc, hyphenation);
+    let env = LayoutEnv::new(doc, view, hyphenation);
     let ctx = LayoutCtx { fonts, env: &env, preview: None, expansions };
-    let mut job = LayoutJob::new(doc, Revision(0));
+    let mut job = LayoutJob::new(doc, view, Revision(0));
     job.run(doc, &ctx, cache, None, Budget::Unlimited);
     let done = job.finished().expect("an unlimited run completes the job");
     (done.snapshot(Revision(0), LayoutRevision(0)), done.records.clone())
@@ -140,7 +144,7 @@ pub struct DocFacts {
 }
 
 /// Section `si` with the endnotes that follow it.
-fn section_node<'d>(doc: &'d Document, notes: &'d JobNotes, si: usize) -> SectionNode<'d> {
+fn section_node<'d>(doc: &'d Document, notes: &'d JobNotes, si: usize, view: MarkupView) -> SectionNode<'d> {
     let s = &doc.sections[si];
     let mut blocks = Blocks::of(&s.blocks);
     if notes.follow(si) {
@@ -150,14 +154,14 @@ fn section_node<'d>(doc: &'d Document, notes: &'d JobNotes, si: usize) -> Sectio
         }
     }
     let next = match doc.sections.get(si + 1).and_then(|n| n.blocks.first()) {
-        Some(Block::Para(p)) => Some(&**p.para_style_in(doc.review.view)),
+        Some(Block::Para(p)) => Some(&**p.para_style_in(view)),
         _ => None,
     };
     SectionNode { index: si, section: s, blocks, breaks: si + 1 < doc.sections.len(), next }
 }
 
 impl DocFacts {
-    pub fn new(doc: &Document, notes: &JobNotes) -> DocFacts {
+    pub fn new(doc: &Document, notes: &JobNotes, view: MarkupView) -> DocFacts {
         fn codes(blocks: &[Block], out: &mut Vec<String>) {
             for b in blocks {
                 match b {
@@ -183,7 +187,7 @@ impl DocFacts {
         let mut paras = HashMap::new();
         if !wanted.is_empty() {
             for si in 0..doc.sections.len() {
-                for b in section_node(doc, notes, si).blocks.iter() {
+                for b in section_node(doc, notes, si, view).blocks.iter() {
                     if let Block::Para(p) = b {
                         paras.insert(ParaId(p.id), crate::docx::fields::style_hits(p));
                     }
@@ -205,7 +209,7 @@ impl<'d> PassCx<'d> {
         let mut node = self.node.borrow_mut();
         match &*node {
             Some(n) if n.index == si => n.clone(),
-            _ => node.insert(Rc::new(section_node(self.doc, self.notes, si))).clone(),
+            _ => node.insert(Rc::new(section_node(self.doc, self.notes, si, self.ctx.env.text.review.view))).clone(),
         }
     }
 
@@ -232,7 +236,8 @@ impl<'d> PassCx<'d> {
 pub(crate) fn endnote_split(cx: &PassCx, si: usize) -> Option<usize> {
     let doc = cx.doc;
     let in_flow = doc.settings.compat() == crate::docx::Compat::Legacy && si + 1 < doc.sections.len();
-    (doc.sections[si].section_in(doc.review.view).columns.num > 1 && cx.notes.follow(si) && !in_flow).then(|| doc.sections[si].blocks.len())
+    (doc.sections[si].section_in(cx.ctx.env.text.review.view).columns.num > 1 && cx.notes.follow(si) && !in_flow)
+        .then(|| doc.sections[si].blocks.len())
 }
 
 /// The next place after `block` where the section's layout starts again below what came before: the end of its body
@@ -259,7 +264,7 @@ pub(crate) fn balances(cx: &PassCx, si: usize, token: &PageToken) -> bool {
         split = None;
     }
     (!off
-        && doc.sections[si].section_in(doc.review.view).columns.num > 1
+        && doc.sections[si].section_in(cx.ctx.env.text.review.view).columns.num > 1
         && si + 1 < nsec
         && super::vertical::same_page(&doc.sections[si], &doc.sections[si + 1]))
         || split.is_some()
@@ -413,8 +418,9 @@ pub struct LayoutJob {
 }
 
 impl LayoutJob {
-    pub fn new(doc: &Document, revision: Revision) -> LayoutJob {
-        LayoutJob::with_notes(revision, JobNotes::new(doc), crate::docx::fields::page_dependent(doc))
+    /// A job laying `doc` out in `view` from the start.
+    pub fn new(doc: &Document, view: &ReviewView, revision: Revision) -> LayoutJob {
+        LayoutJob::with_notes(revision, JobNotes::new(doc, view), crate::docx::fields::page_dependent(doc))
     }
 
     pub fn with_notes(revision: Revision, notes: JobNotes, body_fields: bool) -> LayoutJob {
@@ -469,13 +475,13 @@ impl LayoutJob {
         cache.begin();
         let mut meter = Meter::new(budget);
         let mut notes = std::mem::take(&mut self.notes);
-        let facts = self.facts(doc, &notes);
+        let facts = self.facts(doc, &notes, ctx.env.text.review.view);
         let step_result = loop {
             let cx = PassCx::new(doc, *ctx, &notes, &facts);
             let mut memos = Memos { cache, meter: &mut meter };
             let r = loop {
                 if let Cursor::Done = self.run.cursor {
-                    if self.end_pass(doc, &notes) {
+                    if self.end_pass(doc, &notes, ctx.env.text.review.view) {
                         break Some(Step::Done);
                     }
                     if self.renumber.is_some() {
@@ -504,7 +510,7 @@ impl LayoutJob {
             return;
         }
         let notes = std::mem::take(&mut self.notes);
-        let facts = self.facts(doc, &notes);
+        let facts = self.facts(doc, &notes, ctx.env.text.review.view);
         {
             let cx = PassCx::new(doc, *ctx, &notes, &facts);
             let mut meter = Meter::new(Budget::Unlimited);
@@ -542,8 +548,8 @@ impl LayoutJob {
     }
 
     /// The document's [`DocFacts`], read on the job's first run.
-    fn facts(&mut self, doc: &Document, notes: &JobNotes) -> Rc<DocFacts> {
-        self.facts.get_or_insert_with(|| Rc::new(DocFacts::new(doc, notes))).clone()
+    fn facts(&mut self, doc: &Document, notes: &JobNotes, view: MarkupView) -> Rc<DocFacts> {
+        self.facts.get_or_insert_with(|| Rc::new(DocFacts::new(doc, notes, view))).clone()
     }
 
     /// The document changed in what layout reads, though nothing needs laying out again.
@@ -552,7 +558,7 @@ impl LayoutJob {
         self.run.found = Default::default();
     }
 
-    fn end_pass(&mut self, doc: &Document, notes: &JobNotes) -> bool {
+    fn end_pass(&mut self, doc: &Document, notes: &JobNotes, view: MarkupView) -> bool {
         let run = &self.run;
         let info = run.info.clone().unwrap_or_default();
         let composed: Vec<HfHeights> = run.pages.iter().map(|p| p.hf_full).collect();
@@ -593,7 +599,7 @@ impl LayoutJob {
         } else {
             Box::new([])
         };
-        let bad = verify(doc, &run.pages);
+        let bad = verify(doc, view, &run.pages);
         let status =
             if bad.is_empty() { LayoutStatus::Stabilized { frozen_hf, unresolved_fields } } else { LayoutStatus::Inconsistent { pages: bad.into() } };
         self.finish(status);
@@ -621,10 +627,10 @@ fn shows_pass_fields(doc: &Document, pg: &PageRecord) -> bool {
     pg.bodies.iter().any(|b| b.fields.num_pages.is_some() || b.fields.section_pages.is_some() || b.fields.page_refs.is_some())
 }
 
-fn verify(doc: &Document, records: &[PageRecord]) -> Vec<usize> {
+fn verify(doc: &Document, view: MarkupView, records: &[PageRecord]) -> Vec<usize> {
     let mut bad = Vec::new();
     for (i, pg) in records.iter().enumerate() {
-        let (Some((top, bottom)), Some(s)) = (pg.body_area, doc.sections.get(pg.section).map(|s| s.section_in(doc.review.view))) else { continue };
+        let (Some((top, bottom)), Some(s)) = (pg.body_area, doc.sections.get(pg.section).map(|s| s.section_in(view))) else { continue };
         // A vertical body doesn't give way to its header and footer.
         if super::vertical::of_section(doc.sections[pg.section].text_flow).is_some() {
             continue;

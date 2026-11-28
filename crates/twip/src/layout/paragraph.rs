@@ -130,7 +130,7 @@ mod tests {
         use crate::layout::env::TextEnv;
         let Some(doc) = crate::layout::tests::plain_doc(&[String::new()]) else { return };
         let Block::Para(p) = &doc.sections[0].blocks[0] else { unreachable!() };
-        let env = TextEnv::new(&doc, None);
+        let env = TextEnv::new(&doc, &crate::layout::tests::view(&doc), None);
         let style = |contextual| crate::docx::ParaStyle { contextual, ..(*p.style).clone() };
         let (plain, ctx) = (style(false), style(true));
         assert_eq!(gap(&env, &plain, 10.0, &plain, 6.0), 10.0);
@@ -144,7 +144,7 @@ mod tests {
     fn para_5_no_automatic_spacing_between_items_of_one_list() {
         let doc = crate::docx::read(&crate::docx::blank::blank_docx()).expect("the blank document reads");
         let Some(crate::docx::Block::Para(p)) = doc.sections[0].blocks.first() else { panic!("a paragraph") };
-        let env = super::TextEnv::new(&doc, None);
+        let env = super::TextEnv::new(&doc, &crate::layout::tests::view(&doc), None);
         let item = crate::docx::ParaStyle {
             before_auto: true,
             after_auto: true,
@@ -168,7 +168,8 @@ mod tests {
     fn para_5_without_html_spacing_the_explicit_spacing_applies_and_adds_in_lists_too() {
         let doc = crate::docx::read(&crate::docx::blank::blank_docx()).expect("the blank document reads");
         let Some(crate::docx::Block::Para(p)) = doc.sections[0].blocks.first() else { panic!("a paragraph") };
-        let env = super::TextEnv { do_not_use_html_paragraph_auto_spacing: true, ..super::TextEnv::new(&doc, None) };
+        let env =
+            super::TextEnv { do_not_use_html_paragraph_auto_spacing: true, ..super::TextEnv::new(&doc, &crate::layout::tests::view(&doc), None) };
         let item =
             crate::docx::ParaStyle { before_auto: true, after_auto: true, space_before: 3.0, space_after: 2.0, list: Some(0), ..(*p.style).clone() };
         let (after, before) = (super::space_after(&env, &item), super::space_before(&env, &item));

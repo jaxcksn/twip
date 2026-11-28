@@ -118,7 +118,7 @@ fn boxes(children: &[Child], dx: f64, dy: f64, out: &mut Vec<(&'static str, [f64
 fn snapshot(doc: &crate::docx::Document, fonts: &Fonts, hyphenation: &crate::layout::hyphenate::Hyphenation) -> String {
     let f = |v: f64| format!("{}", (v * 20.0).round() as i64);
     let mut s = String::new();
-    for (pi, page) in crate::layout::layout_hyphenated(doc, fonts, Some(hyphenation)).pages().iter().enumerate() {
+    for (pi, page) in crate::layout::tests::layout_hyphenated(doc, fonts, Some(hyphenation)).pages().iter().enumerate() {
         writeln!(s, "page {pi} {} {}", f(page.w), f(page.h)).unwrap();
         let mut lines: Vec<(u32, f64, f64, String)> = Vec::new();
         let mut images = Vec::new();

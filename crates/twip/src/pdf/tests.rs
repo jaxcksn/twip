@@ -331,8 +331,8 @@ fn a_reflection_holds_its_text_as_drawing_not_as_a_second_copy() {
     };
     let text_of = |reflected: &str| {
         let doc = crate::docx::read(&crate::layout::tests::shapes::bytes(&shape(reflected)).expect("a package")).expect("reads");
-        let snap = crate::layout::layout(&doc, &crate::layout::tests::fonts());
-        let (bytes, _) = export::export(&doc, &snap, "t", &PdfOptions::default(), None).expect("exports");
+        let snap = crate::layout::tests::layout(&doc, &crate::layout::tests::fonts());
+        let (bytes, _) = export::export(&doc, &crate::layout::tests::view(&doc), &snap, "t", &PdfOptions::default(), None).expect("exports");
         output::dump(bytes)
     };
     let plain = text_of("");

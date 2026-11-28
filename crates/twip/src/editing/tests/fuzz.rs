@@ -96,7 +96,7 @@ fn check(r: &mut Run, n: usize, full: bool) {
     if full {
         r.e.complete(fonts());
         let ours = crate::layout::dump::page_text(&r.e.snapshot(), r.e.document());
-        let fresh = crate::layout::dump::page_text(&crate::layout::layout(r.e.document(), fonts()), r.e.document());
+        let fresh = crate::layout::dump::page_text(&crate::layout::tests::layout(r.e.document(), fonts()), r.e.document());
         assert!(ours == fresh, "step {n}: incremental layout differs from a full layout");
     }
 }
@@ -448,7 +448,7 @@ fn fuzz_editing_long_tables() {
                 e.execute(c, f);
                 while e.idle(f) {}
                 e.complete(f);
-                let full = crate::layout::layout(e.document(), f);
+                let full = crate::layout::tests::layout(e.document(), f);
                 let a = crate::layout::dump::page_text(&e.snapshot(), e.document());
                 let b = crate::layout::dump::page_text(&full, e.document());
                 if a != b {

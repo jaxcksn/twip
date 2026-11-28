@@ -197,10 +197,26 @@ impl Session {
                 let hidden = pdf.hidden_text.unwrap_or(false);
                 let (bytes, written) = if self.editor.lays_out_as_printed(hidden) {
                     self.editor.complete(&fonts);
-                    crate::pdf::export::export_with(self.editor.document(), &self.editor.snapshot(), "", pdf, None, Some(&fonts))?
+                    crate::pdf::export::export_with(
+                        self.editor.document(),
+                        &self.editor.document().review,
+                        &self.editor.snapshot(),
+                        "",
+                        pdf,
+                        None,
+                        Some(&fonts),
+                    )?
                 } else {
                     let doc = self.editor.printed_document(hidden);
-                    crate::pdf::export::export_with(&doc, &crate::layout::layout(&doc, &fonts), "", pdf, None, Some(&fonts))?
+                    crate::pdf::export::export_with(
+                        &doc,
+                        &doc.review,
+                        &crate::layout::layout(&doc, &doc.review, &fonts),
+                        "",
+                        pdf,
+                        None,
+                        Some(&fonts),
+                    )?
                 };
                 let state = super::fonts::document_fonts(self.editor.document(), self.editor.index(), &fonts);
                 let mut warnings = fallback_warnings(&state);

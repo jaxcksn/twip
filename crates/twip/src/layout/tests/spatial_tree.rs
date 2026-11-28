@@ -4,8 +4,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::docx::{Block, Document};
+use crate::layout::tests::layout;
 use crate::layout::traverse::{SpatialNode, StoryRef, spatial_tree};
-use crate::layout::{ParaId, TableId, layout};
+use crate::layout::{ParaId, TableId};
 
 type Chain = Vec<(TableId, usize, usize)>;
 

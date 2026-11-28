@@ -103,8 +103,8 @@ pub fn is_dark(c: u32) -> bool {
 }
 
 impl TextEnv {
-    /// The document's text environment, hyphenated with the host's `hyphenation` patterns when it asks for it.
-    pub fn new(doc: &Document, hyphenation: Option<&super::hyphenate::Hyphenation>) -> TextEnv {
+    /// The document's text environment in `view`, hyphenated with the host's `hyphenation` patterns when it asks for it.
+    pub fn new(doc: &Document, view: &ReviewView, hyphenation: Option<&super::hyphenate::Hyphenation>) -> TextEnv {
         let s = &doc.settings;
         let bottom = s.compat() == Compat::Generic && !s.policy.allow_hyphenation_at_track_bottom;
         TextEnv {
@@ -145,7 +145,7 @@ impl TextEnv {
             balance_spaces: s.policy.balance_single_byte_double_byte_width,
             ul_trail_space: s.policy.ul_trail_space,
             compress_punctuation: s.compress_punctuation,
-            review: doc.review.clone(),
+            review: view.clone(),
             line_grid: None,
             default_east_asia: doc.resolver.as_ref().and_then(|r| {
                 let c = r.cascade();
@@ -261,18 +261,23 @@ thread_local! {
 }
 
 impl LayoutEnv {
-    /// The document's environment, with the host's `hyphenation` patterns.
-    pub fn new(doc: &Document, hyphenation: Option<&super::hyphenate::Hyphenation>) -> LayoutEnv {
-        LayoutEnv::with_chains(doc, None, hyphenation)
+    /// The document's environment in `view`, with the host's `hyphenation` patterns.
+    pub fn new(doc: &Document, view: &ReviewView, hyphenation: Option<&super::hyphenate::Hyphenation>) -> LayoutEnv {
+        LayoutEnv::with_chains(doc, view, None, hyphenation)
     }
 
     /// [`LayoutEnv::new`] with the document's text box chains when they are known.
-    pub fn with_chains(doc: &Document, chains: Option<Rc<[Chain]>>, hyphenation: Option<&super::hyphenate::Hyphenation>) -> LayoutEnv {
+    pub fn with_chains(
+        doc: &Document,
+        view: &ReviewView,
+        chains: Option<Rc<[Chain]>>,
+        hyphenation: Option<&super::hyphenate::Hyphenation>,
+    ) -> LayoutEnv {
         #[cfg(test)]
         BUILT.set(BUILT.get() + 1);
         let s = &doc.settings;
         LayoutEnv {
-            text: TextEnv::new(doc, hyphenation),
+            text: TextEnv::new(doc, view, hyphenation),
             even_and_odd: s.even_and_odd,
             mirror_margins: s.mirror_margins,
             gutter_at_top: s.gutter_at_top,

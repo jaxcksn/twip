@@ -126,7 +126,12 @@ fn pdf_shows_the_view_without_comment_tints() {
         let mut e = editor("FX-REVIEW-RUNS", view);
         e.complete(fonts());
         let snapshot = e.snapshot();
-        assert!(crate::pdf::export::export(e.document(), &snapshot, "Review", &Default::default(), None).expect("exports").0.starts_with(b"%PDF-"));
+        assert!(
+            crate::pdf::export::export(e.document(), &e.document().review, &snapshot, "Review", &Default::default(), None)
+                .expect("exports")
+                .0
+                .starts_with(b"%PDF-")
+        );
         // The export draws these items, and only these.
         let runs: Vec<String> = snapshot
             .pages()

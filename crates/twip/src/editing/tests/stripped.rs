@@ -27,7 +27,7 @@ fn stripped(d: &crate::docx::Document) -> crate::docx::Document {
 /// The editor's document dump, then every laid-out page.
 fn dump(e: &mut Editor) -> String {
     let v = inspect(e, "dump", true);
-    let pages = crate::layout::dump::page_text(&crate::layout::layout(e.document(), fonts()), e.document());
+    let pages = crate::layout::dump::page_text(&crate::layout::tests::layout(e.document(), fonts()), e.document());
     format!("{}\n{pages}", serde_json::to_string_pretty(&v["dump"]).expect("a dump"))
 }
 

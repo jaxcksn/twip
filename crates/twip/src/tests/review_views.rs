@@ -25,7 +25,7 @@ fn in_view(mut d: Document, view: MarkupView) -> Document {
 /// Per page, each drawn line's baseline, start and text (to 0.01 pt): what a line box is, without the decorations and
 /// change bars drawn beside it.
 fn lines(d: &Document, fonts: &Fonts) -> Vec<Vec<(i64, i64, String)>> {
-    snapshot_lines(&crate::layout::layout(d, fonts))
+    snapshot_lines(&crate::layout::tests::layout(d, fonts))
 }
 
 fn snapshot_lines(snapshot: &Snapshot) -> Vec<Vec<(i64, i64, String)>> {
@@ -151,7 +151,7 @@ fn views_match_expected_layouts() {
             let e = &expected["views"][key];
             let Some(pages) = e["pages"].as_u64() else { continue };
             let d = in_view(fixture(name), view);
-            let snapshot = crate::layout::layout(&d, &fonts);
+            let snapshot = crate::layout::tests::layout(&d, &fonts);
             assert_eq!(snapshot.pages().len() as u64, pages, "{name} in {view:?}: pages");
             let mut lines: HashMap<u64, std::collections::HashSet<(usize, u32)>> = HashMap::new();
             for (pi, page) in snapshot.pages().iter().enumerate() {
@@ -189,7 +189,7 @@ fn views_match_expected_layouts() {
 
 /// Every filled rectangle drawn on page 1.
 fn rects(d: &Document, fonts: &Fonts) -> Vec<([f64; 4], u32)> {
-    let snapshot = crate::layout::layout(d, fonts);
+    let snapshot = crate::layout::tests::layout(d, fonts);
     let mut out = Vec::new();
     paint(&snapshot.pages()[0], &mut |p| {
         if let Item::Rect { rect, colour, .. } = p.absolute() {
@@ -200,7 +200,7 @@ fn rects(d: &Document, fonts: &Fonts) -> Vec<([f64; 4], u32)> {
 }
 
 fn glyph_colours(d: &Document, fonts: &Fonts) -> Vec<Option<u32>> {
-    snapshot_colours(&crate::layout::layout(d, fonts))
+    snapshot_colours(&crate::layout::tests::layout(d, fonts))
 }
 
 fn snapshot_colours(snapshot: &Snapshot) -> Vec<Option<u32>> {

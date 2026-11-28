@@ -35,7 +35,7 @@ fn drawn_lines_on(name: &str, page_colour: Option<u32>) -> Vec<Drawn> {
     doc.page_colour = page_colour.or(doc.page_colour);
     doc.settings.display_background_shape |= page_colour.is_some();
     // The bundled fonts: the fixtures are set in JetBrains Mono, which a system may not have.
-    let snapshot = crate::layout::layout(&doc, &crate::layout::tests::output::bundled_fonts());
+    let snapshot = crate::layout::tests::layout(&doc, &crate::layout::tests::output::bundled_fonts());
     let mut out: Vec<(u32, Drawn)> = Vec::new();
     paint(&snapshot.pages()[0], &mut |p| {
         let k = match out.iter().position(|(l, _)| *l == p.line) {

@@ -15,7 +15,7 @@ fn rebreak_does_not_reshape() {
     let Some(doc) = plain_doc(&[words(300)]) else { return };
     let Block::Para(p) = &doc.sections[0].blocks[0] else { unreachable!() };
     let fonts = fonts();
-    let env = LayoutEnv::new(&doc, None);
+    let env = LayoutEnv::new(&doc, &crate::layout::tests::view(&doc), None);
     let mut cache = LayoutCache::new();
     let mut meter = Meter::unlimited();
     let mut memos = Memos { cache: &mut cache, meter: &mut meter };

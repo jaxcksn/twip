@@ -331,7 +331,7 @@ fn row_restart(
     let blocks = &doc.sections.get(span.section)?.blocks;
     let Some(Block::Table(table)) = blocks.get(span.first) else { return None };
     let prev = match span.first.checked_sub(1).and_then(|i| blocks.get(i)) {
-        Some(Block::Para(p)) => Some(&**p.para_style_in(doc.review.view)),
+        Some(Block::Para(p)) => Some(&**p.para_style_in(env.text.review.view)),
         _ => None,
     };
     fn inside<'p>(pg: &'p PageRecord, span: &Span) -> Option<&'p super::record::BodyRecord> {
@@ -629,18 +629,21 @@ pub struct DocumentLayout {
     live: Rc<[u64]>,
     /// The hyphenation patterns the host supplied.
     hyphenation: Option<super::hyphenate::Hyphenation>,
+    /// The view the document is laid out in.
+    view: ReviewView,
 }
 
 type Frame = (Rc<PageFragment>, PageMeta, [Option<HfRecord>; 2]);
 
 impl Default for DocumentLayout {
     fn default() -> Self {
-        DocumentLayout::new()
+        DocumentLayout::new(ReviewView::default())
     }
 }
 
 impl DocumentLayout {
-    pub fn new() -> DocumentLayout {
+    /// A layout of nothing yet, laying documents out in `view`.
+    pub fn new(view: ReviewView) -> DocumentLayout {
         DocumentLayout {
             cache: LayoutCache::new(),
             published: Rc::new(Snapshot::new(Revision(0), LayoutRevision(0), LayoutStatus::Pending { stale_from: 0 }, Vec::new(), Vec::new())),
@@ -659,7 +662,24 @@ impl DocumentLayout {
             chains: None,
             live: Rc::from([]),
             hyphenation: None,
+            view,
         }
+    }
+
+    /// The view the document is laid out in.
+    pub fn view(&self) -> &ReviewView {
+        &self.view
+    }
+
+    /// Takes the view to lay the document out in; whether it differs from the one it had. The environment is read
+    /// again when it does; the document is laid out again from the next edit.
+    pub fn set_view(&mut self, view: ReviewView) -> bool {
+        if self.view == view {
+            return false;
+        }
+        self.view = view;
+        self.env = None;
+        true
     }
 
     /// The tables (model ids) a live drag lays out as it would leave them: each is laid out only as far as the pages
@@ -707,7 +727,7 @@ impl DocumentLayout {
                     doc.sections.get(s.section).and_then(|sec| sec.blocks.get(s.first..s.new_end)).is_some_and(|b| !super::env::chained(b))
                 })
         });
-        let env = Rc::new(LayoutEnv::with_chains(doc, kept, self.hyphenation.as_ref()));
+        let env = Rc::new(LayoutEnv::with_chains(doc, &self.view, kept, self.hyphenation.as_ref()));
         self.chains = Some(env.chains.clone());
         self.env = Some(env.clone());
         env
@@ -827,7 +847,7 @@ impl DocumentLayout {
     fn start(&mut self, doc: &Document, fonts: &Fonts) -> Running {
         let rev = self.revision;
         let env = self.env(doc);
-        let new_job = || LayoutJob::new(doc, rev);
+        let new_job = || LayoutJob::new(doc, &env.text.review, rev);
         let full = |job, why: &'static str| {
             crate::prof::time(why, || ());
             #[cfg(test)]
@@ -877,7 +897,7 @@ impl DocumentLayout {
         if seeded {
             job.seed((*b.finished.known).clone(), b.finished.records.iter().map(|p| p.hf_full).collect());
         }
-        let closed = span.map(|s| close(s, &doc.sections[s.section].blocks, &doc.review));
+        let closed = span.map(|s| close(s, &doc.sections[s.section].blocks, &env.text.review));
         let base = &b.finished.records;
         #[cfg(test)]
         let forced = FORCE_FIRST_PAGE.get();
@@ -887,7 +907,7 @@ impl DocumentLayout {
         let r = match &closed {
             _ if forced || base.is_empty() => 0,
             Some(s) => {
-                let r = restart_page(base, s, &doc.sections[s.section].blocks, &doc.review);
+                let r = restart_page(base, s, &doc.sections[s.section].blocks, &env.text.review);
                 let notes = job.note_numbers().clone();
                 let latest = b.table.as_ref();
                 crate::prof::time("layout:row-restart", || {
@@ -990,7 +1010,7 @@ impl DocumentLayout {
             #[cfg(test)]
             FULL_JOBS.set(FULL_JOBS.get() + 1);
             self.job = Some(Running {
-                job: LayoutJob::new(doc, self.revision),
+                job: LayoutJob::new(doc, &self.view, self.revision),
                 reuse: None,
                 span: None,
                 incremental: false,

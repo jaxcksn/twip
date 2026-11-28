@@ -43,7 +43,37 @@ mod warm;
 use std::path::{Path, PathBuf};
 
 use crate::docx::Document;
+use crate::docx::review::ReviewView;
 use crate::font::Fonts;
+use crate::layout::cache::LayoutCache;
+use crate::layout::{DocumentLayout, Snapshot};
+
+// Layout in the view a document opens in
+
+/// The view `doc` opens in: what it is laid out in without an editor.
+pub fn view(doc: &Document) -> ReviewView {
+    doc.review.clone()
+}
+
+/// [`crate::layout::layout`] in the view `doc` opens in.
+pub fn layout(doc: &Document, fonts: &Fonts) -> Snapshot {
+    crate::layout::layout(doc, &view(doc), fonts)
+}
+
+/// [`crate::layout::layout_with`] in the view `doc` opens in.
+pub fn layout_with(doc: &Document, fonts: &Fonts, cache: &mut LayoutCache) -> Snapshot {
+    crate::layout::layout_with(doc, &view(doc), fonts, cache)
+}
+
+/// [`crate::layout::layout_hyphenated`] in the view `doc` opens in.
+pub fn layout_hyphenated(doc: &Document, fonts: &Fonts, hyphenation: Option<&crate::layout::hyphenate::Hyphenation>) -> Snapshot {
+    crate::layout::layout_hyphenated(doc, &view(doc), fonts, hyphenation)
+}
+
+/// A layout of `doc` in the view it opens in, nothing laid out yet.
+pub fn document_layout(doc: &Document) -> DocumentLayout {
+    DocumentLayout::new(view(doc))
+}
 
 pub fn fixtures() -> PathBuf {
     std::env::var_os("TWIP_REFERENCE_FIXTURES").map(std::path::PathBuf::from).unwrap_or_default()
@@ -142,7 +172,7 @@ pub fn page_chars(doc: &Document) -> Vec<Vec<(char, f64, f64)>> {
 
 /// [`page_chars`] with the host's hyphenation patterns.
 pub fn page_chars_with(doc: &Document, hyphenation: Option<&crate::layout::hyphenate::Hyphenation>) -> Vec<Vec<(char, f64, f64)>> {
-    let snap = crate::layout::layout_hyphenated(doc, &fonts(), hyphenation);
+    let snap = layout_hyphenated(doc, &fonts(), hyphenation);
     snap.pages()
         .iter()
         .map(|page| {

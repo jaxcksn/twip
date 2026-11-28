@@ -59,7 +59,7 @@ fn step(e: &mut Editor, dir: Dir) {
 
 /// The text drawn on the first page of `d`, a string per line.
 fn lines_of(d: &crate::docx::Document) -> Vec<String> {
-    let snap = crate::layout::layout(d, fonts());
+    let snap = crate::layout::tests::layout(d, fonts());
     let mut runs: Vec<(f64, f64, String)> = crate::layout::traverse::paint_items(&snap.pages()[0])
         .iter()
         .filter_map(|it| match it {
@@ -372,7 +372,7 @@ fn a_shown_codes_inserted_braces_take_the_insertions_look() {
     show_codes(&mut e, true);
     let mut d = e.document().clone();
     std::rc::Rc::make_mut(&mut d.review.markup).style.insertions.mark = TextMark::Bold;
-    let snap = crate::layout::layout(&d, fonts());
+    let snap = crate::layout::tests::layout(&d, fonts());
     let items = crate::layout::traverse::paint_items(&snap.pages()[0]);
     let face_of = |ch: char| {
         items.iter().find_map(|it| match it {

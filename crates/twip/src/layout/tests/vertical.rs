@@ -32,7 +32,7 @@ fn turned_runs(doc: &crate::docx::Document) -> Vec<(String, [f64; 2], [f64; 2])>
 }
 
 fn turned_runs_on(doc: &crate::docx::Document, page: usize) -> Vec<(String, [f64; 2], [f64; 2])> {
-    let snap = crate::layout::layout(doc, &fonts());
+    let snap = crate::layout::tests::layout(doc, &fonts());
     let mut out = Vec::new();
     let Some(page) = snap.pages().get(page) else { return out };
     for it in crate::layout::traverse::paint_items(page) {
@@ -127,7 +127,7 @@ fn compat_12_centres_a_vertical_block_thicker_than_its_cell_unclamped() {
 fn a_vertical_cell_adds_nothing_to_an_auto_row() {
     let (Some(v), Some(h)) = (doc(&table("tbRl", "", WORDS)), doc(&table("lrTb", "", "x"))) else { return };
     let rows = |d: &crate::docx::Document| {
-        let snap = crate::layout::layout(d, &fonts());
+        let snap = crate::layout::tests::layout(d, &fonts());
         crate::layout::traverse::paint_items(&snap.pages()[0])
             .into_iter()
             .filter_map(|i| if let Item::Rect { rect, .. } = i { Some(rect[3]) } else { None })
@@ -257,7 +257,7 @@ fn a_vertical_sections_gutter_is_on_the_right() {
 fn a_horizontal_sections_rtl_gutter_is_on_the_right() {
     let at = |rtl: &str| {
         let body = format!(r#"{}<w:sectPr>{}{rtl}</w:sectPr>"#, para("first", ""), MARGINS.replace(r#"w:gutter="0""#, r#"w:gutter="720""#));
-        let snap = crate::layout::layout(&sectioned(&body)?, &fonts());
+        let snap = crate::layout::tests::layout(&sectioned(&body)?, &fonts());
         crate::layout::traverse::paint_items(&snap.pages()[0]).into_iter().find_map(|i| if let Item::Glyphs(r) = i { Some(r.x) } else { None })
     };
     let Some(left) = at("") else { return };
@@ -269,7 +269,7 @@ fn a_horizontal_sections_rtl_gutter_is_on_the_right() {
 fn a_table_in_a_vertical_section_stands_upright_where_the_next_line_would_go() {
     let table = r#"<w:tbl><w:tblPr><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="22"/></w:rPr><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#;
     let Some(doc) = section("tbRl", "0", &format!("{}{table}{}", para("before", ""), para("after", ""))) else { return };
-    let snap = crate::layout::layout(&doc, &fonts());
+    let snap = crate::layout::tests::layout(&doc, &fonts());
     // The cell's text isn't turned; its box ends where the next line would start, one line in from the right
     // margin (512pt), and its row starts at the top margin.
     let cell = crate::layout::traverse::paint_items(&snap.pages()[0])
@@ -290,7 +290,7 @@ fn only_compat_15_moves_a_vertical_sections_table_too_wide_for_the_rest_of_the_p
     let first_page = |mode: i64| {
         let mut doc = section("tbRl", "0", &format!("{}{table}{}", para("before", ""), para("after", "")))?;
         doc.settings.policy.mode = mode;
-        let snap = crate::layout::layout(&doc, &fonts());
+        let snap = crate::layout::tests::layout(&doc, &fonts());
         let items = crate::layout::traverse::paint_items(&snap.pages()[0]);
         Some(items.iter().any(|i| matches!(i, Item::Glyphs(r) if r.chars.iter().any(|c| c.0 == 'c'))))
     };
@@ -309,7 +309,7 @@ fn adjacent_tables_in_a_vertical_section_are_one_table_from_the_first_ones_left_
     };
     let body = format!("{}{}{}{}", para("before", ""), table(3000, "wide"), table(2000, "narrow"), para("after", ""));
     let Some(doc) = section("tbRl", "0", &body) else { return };
-    let snap = crate::layout::layout(&doc, &fonts());
+    let snap = crate::layout::tests::layout(&doc, &fonts());
     let cell = |t: char| {
         crate::layout::traverse::paint_items(&snap.pages()[0]).into_iter().find_map(|i| match i {
             Item::Glyphs(r) if r.chars.first().is_some_and(|c| c.0 == t) => Some((r.x, r.baseline)),
@@ -332,7 +332,7 @@ fn a_vertical_sections_floating_table_takes_tblpx_along_the_stack_and_tblpyspec_
             r#"<w:tbl><w:tblPr><w:tblpPr {pos}/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#
         );
         let doc = section("tbRl", "0", &format!("{}{table}{}", para("before", ""), para("after", "")))?;
-        let snap = crate::layout::layout(&doc, &fonts());
+        let snap = crate::layout::tests::layout(&doc, &fonts());
         crate::layout::traverse::paint_items(&snap.pages()[0])
             .into_iter()
             .find_map(|i| if let Item::Glyphs(r) = i { r.chars.iter().any(|c| c.0 == 'c').then_some((r.x, r.baseline)) } else { None })
@@ -359,7 +359,7 @@ fn long_table(rows: usize, w: u32) -> String {
 
 /// Where each cell's text starts on page `page`: text, x, baseline.
 fn cells_on(doc: &crate::docx::Document, page: usize) -> Vec<(String, f64, f64)> {
-    let snap = crate::layout::layout(doc, &fonts());
+    let snap = crate::layout::tests::layout(doc, &fonts());
     let Some(page) = snap.pages().get(page) else { return Vec::new() };
     crate::layout::traverse::paint_items(page)
         .into_iter()
@@ -788,7 +788,7 @@ fn compat_12_places_a_vertical_table_after_lines_that_jumped_an_earlier_one_by_t
 pub(super) fn reading(doc: &crate::docx::Document) -> (String, Vec<String>) {
     use crate::layout::traverse::{Spatial, semantic_chars, spatial};
     use std::collections::HashMap;
-    let snap = crate::layout::layout(doc, &fonts());
+    let snap = crate::layout::tests::layout(doc, &fonts());
     let page = &snap.pages()[0];
     let mut chars = Vec::new();
     semantic_chars(page, &mut chars);
@@ -831,7 +831,7 @@ fn a_multi_line_vertical_cells_lines_read_in_order_beside_its_neighbour() {
     for dir in ["tbRl", "btLr"] {
         let row = r#"<w:trPr><w:trHeight w:val="2000" w:hRule="exact"/></w:trPr>"#;
         let Some(doc) = doc(&format!("{}{}", table(dir, row, WORDS), para("after", ""))) else { return };
-        let snap = crate::layout::layout(&doc, &fonts());
+        let snap = crate::layout::tests::layout(&doc, &fonts());
         let page = &snap.pages()[0];
         let mut chars = Vec::new();
         semantic_chars(page, &mut chars);

@@ -11,8 +11,8 @@ pub fn run(docx: &Path, out: &Path, options: &twip::api::session::PdfOptions) ->
     let mut doc = twip::internal::docx::read_at(&bytes, 1_793_318_400).map_err(|e| format!("{}: {e:?}", docx.display()))?;
     doc.review.view = twip::internal::docx::review::MarkupView::NoMarkup;
     let fonts = super::system_fonts();
-    let layout = twip::internal::layout::layout(&doc, &fonts);
-    let (pdf, warnings) = twip::internal::pdf::export(&doc, &layout, "", options, None).map_err(|e| e.message)?;
+    let layout = twip::internal::layout::layout(&doc, &doc.review, &fonts);
+    let (pdf, warnings) = twip::internal::pdf::export(&doc, &doc.review, &layout, "", options, None).map_err(|e| e.message)?;
     for w in warnings {
         eprintln!("warning: {}: {}", w.code.name(), w.message);
     }

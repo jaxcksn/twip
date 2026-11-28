@@ -27,7 +27,7 @@ fn shown(body: &str, (start, part): (usize, usize), width: f64) -> Option<ParaLi
     let doc = doc(body)?;
     let Block::Para(p) = &doc.sections[0].blocks[0] else { panic!("a paragraph") };
     let fonts = fonts();
-    let env = LayoutEnv::new(&doc, None);
+    let env = LayoutEnv::new(&doc, &crate::layout::tests::view(&doc), None);
     let (mut cache, mut meter) = (LayoutCache::new(), Meter::unlimited());
     let mut memos = Memos { cache: &mut cache, meter: &mut meter };
     let space = shape_space(p, &FieldValues::default(), &Default::default(), &env.text, None);
@@ -169,7 +169,7 @@ fn a_page_break_between_an_empty_part_and_the_next_keeps_each_line_once() {
         let doc = doc(&body)?;
         let Block::Para(p) = &doc.sections[0].blocks[1] else { panic!("a paragraph") };
         let id = ParaId(p.id);
-        let snap = crate::layout::layout(&doc, &fonts());
+        let snap = crate::layout::tests::layout(&doc, &fonts());
         let counts = snap
             .pages()
             .iter()
@@ -220,7 +220,7 @@ fn pages_of(body: &str, block: usize) -> Option<Vec<Vec<crate::layout::fragment:
             _ => panic!("a cell paragraph"),
         },
     };
-    let snap = crate::layout::layout(&doc, &fonts());
+    let snap = crate::layout::tests::layout(&doc, &fonts());
     let pages = snap.pages().iter().map(|pg| {
         let mut out = Vec::new();
         for c in pg.children.iter() {

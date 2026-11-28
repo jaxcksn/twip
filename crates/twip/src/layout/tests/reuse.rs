@@ -5,7 +5,8 @@ use std::path::Path;
 use crate::docx::{Block, Inline};
 use crate::layout::ids::Revision;
 use crate::layout::incremental::FULL_JOBS;
-use crate::layout::{Change, DocumentLayout, dump, layout};
+use crate::layout::tests::layout;
+use crate::layout::{Change, dump};
 use crate::prof::{Outcome, Piece};
 
 use super::{doc, fonts};
@@ -18,7 +19,7 @@ fn at(r: &[[u64; 3]; 3], piece: Piece, outcome: Outcome) -> u64 {
 fn prof_reuse_counts_one_keystroke() {
     let Some(mut d) = doc(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/big.docx"))) else { return };
     let fonts = fonts();
-    let mut dl = DocumentLayout::new();
+    let mut dl = crate::layout::tests::document_layout(&d);
     dl.edit(Revision(1), None);
     dl.complete(&d, &fonts);
     let bi = d.sections[0].blocks.len() / 2;
@@ -38,7 +39,7 @@ fn prof_reuse_counts_one_keystroke() {
 fn multi_pass_baseline_typing_is_incremental() {
     let Some(mut d) = doc(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/docx-feature-showcase.docx"))) else { return };
     let fonts = fonts();
-    let mut dl = DocumentLayout::new();
+    let mut dl = crate::layout::tests::document_layout(&d);
     dl.edit(Revision(1), None);
     dl.complete(&d, &fonts);
     let pages = dl.snapshot().pages().len();
@@ -67,7 +68,7 @@ fn multi_pass_baseline_typing_is_incremental() {
 fn consecutive_keystrokes_stay_incremental() {
     let Some(mut d) = doc(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/docx-feature-showcase.docx"))) else { return };
     let fonts = fonts();
-    let mut dl = DocumentLayout::new();
+    let mut dl = crate::layout::tests::document_layout(&d);
     dl.edit(Revision(1), None);
     dl.complete(&d, &fonts);
     let section = d.sections.len() / 2;
@@ -106,7 +107,7 @@ fn same_height_edit_lays_out_one_paragraph() {
     for (what, bi, row) in [("body", body, None), ("cell", table, Some(0))] {
         let Some(bi) = bi else { continue };
         let mut d = d.clone();
-        let mut dl = DocumentLayout::new();
+        let mut dl = crate::layout::tests::document_layout(&d);
         dl.edit(Revision(1), None);
         dl.complete(&d, &fonts);
         let text = match &mut d.sections[0].blocks[bi] {
@@ -132,7 +133,7 @@ fn same_height_edit_lays_out_one_paragraph() {
 fn reflow_moves_later_paragraphs() {
     let Some(mut d) = doc(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/editor/FX-LONG-50.docx"))) else { return };
     let fonts = fonts();
-    let mut dl = DocumentLayout::new();
+    let mut dl = crate::layout::tests::document_layout(&d);
     dl.edit(Revision(1), None);
     dl.complete(&d, &fonts);
     let Block::Para(mut copy) = d.sections[0].blocks[2].clone() else { return };

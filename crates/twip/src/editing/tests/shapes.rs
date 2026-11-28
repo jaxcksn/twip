@@ -140,7 +140,7 @@ fn drag(e: &mut Editor, from: [f64; 2], to: [f64; 2], mods: Mods) {
 fn same_as_full(e: &mut Editor) {
     e.complete(fonts());
     let ours = crate::layout::dump::page_text(&e.snapshot(), e.document());
-    let fresh = crate::layout::dump::page_text(&crate::layout::layout(e.document(), fonts()), e.document());
+    let fresh = crate::layout::dump::page_text(&crate::layout::tests::layout(e.document(), fonts()), e.document());
     assert!(ours == fresh, "incremental layout differs from a full layout");
 }
 

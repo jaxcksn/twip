@@ -22,7 +22,7 @@ fn field<'a>(l: &'a str, key: &str) -> Option<&'a str> {
 
 fn layout() -> Option<(usize, Vec<Glyphs>, Vec<(usize, [f64; 4], String)>)> {
     let d = doc(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/docx-feature-showcase.docx")))?;
-    let (snapshot, _) = layout_records(&d, &fonts(), &mut LayoutCache::new());
+    let (snapshot, _) = layout_records(&d, &super::view(&d), &fonts(), &mut LayoutCache::new());
     let text = crate::layout::dump::page_text(&snapshot, &d);
     let (mut glyphs, mut rects, mut page) = (Vec::new(), Vec::new(), 0usize);
     let mut pages = 0;

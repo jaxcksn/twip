@@ -8,7 +8,7 @@ use crate::docx::model::next_para_id;
 use crate::docx::props::Width;
 use crate::docx::{Block, Document, Inline, NoteKind, Paragraph, Picture, Table};
 use crate::font::Fonts;
-use crate::layout::layout;
+use crate::layout::tests::layout;
 
 use super::{doc, fixture, fixtures, fonts};
 

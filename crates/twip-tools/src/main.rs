@@ -37,7 +37,10 @@ fn main() {
             let result = cli::dump::run(std::path::Path::new(out), paths, |doc| {
                 let mut doc = doc.clone();
                 doc.review.view = twip::internal::docx::review::MarkupView::NoMarkup;
-                twip::internal::layout::dump::page_text(&twip::internal::layout::layout_hyphenated(&doc, &fonts, hyphenation.as_ref()), &doc)
+                twip::internal::layout::dump::page_text(
+                    &twip::internal::layout::layout_hyphenated(&doc, &doc.review, &fonts, hyphenation.as_ref()),
+                    &doc,
+                )
             });
             return exit_on_error(result.map(|n| println!("dumped {n} documents into {out}")));
         }

@@ -5,7 +5,7 @@ use std::path::Path;
 use crate::docx::{Block, Inline};
 use crate::layout::ids::Revision;
 use crate::layout::traverse::{Spatial, spatial};
-use crate::layout::{Budget, Change, DocumentLayout, LayoutStatus, Step, Target, dump};
+use crate::layout::{Budget, Change, LayoutStatus, Step, Target, dump};
 
 use super::random_edits::Rng;
 use super::{doc, fonts};
@@ -14,7 +14,7 @@ use super::{doc, fonts};
 fn snapshot_unchanged_by_later_edits() {
     let Some(mut d) = doc(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/editor/FX-OBJ.docx"))) else { return };
     let fonts = fonts();
-    let mut dl = DocumentLayout::new();
+    let mut dl = crate::layout::tests::document_layout(&d);
     dl.edit(Revision(1), None);
     dl.complete(&d, &fonts);
     let held = dl.snapshot();
@@ -44,7 +44,7 @@ fn snapshot_unchanged_by_later_edits() {
 fn provisional_pages_do_not_resolve() {
     let Some(mut d) = doc(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/big.docx"))) else { return };
     let fonts = fonts();
-    let mut dl = DocumentLayout::new();
+    let mut dl = crate::layout::tests::document_layout(&d);
     dl.edit(Revision(1), None);
     dl.complete(&d, &fonts);
     let Block::Para(p) = d.sections[0].blocks[2].clone() else { return };

@@ -9,7 +9,9 @@ fn a_shown_sub_template_body_is_tagged_at_its_reference() {
     e.execute(crate::editing::sub_templates::rules("SUBTEMPLATE", "Sub-templates"), fonts());
     e.complete(fonts());
     assert!(e.shows_expansions(), "the bodies show");
-    let (pdf, _) = crate::pdf::export::export(e.document(), &e.snapshot(), "", &crate::api::session::PdfOptions::default(), None).expect("exports");
+    let (pdf, _) =
+        crate::pdf::export::export(e.document(), &e.document().review, &e.snapshot(), "", &crate::api::session::PdfOptions::default(), None)
+            .expect("exports");
     let dump = crate::pdf::output::dump(pdf);
     let structure = &dump[dump.find("\nstructure\n").expect("a structure")..];
     // Violation's body shown at two references (whose own text isn't drawn): each a division where its reference's
@@ -31,15 +33,32 @@ fn the_printed_document_leaves_out_shown_hidden_text() {
     assert!(!e.lays_out_as_printed(false) && !e.lays_out_as_printed(true));
     let doc = e.printed_document(false);
     assert!(!doc.review.show_hidden && !doc.review.show_optional_hyphens && doc.review.view == crate::docx::review::MarkupView::NoMarkup);
-    let snapshot = crate::layout::layout(&doc, crate::editing::tests::fonts());
-    let pdf =
-        crate::pdf::export::export_with(&doc, &snapshot, "", &Default::default(), None, Some(crate::editing::tests::fonts())).expect("exports").0;
+    let snapshot = crate::layout::tests::layout(&doc, crate::editing::tests::fonts());
+    let pdf = crate::pdf::export::export_with(
+        &doc,
+        &crate::layout::tests::view(&doc),
+        &snapshot,
+        "",
+        &Default::default(),
+        None,
+        Some(crate::editing::tests::fonts()),
+    )
+    .expect("exports")
+    .0;
     let text = crate::pdf::output::dump(pdf);
     assert!(text.contains("Shown") && !text.contains("secret"), "{text}");
     e.complete(crate::editing::tests::fonts());
-    let shown = crate::pdf::export::export_with(e.document(), &e.snapshot(), "", &Default::default(), None, Some(crate::editing::tests::fonts()))
-        .expect("exports")
-        .0;
+    let shown = crate::pdf::export::export_with(
+        e.document(),
+        &e.document().review,
+        &e.snapshot(),
+        "",
+        &Default::default(),
+        None,
+        Some(crate::editing::tests::fonts()),
+    )
+    .expect("exports")
+    .0;
     assert!(crate::pdf::output::dump(shown).contains("secret"), "the editor's own layout has it");
     assert!(e.printed_document(true).review.show_hidden);
 }

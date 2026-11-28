@@ -1,7 +1,8 @@
 //! Step inversion
 
 use crate::docx::{Block, Document, Inline};
-use crate::layout::{DocumentLayout, ParaId, Revision, TableId, Unit, dump, layout};
+use crate::layout::tests::layout;
+use crate::layout::{ParaId, Revision, TableId, Unit, dump};
 
 use super::super::index::{Container, DocIndex};
 use super::super::step::{Step, para_len};
@@ -97,7 +98,7 @@ fn every_step_inverts_exactly_and_keeps_layout_incremental() {
         for (k, step) in steps(&doc0, &idx0).into_iter().enumerate() {
             let what = format!("{name} step {k}: {step:?}");
             let (mut doc, mut docx, mut idx) = (doc0.clone(), docx0.clone(), idx0.clone());
-            let mut dl = DocumentLayout::new();
+            let mut dl = crate::layout::tests::document_layout(&doc0);
             dl.edit(Revision(1), None);
             dl.complete(&doc, fonts);
             let applied = step.apply(&mut doc, &mut docx, &mut idx).unwrap_or_else(|e| panic!("{what}: {e:?}"));

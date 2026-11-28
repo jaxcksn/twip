@@ -5,7 +5,8 @@ use std::path::Path;
 use super::{doc, fonts};
 use crate::docx::{Block, Inline};
 use crate::layout::cache::LayoutCache;
-use crate::layout::{dump, layout, layout_with};
+use crate::layout::dump;
+use crate::layout::tests::{layout, layout_with};
 
 const DOCS: [&str; 2] = [
     concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/tables.docx"),

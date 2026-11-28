@@ -43,7 +43,7 @@ fn col_1_a_separator_ends_at_its_sections_text_not_at_a_footnote() {
     let base = |c: char| chars.iter().find(|x| x.0 == c).map(|x| x.2);
     let (Some(right), Some(note)) = (base('R'), base('T')) else { panic!("{chars:?}") };
     assert!(note > 600.0, "the note sits at the page bottom: {note}");
-    let snap = crate::layout::layout(&doc, &super::fonts());
+    let snap = crate::layout::tests::layout(&doc, &super::fonts());
     let lines: Vec<[f64; 4]> = crate::layout::traverse::paint_items(&snap.pages()[0])
         .into_iter()
         .filter_map(|i| if let Item::Rect { rect, .. } = i { Some(rect) } else { None })

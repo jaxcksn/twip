@@ -101,7 +101,7 @@ pub(crate) fn rendered() -> BTreeMap<String, Rgba> {
     let mut out = BTreeMap::new();
     let hyphenation = crate::layout::tests::output::hyphenation();
     for (name, d) in corpus() {
-        let snap = crate::layout::layout_hyphenated(&d, &fonts, Some(&hyphenation));
+        let snap = crate::layout::tests::layout_hyphenated(&d, &fonts, Some(&hyphenation));
         let mut r = Renderer::default();
         r.set_page_background(&d);
         let mut g = Graphics::default();
@@ -227,7 +227,7 @@ fn gpu_pages_match_the_cpu() {
             n if n.starts_with("render__") => usize::MAX,
             _ => continue,
         };
-        let snap = crate::layout::layout_hyphenated(&d, &fonts, Some(&hyphenation));
+        let snap = crate::layout::tests::layout_hyphenated(&d, &fonts, Some(&hyphenation));
         let mut r = Renderer::default();
         r.set_page_background(&d);
         let mut g = Graphics::default();

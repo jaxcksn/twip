@@ -11,7 +11,8 @@ use crate::docx::{Block, BreakKind, Document, Inline, Paragraph};
 use crate::font::Fonts;
 use crate::layout::ids::Revision;
 use crate::layout::incremental::{FORCE_FIRST_PAGE, FULL_JOBS, REUSED_PAGES};
-use crate::layout::{Budget, Change, DocumentLayout, LayoutStatus, Step, dump, layout};
+use crate::layout::tests::layout;
+use crate::layout::{Budget, Change, LayoutStatus, Step, dump};
 
 use super::{doc, fonts};
 
@@ -235,7 +236,7 @@ pub(super) fn run_edits_with(name: &str, d: Document, fonts: &Fonts, seed: u64, 
 /// `every_kind`: attempt the kinds in turn (each once per `KINDS` attempts) rather than at random.
 fn run(name: &str, mut d: Document, fonts: &Fonts, seed: u64, steps: usize, budget: Budget, every_kind: bool) {
     let mut rng = Rng::new(seed);
-    let mut dl = DocumentLayout::new();
+    let mut dl = crate::layout::tests::document_layout(&d);
     dl.edit(Revision(1), None);
     dl.complete(&d, fonts);
     let mut rev = 1;
@@ -345,7 +346,7 @@ fn restart_from_first_page() {
 fn typing_reuses_pages() {
     let Some(mut d) = doc(Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/big.docx"))) else { return };
     let fonts = fonts();
-    let mut dl = DocumentLayout::new();
+    let mut dl = crate::layout::tests::document_layout(&d);
     dl.edit(Revision(1), None);
     dl.complete(&d, &fonts);
     let pages = dl.snapshot().pages().len();
@@ -408,7 +409,7 @@ fn table_row_edits() {
         }
     }
     for (name, mut d) in docs {
-        let mut dl = DocumentLayout::new();
+        let mut dl = crate::layout::tests::document_layout(&d);
         dl.edit(Revision(1), None);
         dl.complete(&d, &fonts);
         let mut rev = 1;
@@ -563,7 +564,8 @@ fn edits_inside_joined_paragraphs() {
             set_mark(&mut d, i, true, true);
         }
         set_mark(&mut d, 7, false, true);
-        let mut runs = [(Budget::Unlimited, DocumentLayout::new()), (Budget::Pages(1), DocumentLayout::new())];
+        let mut runs =
+            [(Budget::Unlimited, crate::layout::tests::document_layout(&d)), (Budget::Pages(1), crate::layout::tests::document_layout(&d))];
         for (_, dl) in &mut runs {
             dl.edit(Revision(1), None);
             dl.complete(&d, &fonts);

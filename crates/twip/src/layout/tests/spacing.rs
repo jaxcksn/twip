@@ -5,7 +5,7 @@ use std::rc::Rc;
 use crate::docx::model::BreakKind;
 use crate::docx::{Block, Document, Inline};
 use crate::layout::fragment::{Child, PageChild};
-use crate::layout::layout as layout_doc;
+use crate::layout::tests::layout as layout_doc;
 
 use super::{fonts, page_chars, plain_doc, words};
 

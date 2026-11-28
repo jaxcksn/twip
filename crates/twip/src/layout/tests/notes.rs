@@ -31,7 +31,7 @@ fn rewound_note_follows_reference() {
     note.inlines = vec![Inline::Text("The note's text.".into(), note.mark.clone())];
     note.id = next_para_id();
     doc.footnotes.insert(ID, vec![Block::Para(note)]);
-    let (snapshot, records) = layout_records(&doc, &fonts(), &mut LayoutCache::new());
+    let (snapshot, records) = layout_records(&doc, &super::view(&doc), &fonts(), &mut LayoutCache::new());
     let pages: Vec<usize> = snapshot.pages().iter().enumerate().filter(|(_, p)| shows_note(p, ID)).map(|(i, _)| i).collect();
     assert_eq!(pages, [1], "the note is drawn once, on page 2 with its reference");
     assert!(!records[0].effects.notes_shown.iter().any(|n| n.1 == ID), "page 1's effects don't show the rewound note");
@@ -89,7 +89,7 @@ fn notes_doc_with(body: &str, settings: &str, extra: &str) -> Option<crate::docx
 }
 
 fn numbers(doc: &crate::docx::Document, kind: NoteKind, ids: &[i64]) -> Vec<String> {
-    let notes = crate::layout::document::JobNotes::new(doc);
+    let notes = crate::layout::document::JobNotes::new(doc, &super::view(doc));
     ids.iter().map(|id| notes.numbers.get(&(kind, *id)).cloned().unwrap_or_default()).collect()
 }
 
@@ -102,7 +102,7 @@ fn an_anchor_in_a_note_is_laid_out_inline() {
     let extra = note("footnote") + &note("endnote");
     for r in ["f10", "e10"] {
         let Some(doc) = notes_doc_with(&(para("Body", &[r]) + &sect("", true)), "", &extra) else { return };
-        let snap = crate::layout::layout(&doc, &fonts());
+        let snap = crate::layout::tests::layout(&doc, &fonts());
         let items = crate::layout::traverse::paint_items(&snap.pages()[0]);
         let rects: Vec<[f64; 4]> =
             items.iter().filter_map(|i| if let crate::layout::fragment::Item::Shape(s) = i { Some(s.rect) } else { None }).collect();
@@ -192,7 +192,7 @@ fn compat_14_balanced_column_starting_in_an_endnote_starts_with_the_continuation
     body += &format!(r#"<w:p><w:pPr><w:sectPr><w:cols w:num="2" w:space="720"/>{PAGE}</w:sectPr></w:pPr><w:r><w:t>L02</w:t></w:r></w:p>"#);
     body += &(para("Tail", &[]) + &sect(r#"<w:type w:val="continuous"/>"#, true));
     let Some(doc) = notes_doc_with(&body, r#"<w:endnotePr><w:pos w:val="sectEnd"/></w:endnotePr>"#, &extra) else { return };
-    let snap = crate::layout::layout(&doc, &super::fonts());
+    let snap = crate::layout::tests::layout(&doc, &super::fonts());
     let rules: Vec<[f64; 4]> = crate::layout::traverse::paint_items(&snap.pages()[0])
         .into_iter()
         .filter_map(|i| match i {
@@ -514,7 +514,7 @@ fn endnote_continuation_separator_spans_the_column() {
     let extra = format!(r#"{seps}<w:endnote w:id="10">{long}</w:endnote>"#);
     let body = para("A", &["e10"]) + &sect("", true);
     let Some(doc) = notes_doc_with(&body, C15, &extra) else { return };
-    let snap = crate::layout::layout(&doc, &super::fonts());
+    let snap = crate::layout::tests::layout(&doc, &super::fonts());
     let rules: Vec<Vec<f64>> = snap
         .pages()
         .iter()

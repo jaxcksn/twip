@@ -53,7 +53,16 @@ fn package(body: &str, parts: &[(&str, &str, String)]) -> Vec<u8> {
 fn export(bytes: &[u8]) -> Vec<u8> {
     let doc = crate::docx::read(bytes).expect("reads");
     let fonts = bundled_fonts();
-    super::super::export::export(&doc, &crate::layout::layout(&doc, &fonts), "", &PdfOptions::default(), None).expect("exports").0
+    super::super::export::export(
+        &doc,
+        &crate::layout::tests::view(&doc),
+        &crate::layout::tests::layout(&doc, &fonts),
+        "",
+        &PdfOptions::default(),
+        None,
+    )
+    .expect("exports")
+    .0
 }
 
 #[test]
@@ -103,7 +112,7 @@ fn notes_referencing_notes_are_walked_without_recursion() {
     let body = r#"<w:p><w:r><w:t>Body</w:t></w:r><w:r><w:footnoteReference w:id="1"/></w:r></w:p>"#;
     let bytes = package(body, &[("footnotes.xml", "footnotes", format!("<w:footnotes {W}>{notes}</w:footnotes>"))]);
     let doc = crate::docx::read(&bytes).expect("reads");
-    let tags = Tags::of(&doc, "en-US", None).expect("not cancelled");
+    let tags = Tags::of(&doc, &crate::layout::tests::view(&doc), "en-US", None).expect("not cancelled");
     let note = |n: &Node| matches!(n, Node::Element(e) if e.kind == Kind::Note);
     let notes_after_body = tags.root.iter().filter(|n| note(n)).count();
     assert_eq!(notes_after_body, n - 1, "the first note follows its reference; each next one follows the body");
@@ -211,7 +220,7 @@ fn an_inline_picture_in_turned_text_is_a_figure() {
     let text = String::from_utf8_lossy(&pdf);
     assert!(text.contains("/Alt(A turned red box)"), "the figure is tagged");
     let doc = crate::docx::read(&package(&body, &[])).expect("reads");
-    let snap = crate::layout::layout(&doc, &bundled_fonts());
+    let snap = crate::layout::tests::layout(&doc, &bundled_fonts());
     let turned = crate::layout::traverse::paint_items(&snap.pages()[0]).into_iter().any(|i| {
         matches!(&i, crate::layout::fragment::Item::Turned(t) if t.items.iter().any(|i| matches!(i, crate::layout::fragment::Item::Shape(s) if s.of != crate::layout::fragment::PictureOf::None)))
     });
@@ -225,14 +234,29 @@ fn list_numbers_languages_and_pictures_without_alt_text() {
     let fonts = bundled_fonts();
     let read = |path: &str| crate::docx::read(&std::fs::read(root().join(path)).expect("the fixture")).expect("reads");
     let doc = read("fixtures/editor/FX-A11Y-STRUCTURE.docx");
-    let (pdf, _) = super::super::export::export(&doc, &crate::layout::layout(&doc, &fonts), "", &PdfOptions::default(), None).expect("exports");
+    let (pdf, _) = super::super::export::export(
+        &doc,
+        &crate::layout::tests::view(&doc),
+        &crate::layout::tests::layout(&doc, &fonts),
+        "",
+        &PdfOptions::default(),
+        None,
+    )
+    .expect("exports");
     let text = String::from_utf8_lossy(&pdf);
     for key in ["/S/Lbl", "/ListNumbering/Decimal", "/ListNumbering/Disc", "/S/Span", "/Lang(fr-FR)", "/Lang(he-IL)"] {
         assert!(text.contains(key), "{key} is written");
     }
     let doc = read("fixtures/objects.docx");
-    let (pdf, warnings) =
-        super::super::export::export(&doc, &crate::layout::layout(&doc, &fonts), "", &PdfOptions::default(), None).expect("exports");
+    let (pdf, warnings) = super::super::export::export(
+        &doc,
+        &crate::layout::tests::view(&doc),
+        &crate::layout::tests::layout(&doc, &fonts),
+        "",
+        &PdfOptions::default(),
+        None,
+    )
+    .expect("exports");
     let missing = warnings.iter().find(|w| w.code == crate::api::warning::WarningCode::PdfFigureWithoutAlt).expect("a warning");
     let text = String::from_utf8_lossy(&pdf);
     let figures = text.matches("/S/Figure").count();
@@ -274,7 +298,15 @@ fn tracked_deletions_stay_out_of_titles_outlines_and_links() {
     let mut doc = crate::docx::read(&package(&body, &[("styles.xml", "styles", styles)])).expect("reads");
     doc.review.view = crate::docx::review::MarkupView::NoMarkup;
     let fonts = bundled_fonts();
-    let (pdf, _) = super::super::export::export(&doc, &crate::layout::layout(&doc, &fonts), "", &PdfOptions::default(), None).expect("exports");
+    let (pdf, _) = super::super::export::export(
+        &doc,
+        &crate::layout::tests::view(&doc),
+        &crate::layout::tests::layout(&doc, &fonts),
+        "",
+        &PdfOptions::default(),
+        None,
+    )
+    .expect("exports");
     for kept in ["Kept title", "Kept heading", "Kept link"] {
         assert!(holds(&pdf, kept), "{kept} is written");
     }
@@ -342,10 +374,17 @@ fn a_link_through_columns_has_an_area_per_column_line() {
 #[test]
 fn tagging_stops_when_cancelled() {
     let doc = crate::docx::read(&fixture()).expect("reads");
-    assert!(Tags::of(&doc, "en-US", Some(&std::sync::atomic::AtomicBool::new(true))).is_none());
-    let snap = crate::layout::layout(&doc, &bundled_fonts());
-    let err = super::super::export::export(&doc, &snap, "", &PdfOptions::default(), Some(&std::sync::atomic::AtomicBool::new(true)))
-        .expect_err("cancelled");
+    assert!(Tags::of(&doc, &crate::layout::tests::view(&doc), "en-US", Some(&std::sync::atomic::AtomicBool::new(true))).is_none());
+    let snap = crate::layout::tests::layout(&doc, &bundled_fonts());
+    let err = super::super::export::export(
+        &doc,
+        &crate::layout::tests::view(&doc),
+        &snap,
+        "",
+        &PdfOptions::default(),
+        Some(&std::sync::atomic::AtomicBool::new(true)),
+    )
+    .expect_err("cancelled");
     assert_eq!(err.code, crate::api::error::ErrorCode::Aborted);
 }
 
@@ -353,7 +392,7 @@ fn tagging_stops_when_cancelled() {
 #[test]
 fn an_exact_rows_cells_clip_their_content() {
     let doc = crate::docx::read(&std::fs::read(root().join("fixtures/editor/FX-ROW-CLIP.docx")).expect("the fixture")).expect("reads");
-    let snap = crate::layout::layout(&doc, &bundled_fonts());
+    let snap = crate::layout::tests::layout(&doc, &bundled_fonts());
     let mut runs = Vec::new();
     crate::layout::traverse::paint(&snap.pages()[0], &mut |p| {
         if let crate::layout::fragment::Item::Glyphs(r) = p.item {

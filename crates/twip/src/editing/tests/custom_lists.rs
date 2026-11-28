@@ -221,7 +221,7 @@ fn galleries_list_the_library_recent_and_document_lists_and_apply_them() {
 
 /// The images the first page draws.
 fn drawn_images(doc: &crate::docx::Document) -> Vec<crate::docx::ResourceId> {
-    let snap = crate::layout::layout(doc, super::fonts());
+    let snap = crate::layout::tests::layout(doc, super::fonts());
     let page = &snap.pages()[0];
     crate::layout::traverse::paint_items(page)
         .into_iter()
