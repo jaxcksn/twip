@@ -30,7 +30,7 @@ impl Counters {
     /// each `%n` the number of level n, in that level's format (in Arabic numerals under legal numbering, a leading
     /// zero kept); a bullet's text as it is.
     pub fn next(&mut self, c: &Cascade, list: ListId, ilvl: i64) -> Option<String> {
-        use crate::docx::list_xml::format_name;
+        use super::format_name;
         let a = c.abstract_of(list)?;
         let levels = c.levels(list)?;
         let ilvl = ilvl.clamp(0, 8) as usize;
@@ -72,7 +72,7 @@ impl Counters {
                 let v = vals[k].unwrap_or(1);
                 let fmt = levels[k].map_or("decimal", |l| format_name(l.format.as_ref()));
                 let fmt = if level.legal == Some(true) && fmt != "decimalZero" { "decimal" } else { fmt };
-                out.push_str(&crate::docx::numbering::format_number(v, fmt));
+                out.push_str(&crate::document::numbers::format_number(v, fmt));
                 continue;
             }
             out.push(ch);

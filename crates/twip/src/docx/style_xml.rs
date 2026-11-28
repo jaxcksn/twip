@@ -1724,15 +1724,6 @@ fn finish(sheet: &mut StyleSheet, fresh: Option<&[&str]>, xml_of: &mut dyn FnMut
 
 // Conversion to the XML path's structures
 
-/// Whether a level's paragraph or run properties hold a child, as written: what it sets, or a child the typed
-/// properties don't model.
-pub fn sets_text(f: &StyleFormat) -> bool {
-    let unmodelled = |x: Option<&ForeignProps>| x.is_some_and(|x| !x.children.is_empty() || !x.kept.is_empty());
-    let para = ParaProps { foreign: None, ..f.para.clone() } != ParaProps::default();
-    let char = CharProps { foreign: None, ..f.char.clone() } != CharProps::default();
-    para || char || unmodelled(f.para.foreign.as_deref()) || unmodelled(f.char.foreign.as_deref())
-}
-
 /// Whether `s` writes conditional regions of a type none of [`RegionKind`]'s names: they format nothing, but count as
 /// regions it has.
 pub fn other_regions(s: &Style) -> bool {
@@ -1785,7 +1776,7 @@ fn frozen_region(f: &StyleFormat, colours: &ThemeColours) -> styles::Region {
         tc,
         tr: tp::tr_props(&f.row),
         size_over_normal: None,
-        sets_text: sets_text(f),
+        sets_text: crate::format::sets_text(f),
         mark_at_style: false,
     }
 }

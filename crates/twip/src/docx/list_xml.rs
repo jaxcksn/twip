@@ -35,11 +35,12 @@ use super::styles::StyleOrigin;
 use super::write::props::{Cx, W_NS};
 use super::xml::{R, W, attr, attr_twips, child, children, int, on_off, on_off_str, val};
 use crate::document::authored::Authored;
-use crate::document::paragraph::{ListId, ListJc, ListSuffix};
+use crate::document::paragraph::{ListId, ListSuffix};
 use crate::format::{
-    CharProps, ForeignChild, ForeignProps, LegacyLabel, LevelOverride, LevelProp, List, ListDef, ListDefId, ListDefProp, ListLevel, ListProp, Lists,
-    Literal, MultiLevelType, NumberFormat, Origin, OverrideProp, ParaProps, ParaSet, PictureBullet, QName, Set,
+    CharProps, FORMATS, ForeignChild, ForeignProps, JCS, LegacyLabel, LevelOverride, LevelProp, List, ListDef, ListDefId, ListDefProp, ListLevel,
+    ListProp, Lists, Literal, MultiLevelType, Origin, OverrideProp, ParaProps, ParaSet, PictureBullet, QName, Set, literal_name,
 };
+pub use crate::format::{format_name, jc_name};
 
 /// CT_Lvl's children in schema order.
 const LEVEL: [&str; 12] = ["start", "numFmt", "lvlRestart", "pStyle", "isLgl", "suff", "lvlText", "lvlPicBulletId", "legacy", "lvlJc", "pPr", "rPr"];
@@ -60,92 +61,6 @@ const WRITTEN: [&str; 11] =
 /// The children of a `w:pPr` other nodes own where it is a paragraph's.
 const PPR_OWNED: [&str; 3] = ["rPr", "sectPr", "pPrChange"];
 
-/// ST_NumberFormat's values.
-const FORMATS: [(&str, NumberFormat); 63] = {
-    use NumberFormat::*;
-    [
-        ("decimal", Decimal),
-        ("upperRoman", UpperRoman),
-        ("lowerRoman", LowerRoman),
-        ("upperLetter", UpperLetter),
-        ("lowerLetter", LowerLetter),
-        ("ordinal", Ordinal),
-        ("cardinalText", CardinalText),
-        ("ordinalText", OrdinalText),
-        ("hex", Hex),
-        ("chicago", Chicago),
-        ("ideographDigital", IdeographDigital),
-        ("japaneseCounting", JapaneseCounting),
-        ("aiueo", Aiueo),
-        ("iroha", Iroha),
-        ("decimalFullWidth", DecimalFullWidth),
-        ("decimalHalfWidth", DecimalHalfWidth),
-        ("japaneseLegal", JapaneseLegal),
-        ("japaneseDigitalTenThousand", JapaneseDigitalTenThousand),
-        ("decimalEnclosedCircle", DecimalEnclosedCircle),
-        ("decimalFullWidth2", DecimalFullWidth2),
-        ("aiueoFullWidth", AiueoFullWidth),
-        ("irohaFullWidth", IrohaFullWidth),
-        ("decimalZero", DecimalZero),
-        ("bullet", Bullet),
-        ("ganada", Ganada),
-        ("chosung", Chosung),
-        ("decimalEnclosedFullstop", DecimalEnclosedFullstop),
-        ("decimalEnclosedParen", DecimalEnclosedParen),
-        ("decimalEnclosedCircleChinese", DecimalEnclosedCircleChinese),
-        ("ideographEnclosedCircle", IdeographEnclosedCircle),
-        ("ideographTraditional", IdeographTraditional),
-        ("ideographZodiac", IdeographZodiac),
-        ("ideographZodiacTraditional", IdeographZodiacTraditional),
-        ("taiwaneseCounting", TaiwaneseCounting),
-        ("ideographLegalTraditional", IdeographLegalTraditional),
-        ("taiwaneseCountingThousand", TaiwaneseCountingThousand),
-        ("taiwaneseDigital", TaiwaneseDigital),
-        ("chineseCounting", ChineseCounting),
-        ("chineseLegalSimplified", ChineseLegalSimplified),
-        ("chineseCountingThousand", ChineseCountingThousand),
-        ("koreanDigital", KoreanDigital),
-        ("koreanCounting", KoreanCounting),
-        ("koreanLegal", KoreanLegal),
-        ("koreanDigital2", KoreanDigital2),
-        ("vietnameseCounting", VietnameseCounting),
-        ("russianLower", RussianLower),
-        ("russianUpper", RussianUpper),
-        ("none", None),
-        ("numberInDash", NumberInDash),
-        ("hebrew1", Hebrew1),
-        ("hebrew2", Hebrew2),
-        ("arabicAlpha", ArabicAlpha),
-        ("arabicAbjad", ArabicAbjad),
-        ("hindiVowels", HindiVowels),
-        ("hindiConsonants", HindiConsonants),
-        ("hindiNumbers", HindiNumbers),
-        ("hindiCounting", HindiCounting),
-        ("thaiLetters", ThaiLetters),
-        ("thaiNumbers", ThaiNumbers),
-        ("thaiCounting", ThaiCounting),
-        ("bahtText", BahtText),
-        ("dollarText", DollarText),
-        ("custom", Custom),
-    ]
-};
-
-/// ST_Jc's values a level's label takes.
-const JCS: [(&str, ListJc); 12] = [
-    ("left", ListJc::Left),
-    ("center", ListJc::Center),
-    ("right", ListJc::Right),
-    ("start", ListJc::Start),
-    ("end", ListJc::End),
-    ("both", ListJc::Both),
-    ("mediumKashida", ListJc::MediumKashida),
-    ("distribute", ListJc::Distribute),
-    ("numTab", ListJc::NumTab),
-    ("highKashida", ListJc::HighKashida),
-    ("lowKashida", ListJc::LowKashida),
-    ("thaiDistribute", ListJc::ThaiDistribute),
-];
-
 /// ST_LevelSuffix's values.
 const SUFFIXES: [(&str, ListSuffix); 3] = [("tab", ListSuffix::Tab), ("space", ListSuffix::Space), ("nothing", ListSuffix::Nothing)];
 
@@ -161,27 +76,9 @@ fn literal<T: Copy>(v: &str, table: &[(&str, T)]) -> Literal<T> {
     table.iter().find(|(n, _)| *n == v).map_or_else(|| Literal::Other(v.into()), |(_, t)| Literal::Known(*t))
 }
 
-/// The name `l` is written as.
-fn literal_name<'a, T: Copy + PartialEq>(l: &'a Literal<T>, table: &[(&'static str, T)]) -> &'a str {
-    match l {
-        Literal::Known(v) => table.iter().find(|(_, t)| t == v).map_or("", |(n, _)| *n),
-        Literal::Other(s) => s,
-    }
-}
-
 /// A definition's `w:multiLevelType` as written.
 pub fn multi_level_name(m: Option<&Literal<MultiLevelType>>) -> Option<&str> {
     m.map(|m| literal_name(m, &MULTI))
-}
-
-/// The name a level's number format is written as; `decimal`, the reader's, when it sets none.
-pub fn format_name(f: Option<&Literal<NumberFormat>>) -> &str {
-    f.map_or("decimal", |f| literal_name(f, &FORMATS))
-}
-
-/// The name a level's label alignment is written as; `left`, the reader's, when it sets none.
-pub fn jc_name(j: Option<&Literal<ListJc>>) -> &str {
-    j.map_or("left", |j| literal_name(j, &JCS))
 }
 
 /// The name what follows a level's label is written as; `tab`, the reader's, when it sets none.
@@ -1617,6 +1514,8 @@ pub fn to_pic_bullet(p: &PictureDirect, colours: &ThemeColours, cx: &Cx) -> PicB
 pub(crate) mod tests {
     use super::super::numbering::{parse_abstract, parse_num};
     use super::*;
+    use crate::document::paragraph::ListJc;
+    use crate::format::NumberFormat;
 
     const NS: &str = r#"xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:v="urn:schemas-microsoft-com:vml""#;
 

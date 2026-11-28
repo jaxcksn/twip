@@ -37,7 +37,14 @@ fn lists_number_and_link_as_the_xml_path_does() {
     let colours = ThemeColours::default();
     let res = Resolver::new(Styles::parse(Some(&styles), colours), Numbering::parse(Some(&numbering), &colours), ThemeFonts::default());
     let sheet = StylesPart::parse(Some(&styles)).sheet;
-    let c = Cascade::new(Rc::new(sheet), Rc::new(NumberingXml::parse(Some(&numbering)).lists()), ThemeFonts::default(), colours, Rules::default());
+    let c = Cascade::new(
+        Rc::new(sheet),
+        Rc::new(NumberingXml::parse(Some(&numbering)).lists()),
+        ThemeFonts::default(),
+        colours,
+        Rules::default(),
+        super::style_xml::other_regions,
+    );
     for id in 0..7 {
         assert_eq!(c.abstract_of(ListId(id)).map(|a| a.0), res.numbering.abstract_of(id, &res.styles), "list {id}");
     }

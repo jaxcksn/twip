@@ -1244,7 +1244,7 @@ fn typed_cascade(d: &Document, dx: &Session) -> (Cascade, StylesPart, NumberingX
         cell_size_rules: res.styles.cell_size_rules,
         open_type: res.styles.open_type,
     };
-    let mut c = Cascade::new(Rc::new(sheet), Rc::new(lists), res.theme.clone(), res.styles.colours, rules);
+    let mut c = Cascade::new(Rc::new(sheet), Rc::new(lists), res.theme.clone(), res.styles.colours, rules, crate::docx::style_xml::other_regions);
     (c.categories, c.divisions) = (res.categories.clone(), res.divisions.clone());
     (c, styles, numbering)
 }
@@ -1467,7 +1467,14 @@ fn style_edits_work_the_read_order_rule_out_again_alike() {
         // Each table style based on the last one, unless that comes from it; the last on none
         for (k, id) in tables.iter().enumerate() {
             let last = tables.last().filter(|l| *l != id);
-            let c = Cascade::new(Rc::new(typed.sheet.clone()), Rc::default(), Default::default(), colours, Rules::default());
+            let c = Cascade::new(
+                Rc::new(typed.sheet.clone()),
+                Rc::default(),
+                Default::default(),
+                colours,
+                Rules::default(),
+                crate::docx::style_xml::other_regions,
+            );
             if last.is_some_and(|l| c.dependants(id).contains(l)) || k + 1 < tables.len() && last.is_none() {
                 continue;
             }
@@ -1482,7 +1489,14 @@ fn style_edits_work_the_read_order_rule_out_again_alike() {
             sets += 1;
         }
         // Each style based on one of its dependants: refused alike, nothing changed
-        let c = Cascade::new(Rc::new(typed.sheet.clone()), Rc::default(), Default::default(), colours, Rules::default());
+        let c = Cascade::new(
+            Rc::new(typed.sheet.clone()),
+            Rc::default(),
+            Default::default(),
+            colours,
+            Rules::default(),
+            crate::docx::style_xml::other_regions,
+        );
         for id in &order {
             let Some(dependant) = c.dependants(id).into_iter().find(|d| d != id) else { continue };
             let held = &typed.styles[id];

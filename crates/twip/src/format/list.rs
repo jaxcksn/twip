@@ -435,3 +435,127 @@ pub enum OverrideProp {
     /// A property of the level it defines.
     Level(LevelProp),
 }
+
+// Names
+
+/// ST_NumberFormat's values.
+pub const FORMATS: [(&str, NumberFormat); 63] = {
+    use NumberFormat::*;
+    [
+        ("decimal", Decimal),
+        ("upperRoman", UpperRoman),
+        ("lowerRoman", LowerRoman),
+        ("upperLetter", UpperLetter),
+        ("lowerLetter", LowerLetter),
+        ("ordinal", Ordinal),
+        ("cardinalText", CardinalText),
+        ("ordinalText", OrdinalText),
+        ("hex", Hex),
+        ("chicago", Chicago),
+        ("ideographDigital", IdeographDigital),
+        ("japaneseCounting", JapaneseCounting),
+        ("aiueo", Aiueo),
+        ("iroha", Iroha),
+        ("decimalFullWidth", DecimalFullWidth),
+        ("decimalHalfWidth", DecimalHalfWidth),
+        ("japaneseLegal", JapaneseLegal),
+        ("japaneseDigitalTenThousand", JapaneseDigitalTenThousand),
+        ("decimalEnclosedCircle", DecimalEnclosedCircle),
+        ("decimalFullWidth2", DecimalFullWidth2),
+        ("aiueoFullWidth", AiueoFullWidth),
+        ("irohaFullWidth", IrohaFullWidth),
+        ("decimalZero", DecimalZero),
+        ("bullet", Bullet),
+        ("ganada", Ganada),
+        ("chosung", Chosung),
+        ("decimalEnclosedFullstop", DecimalEnclosedFullstop),
+        ("decimalEnclosedParen", DecimalEnclosedParen),
+        ("decimalEnclosedCircleChinese", DecimalEnclosedCircleChinese),
+        ("ideographEnclosedCircle", IdeographEnclosedCircle),
+        ("ideographTraditional", IdeographTraditional),
+        ("ideographZodiac", IdeographZodiac),
+        ("ideographZodiacTraditional", IdeographZodiacTraditional),
+        ("taiwaneseCounting", TaiwaneseCounting),
+        ("ideographLegalTraditional", IdeographLegalTraditional),
+        ("taiwaneseCountingThousand", TaiwaneseCountingThousand),
+        ("taiwaneseDigital", TaiwaneseDigital),
+        ("chineseCounting", ChineseCounting),
+        ("chineseLegalSimplified", ChineseLegalSimplified),
+        ("chineseCountingThousand", ChineseCountingThousand),
+        ("koreanDigital", KoreanDigital),
+        ("koreanCounting", KoreanCounting),
+        ("koreanLegal", KoreanLegal),
+        ("koreanDigital2", KoreanDigital2),
+        ("vietnameseCounting", VietnameseCounting),
+        ("russianLower", RussianLower),
+        ("russianUpper", RussianUpper),
+        ("none", None),
+        ("numberInDash", NumberInDash),
+        ("hebrew1", Hebrew1),
+        ("hebrew2", Hebrew2),
+        ("arabicAlpha", ArabicAlpha),
+        ("arabicAbjad", ArabicAbjad),
+        ("hindiVowels", HindiVowels),
+        ("hindiConsonants", HindiConsonants),
+        ("hindiNumbers", HindiNumbers),
+        ("hindiCounting", HindiCounting),
+        ("thaiLetters", ThaiLetters),
+        ("thaiNumbers", ThaiNumbers),
+        ("thaiCounting", ThaiCounting),
+        ("bahtText", BahtText),
+        ("dollarText", DollarText),
+        ("custom", Custom),
+    ]
+};
+
+/// ST_Jc's values a level's label takes.
+pub const JCS: [(&str, ListJc); 12] = [
+    ("left", ListJc::Left),
+    ("center", ListJc::Center),
+    ("right", ListJc::Right),
+    ("start", ListJc::Start),
+    ("end", ListJc::End),
+    ("both", ListJc::Both),
+    ("mediumKashida", ListJc::MediumKashida),
+    ("distribute", ListJc::Distribute),
+    ("numTab", ListJc::NumTab),
+    ("highKashida", ListJc::HighKashida),
+    ("lowKashida", ListJc::LowKashida),
+    ("thaiDistribute", ListJc::ThaiDistribute),
+];
+
+/// The name `l` is written as.
+pub fn literal_name<'a, T: Copy + PartialEq>(l: &'a Literal<T>, table: &[(&'static str, T)]) -> &'a str {
+    match l {
+        Literal::Known(v) => table.iter().find(|(_, t)| t == v).map_or("", |(n, _)| *n),
+        Literal::Other(s) => s,
+    }
+}
+
+/// The name a level's number format is written as; `decimal`, the reader's, when it sets none.
+pub fn format_name(f: Option<&Literal<NumberFormat>>) -> &str {
+    f.map_or("decimal", |f| literal_name(f, &FORMATS))
+}
+
+/// The name a level's label alignment is written as; `left`, the reader's, when it sets none.
+pub fn jc_name(j: Option<&Literal<ListJc>>) -> &str {
+    j.map_or("left", |j| literal_name(j, &JCS))
+}
+
+/// A level's label alignment named `v` (an unknown one `start`, which layout treats alike).
+pub fn list_jc(v: &str) -> ListJc {
+    match v {
+        "left" => ListJc::Left,
+        "center" => ListJc::Center,
+        "right" => ListJc::Right,
+        "end" => ListJc::End,
+        "both" => ListJc::Both,
+        "mediumKashida" => ListJc::MediumKashida,
+        "distribute" => ListJc::Distribute,
+        "numTab" => ListJc::NumTab,
+        "highKashida" => ListJc::HighKashida,
+        "lowKashida" => ListJc::LowKashida,
+        "thaiDistribute" => ListJc::ThaiDistribute,
+        _ => ListJc::Start,
+    }
+}

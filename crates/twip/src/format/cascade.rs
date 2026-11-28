@@ -7,8 +7,8 @@ use std::rc::Rc;
 
 use super::resolve::{self, RunEnv};
 use super::{
-    CellMargins, CellProps, CharProps, Color, ListChoice, ListDefId, ListLevel, Lists, ParaProps, RegionKind, StyleEntry, StyleFormat, StyleKind,
-    StyleSheet, TableBorders, TableProps,
+    CellMargins, CellProps, CharProps, Color, ListChoice, ListDefId, ListLevel, Lists, ParaProps, RegionKind, Style, StyleEntry, StyleFormat,
+    StyleKind, StyleSheet, TableBorders, TableProps,
 };
 use crate::document::format::Width;
 use crate::document::paragraph::{ListId, ListJc};
@@ -99,6 +99,9 @@ pub struct Cascade {
     pub categories: Rc<HashMap<String, GenericFamily>>,
     /// The document's HTML divisions, by id.
     pub divisions: Rc<HashMap<i64, Division>>,
+    /// Whether a style has conditional regions its typed definition doesn't model: the source format's reading of
+    /// what it kept of the style.
+    other_regions: fn(&Style) -> bool,
     doc_char: CharProps,
     doc_para: ParaProps,
     derived: HashMap<Rc<str>, Derived>,
@@ -131,8 +134,16 @@ pub fn div_chain(divs: &HashMap<i64, Division>, id: Option<i64>) -> Vec<i64> {
 }
 
 impl Cascade {
-    /// The cascade of `styles` and `lists` under `theme` and `colours`, following `rules`.
-    pub fn new(styles: Rc<StyleSheet>, lists: Rc<Lists>, theme: ThemeFonts, colours: ThemeColours, rules: Rules) -> Cascade {
+    /// The cascade of `styles` and `lists` under `theme` and `colours`, following `rules`, a style's unmodelled
+    /// conditional regions as `other_regions` finds them.
+    pub fn new(
+        styles: Rc<StyleSheet>,
+        lists: Rc<Lists>,
+        theme: ThemeFonts,
+        colours: ThemeColours,
+        rules: Rules,
+        other_regions: fn(&Style) -> bool,
+    ) -> Cascade {
         let mut c = Cascade {
             styles,
             lists,
@@ -142,6 +153,7 @@ impl Cascade {
             style_links: HashMap::new(),
             categories: Rc::default(),
             divisions: Rc::default(),
+            other_regions,
             doc_char: CharProps::default(),
             doc_para: ParaProps::default(),
             derived: HashMap::new(),
@@ -155,7 +167,7 @@ impl Cascade {
         let d = self.styles.defaults.as_deref();
         self.doc_char = d.and_then(|d| d.char.clone()).unwrap_or_else(super::Defaults::word_char);
         self.doc_para = d.and_then(|d| d.para.clone()).unwrap_or_else(super::Defaults::word_para);
-        self.derived = self.styles.styles.iter().map(|(id, e)| (id.clone(), derive(e))).collect();
+        self.derived = self.styles.styles.iter().map(|(id, e)| (id.clone(), derive(e, self.other_regions))).collect();
         self.compute_style_links();
     }
 
@@ -501,9 +513,9 @@ impl Cascade {
         if let Some(l) = &level {
             // A legacy level places its number itself, in the label
             let legacy = l.legacy.is_some_and(|g| g.on == Some(true));
-            style.list_jc = if legacy { ListJc::Left } else { crate::docx::paragraph::list_jc(crate::docx::list_xml::jc_name(l.jc.as_ref())) };
+            style.list_jc = if legacy { ListJc::Left } else { super::list_jc(super::jc_name(l.jc.as_ref())) };
             style.num = list.map(|id| ListRef { list: id, level: ilvl });
-            style.list_fmt = Some(crate::docx::list_xml::format_name(l.format.as_ref()).to_string());
+            style.list_fmt = Some(super::format_name(l.format.as_ref()).to_string());
             style.list = list.and_then(|id| self.abstract_of(id)).map(|a| a.0);
         }
 
@@ -563,8 +575,8 @@ impl Cascade {
     }
 }
 
-/// What the cascade works out of style `e`.
-fn derive(e: &StyleEntry) -> Derived {
+/// What the cascade works out of style `e`, its unmodelled conditional regions as `other_regions` finds them.
+fn derive(e: &StyleEntry, other_regions: fn(&Style) -> bool) -> Derived {
     let s = &e.style;
     if s.word_default_table() {
         return Derived { format: Some(Rc::new(default_table_format())), sets: false };
@@ -578,6 +590,6 @@ fn derive(e: &StyleEntry) -> Derived {
         c.scale = c.scale.or(Some(100.0));
         Rc::new(f)
     });
-    let sets = crate::docx::style_xml::sets_text(&s.format) || !s.regions.is_empty() || crate::docx::style_xml::other_regions(s);
+    let sets = super::sets_text(&s.format) || !s.regions.is_empty() || other_regions(s);
     Derived { format, sets }
 }

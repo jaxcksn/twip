@@ -342,3 +342,12 @@ pub enum DefaultsSet {
     /// A paragraph property.
     Para(ParaSet),
 }
+
+/// Whether a level's paragraph or run properties hold a child, as written: what it sets, or a child the typed
+/// properties don't model.
+pub fn sets_text(f: &StyleFormat) -> bool {
+    let unmodelled = |x: Option<&ForeignProps>| x.is_some_and(|x| !x.children.is_empty() || !x.kept.is_empty());
+    let para = ParaProps { foreign: None, ..f.para.clone() } != ParaProps::default();
+    let char = CharProps { foreign: None, ..f.char.clone() } != CharProps::default();
+    para || char || unmodelled(f.para.foreign.as_deref()) || unmodelled(f.char.foreign.as_deref())
+}

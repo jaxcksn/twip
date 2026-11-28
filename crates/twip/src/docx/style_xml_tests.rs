@@ -517,7 +517,7 @@ fn table_styles_read_in_any_order_work_out_alike_after_edits() {
 /// every table style's base and single regions, with the cell size rules on.
 fn cascades_alike(frozen: &Styles, typed: &StylesPart, colours: &ThemeColours, what: &str) {
     let rules = Rules { cell_size_rules: frozen.cell_size_rules, ..Rules::default() };
-    let c = Cascade::new(Rc::new(typed.sheet.clone()), Rc::default(), Default::default(), *colours, rules);
+    let c = Cascade::new(Rc::new(typed.sheet.clone()), Rc::default(), Default::default(), *colours, rules, super::style_xml::other_regions);
     for id in frozen.by_id.keys() {
         let id = Some(id.as_str());
         let chain: Vec<String> = c.chain(id).iter().map(|e| e.style.id.to_string()).collect();

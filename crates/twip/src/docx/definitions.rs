@@ -78,7 +78,7 @@ pub struct TypedDefs {
 
 /// The cascade over `sheet` and `lists` with what `c` resolves with beside its definitions.
 fn cascade_like(sheet: Rc<StyleSheet>, lists: Rc<Lists>, c: &Cascade) -> Cascade {
-    let mut next = Cascade::new(sheet, lists, c.theme.clone(), c.colours, c.rules);
+    let mut next = Cascade::new(sheet, lists, c.theme.clone(), c.colours, c.rules, super::style_xml::other_regions);
     (next.categories, next.divisions) = (c.categories.clone(), c.divisions.clone());
     next
 }
@@ -126,7 +126,7 @@ impl TypedDefs {
             held = GlossaryXml::merged(&part.sheet, &g, &gn, &map);
             map
         });
-        let mut c = Cascade::new(Rc::new(part.sheet.clone()), Rc::new(lists), env.theme, env.colours, env.rules);
+        let mut c = Cascade::new(Rc::new(part.sheet.clone()), Rc::new(lists), env.theme, env.colours, env.rules, super::style_xml::other_regions);
         (c.categories, c.divisions) = (env.categories, env.divisions);
         (TypedDefs { cascade: Rc::new(c), styles: Rc::new(part), numbering: Rc::new(numbering), glossary: Rc::new(held) }, map)
     }
@@ -202,7 +202,7 @@ impl TypedDefs {
             m.entry(rename.to.to_lowercase()).or_insert(category);
             categories = Rc::new(m);
         }
-        let mut next = Cascade::new(Rc::new(part.sheet.clone()), Rc::new(lists), theme, c.colours, c.rules);
+        let mut next = Cascade::new(Rc::new(part.sheet.clone()), Rc::new(lists), theme, c.colours, c.rules, super::style_xml::other_regions);
         (next.categories, next.divisions) = (categories, c.divisions.clone());
         let defs = TypedDefs { cascade: Rc::new(next), styles: Rc::new(part), numbering: self.numbering.clone(), glossary: self.glossary.clone() };
         (defs, n)
