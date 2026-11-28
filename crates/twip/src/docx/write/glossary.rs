@@ -15,7 +15,7 @@ pub(super) fn write(doc: &Document, src: &Source, parts: &mut Vec<(String, Vec<u
     match &src.glossary {
         Some(gs) => {
             if let Some(xml) = patched(doc, src, g, gs)? {
-                parts.push((gs.part.clone(), g.map.to_glossary_xml(&xml).into_owned().into_bytes()));
+                parts.push((gs.part.clone(), super::super::glossary::to_glossary_xml(&g.map, &xml).into_owned().into_bytes()));
             }
         }
         None => {
@@ -38,7 +38,7 @@ pub(super) fn write(doc: &Document, src: &Source, parts: &mut Vec<(String, Vec<u
                 None => "glossary/document.xml".to_string(),
             };
             let name = package::free_name(&src.package, parts, &name)?;
-            package::set(parts, &name, g.map.to_glossary_xml(&xml).into_owned().into_bytes());
+            package::set(parts, &name, super::super::glossary::to_glossary_xml(&g.map, &xml).into_owned().into_bytes());
             package::add_part(&src.package, parts, &src.main, &name, GLOSSARY_TYPE, GLOSSARY_REL)?;
         }
     }

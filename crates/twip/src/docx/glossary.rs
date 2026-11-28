@@ -6,7 +6,6 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::hash::Hash;
 use std::ops::Range;
 
 use roxmltree::Node;
@@ -23,74 +22,35 @@ use crate::document::paragraph::ListId;
 use crate::format::{ListChoice, ListDefId, Lists, Origin, StyleSheet};
 use std::rc::Rc;
 
-/// Ids as the glossary's parts write them, and the ids the document's tables hold them under. Ids that are the same
-/// in both aren't stored.
-#[derive(Clone, Debug, PartialEq)]
-pub struct IdMap<K: Eq + Hash> {
-    to_view: HashMap<K, K>,
-    to_glossary: HashMap<K, K>,
+mod data;
+
+pub use data::*;
+
+/// The glossary part's XML with its body's style and list ids as `map`'s document tables hold them.
+pub fn to_view_xml<'a>(map: &GlossaryMap, xml: &'a str) -> Cow<'a, str> {
+    remap_xml(xml, |s| map.styles.view(&s.to_string()), |n| map.nums.view(&n))
 }
 
-impl<K: Eq + Hash> Default for IdMap<K> {
-    fn default() -> Self {
-        IdMap { to_view: HashMap::new(), to_glossary: HashMap::new() }
-    }
+/// Part XML written from the model, with its ids back as `map`'s glossary parts name them.
+pub fn to_glossary_xml<'a>(map: &GlossaryMap, xml: &'a str) -> Cow<'a, str> {
+    remap_xml(xml, |s| map.styles.glossary(&s.to_string()), |n| map.nums.glossary(&n))
 }
 
-impl<K: Eq + Hash + Clone> IdMap<K> {
-    fn insert(&mut self, glossary: K, view: K) {
-        if glossary != view {
-            self.to_glossary.insert(view.clone(), glossary.clone());
-            self.to_view.insert(glossary, view);
-        }
+#[cfg(test)]
+fn map_ppr(map: &GlossaryMap, p: &mut ParaProps) {
+    if let Some(s) = &mut p.style {
+        *s = map.styles.view(s);
     }
-
-    /// The document table's id for a glossary id.
-    pub fn view(&self, glossary: &K) -> K {
-        self.to_view.get(glossary).unwrap_or(glossary).clone()
-    }
-
-    /// The glossary's id for a document table id.
-    pub fn glossary(&self, view: &K) -> K {
-        self.to_glossary.get(view).unwrap_or(view).clone()
+    // numId 0 removes numbering; it names no list.
+    if let Some(n) = p.num_id.as_mut().filter(|n| **n != 0) {
+        *n = map.nums.view(n);
     }
 }
 
-/// How the glossary's style, list and list definition ids map onto the document's tables.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct GlossaryMap {
-    pub styles: IdMap<String>,
-    pub nums: IdMap<i64>,
-    pub abstracts: IdMap<i64>,
-}
-
-impl GlossaryMap {
-    /// The glossary part's XML with its body's style and list ids as the document's tables hold them.
-    pub fn to_view_xml<'a>(&self, xml: &'a str) -> Cow<'a, str> {
-        remap_xml(xml, |s| self.styles.view(&s.to_string()), |n| self.nums.view(&n))
-    }
-
-    /// Part XML written from the model, with its ids back as the glossary's parts name them.
-    pub fn to_glossary_xml<'a>(&self, xml: &'a str) -> Cow<'a, str> {
-        remap_xml(xml, |s| self.styles.glossary(&s.to_string()), |n| self.nums.glossary(&n))
-    }
-
-    #[cfg(test)]
-    fn map_ppr(&self, p: &mut ParaProps) {
-        if let Some(s) = &mut p.style {
-            *s = self.styles.view(s);
-        }
-        // numId 0 removes numbering; it names no list.
-        if let Some(n) = p.num_id.as_mut().filter(|n| **n != 0) {
-            *n = self.nums.view(n);
-        }
-    }
-
-    #[cfg(test)]
-    fn map_rpr(&self, p: &mut RunProps) {
-        if let Some(s) = &mut p.style {
-            *s = self.styles.view(s);
-        }
+#[cfg(test)]
+fn map_rpr(map: &GlossaryMap, p: &mut RunProps) {
+    if let Some(s) = &mut p.style {
+        *s = map.styles.view(s);
     }
 }
 
@@ -168,8 +128,8 @@ pub fn merge_tables(styles: &mut Styles, numbering: &mut Numbering, glossary_sty
         s.id = map.styles.view(&s.id);
         s.based_on = s.based_on.map(|b| map.styles.view(&b));
         s.next = s.next.map(|n| map.styles.view(&n));
-        map.map_ppr(&mut s.base.ppr);
-        map.map_rpr(&mut s.base.rpr);
+        map_ppr(&map, &mut s.base.ppr);
+        map_rpr(&map, &mut s.base.rpr);
         s.origin = StyleOrigin::Glossary;
         if s.kind == StyleKind::Paragraph {
             styles.paragraph_order.push(s.id.clone());

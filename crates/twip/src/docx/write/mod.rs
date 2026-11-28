@@ -6282,7 +6282,7 @@ fn object_xml(w: &str, i: &Inline) -> Option<String> {
             let dirty = if *dirty { format!(" {w}dirty=\"1\"") } else { String::new() };
             let ff = form.as_ref().map(|f| match f.src() {
                 Some(s) if f.data == s.read => s.xml.to_string(),
-                _ => f.data.xml(w),
+                _ => super::forms::xml(&f.data, w),
             });
             Some(match ff {
                 Some(ff) => format!("<{w}fldChar {w}fldCharType=\"begin\"{lock}{dirty}>{ff}</{w}fldChar>"),

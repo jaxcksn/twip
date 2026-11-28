@@ -697,7 +697,7 @@ fn read_package(bytes: &[u8], pkg: &mut Package, editable: bool, now: i64, depth
     if let (Some(path), Some(map)) = (&glossary_part, glossary_map) {
         // The bodies are read from the part with their style and list ids as the document's tables hold them, and
         // saving maps them back: the model has one set of ids.
-        let xml = pkg.read_str(path).map(|x| map.to_view_xml(&x).into_owned());
+        let xml = pkg.read_str(path).map(|x| super::glossary::to_view_xml(&map, &x).into_owned());
         match xml.as_deref().map(roxmltree::Document::parse) {
             Some(Ok(dom)) => {
                 r.enter_part(path, &mut *pkg);
@@ -2637,7 +2637,7 @@ impl Reader {
                         });
                         let (lock, dirty) = (flag("fldLock"), flag("dirty"));
                         let form = child(c, "ffData").filter(|_| self.record).map(|f| {
-                            let data = super::forms::FormData::parse(f);
+                            let data = super::forms::parse(f);
                             Rc::new(FormField::read(raw(f), data))
                         });
                         out.push(Inline::FieldBegin {
