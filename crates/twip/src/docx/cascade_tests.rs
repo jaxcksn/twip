@@ -2,6 +2,7 @@
 
 use std::rc::Rc;
 
+use super::definitions::{ListHolders, StyleHolders};
 use super::list_xml::NumberingXml;
 use super::numbering::Numbering;
 use super::props::ThemeColours;
@@ -36,10 +37,10 @@ fn lists_number_and_link_as_the_xml_path_does() {
     );
     let colours = ThemeColours::default();
     let res = Resolver::new(Styles::parse(Some(&styles), colours), Numbering::parse(Some(&numbering), &colours), ThemeFonts::default());
-    let sheet = StylesPart::parse(Some(&styles)).sheet;
+    let sheet = StyleHolders::parse(Some(&styles)).sheet;
     let c = Cascade::new(
         Rc::new(sheet),
-        Rc::new(NumberingXml::parse(Some(&numbering)).lists()),
+        Rc::new(ListHolders::parse(Some(&numbering)).lists()),
         ThemeFonts::default(),
         colours,
         Rules::default(),

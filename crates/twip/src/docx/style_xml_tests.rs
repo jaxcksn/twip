@@ -4,6 +4,7 @@
 use std::rc::Rc;
 
 use super::char_props::tests::lost;
+use super::definitions::StyleHolders;
 use super::props::ThemeColours;
 use super::style_xml::{self as sx, DefaultsDef, LatentDef, StyleDef, StylesPart};
 use super::styles::{self, Styles};
@@ -28,9 +29,9 @@ fn style(x: &str) -> crate::format::Style {
 }
 
 /// The XML path's and the typed reader's readings of `xml`, every style converted and compared.
-fn both(xml: &str, colours: &ThemeColours) -> (Styles, StylesPart) {
+fn both(xml: &str, colours: &ThemeColours) -> (Styles, StyleHolders) {
     let frozen = Styles::parse(Some(xml), *colours);
-    let typed = StylesPart::parse(Some(xml));
+    let typed = StyleHolders::parse(Some(xml));
     sheet_matches(&frozen, &typed, colours, "inline");
     (frozen, typed)
 }
@@ -158,7 +159,7 @@ fn style_matches(a: &styles::Style, b: &styles::Style, what: &str) {
 }
 
 /// `typed`, a styles part read by the typed reader, converts to what the XML path's reader holds of the same part.
-pub(crate) fn sheet_matches(frozen: &Styles, typed: &StylesPart, colours: &ThemeColours, what: &str) -> SheetCounts {
+pub(crate) fn sheet_matches(frozen: &Styles, typed: &StyleHolders, colours: &ThemeColours, what: &str) -> SheetCounts {
     let sheet = &typed.sheet;
     let cx = typed.cx();
     let mut ids: Vec<&String> = frozen.by_id.keys().collect();
@@ -198,7 +199,7 @@ pub(crate) fn sheet_matches(frozen: &Styles, typed: &StylesPart, colours: &Theme
     let latent_raw = typed.latent.as_ref().map(|d| d.xml(colours, &cx));
     assert_eq!(sx::frozen_latent(sheet.latent.as_deref(), latent_raw.as_deref()), frozen.latent, "{what}: latent styles");
     n.exceptions += frozen.latent.exceptions.len();
-    assert_eq!(&*typed.root, frozen.root, "{what}: root");
+    assert_eq!(typed.root(), frozen.root, "{what}: root");
     n
 }
 
@@ -374,9 +375,9 @@ fn defaults_and_latent_styles_read_as_the_reader_reads_them() {
 #[test]
 fn no_part_reads_as_words_defaults() {
     let colours = ThemeColours::default();
-    sheet_matches(&Styles::parse(None, colours), &StylesPart::parse(None), &colours, "none");
+    sheet_matches(&Styles::parse(None, colours), &StyleHolders::parse(None), &colours, "none");
     let broken = "<w:styles";
-    sheet_matches(&Styles::parse(Some(broken), colours), &StylesPart::parse(Some(broken)), &colours, "broken");
+    sheet_matches(&Styles::parse(Some(broken), colours), &StyleHolders::parse(Some(broken)), &colours, "broken");
 }
 
 // Holders
@@ -515,7 +516,7 @@ fn table_styles_read_in_any_order_work_out_alike_after_edits() {
 
 /// The typed cascade of `typed` gives what the XML path's styles `frozen` give for every style's chain and folds, and
 /// every table style's base and single regions, with the cell size rules on.
-fn cascades_alike(frozen: &Styles, typed: &StylesPart, colours: &ThemeColours, what: &str) {
+fn cascades_alike(frozen: &Styles, typed: &StyleHolders, colours: &ThemeColours, what: &str) {
     let rules = Rules { cell_size_rules: frozen.cell_size_rules, ..Rules::default() };
     let c = Cascade::new(Rc::new(typed.sheet.clone()), Rc::default(), Default::default(), *colours, rules, super::style_xml::other_regions);
     for id in frozen.by_id.keys() {
@@ -536,7 +537,7 @@ fn cascades_alike(frozen: &Styles, typed: &StylesPart, colours: &ThemeColours, w
 
 /// What `p` writes and holds: each style's element as it writes it and its place in the sheet, in order, the paragraph
 /// styles' order, the default styles, the defaults and latent styles as written.
-pub(crate) fn written(p: &StylesPart, colours: &ThemeColours) -> String {
+pub(crate) fn written(p: &StyleHolders, colours: &ThemeColours) -> String {
     let cx = p.cx();
     let mut out = String::new();
     for e in p.sheet.in_order() {
@@ -607,7 +608,7 @@ fn a_chain_past_32_bases_is_refused() {
 fn a_refused_set_leaves_the_part_as_it_was() {
     let colours = ThemeColours::default();
     let styles = para("A", None) + &para("B", Some("A"));
-    let typed = StylesPart::parse(Some(&part(&styles)));
+    let typed = StyleHolders::parse(Some(&part(&styles)));
     let mut t = typed.clone();
     assert!(t.set(StyleDef::from_xml(&para("A", Some("B")), &t.cx()), &colours).is_err());
     assert_eq!(written(&t, &colours), written(&typed, &colours));

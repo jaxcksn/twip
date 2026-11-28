@@ -1,5 +1,6 @@
 //! Lists
 
+use crate::docx::list_xml::NumberingXml;
 use std::collections::HashSet;
 use std::ops::ControlFlow;
 use std::rc::Rc;

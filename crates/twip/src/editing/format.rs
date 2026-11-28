@@ -2,6 +2,7 @@
 
 use crate::docx::origin::ParagraphOrigin;
 use crate::docx::origin::RubyOrigin;
+use crate::docx::style_xml::StylesPart;
 use std::collections::HashMap;
 use std::rc::Rc;
 

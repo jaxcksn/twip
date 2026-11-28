@@ -3,6 +3,9 @@
 //! saved, read back and compared with the original. A report of what generation loses
 //! today, not a gate: `TWIP_STRIPPED_OUT=file` writes it
 
+use crate::docx::definitions::DefinitionsXml;
+use crate::docx::list_xml::NumberingXml;
+use crate::docx::style_xml::StylesPart;
 use std::fmt::Write;
 
 use super::super::Editor;
@@ -15,7 +18,7 @@ fn stripped(d: &crate::docx::Document) -> crate::docx::Document {
     let mut d = d.clone();
     d.definitions = d.definitions.map(|r| {
         let t = r.typed();
-        std::rc::Rc::new(r.unanchored(t.styles.root.clone(), t.numbering.root.clone()))
+        std::rc::Rc::new(r.unanchored(t.styles.root().into(), t.numbering.root().to_string()))
     });
     for s in &mut d.sections {
         s.blocks = s.blocks.iter().map(crate::docx::Block::fresh_identity).collect();

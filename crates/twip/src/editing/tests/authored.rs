@@ -2,6 +2,10 @@
 //! layout reuse after an edit that changes no effective value, and explicit formatting equal to the inherited value
 //! through later edits
 
+use crate::docx::definitions::DefinitionsXml;
+use crate::docx::definitions::TypedDefsXml;
+use crate::docx::list_xml::NumberingXml;
+use crate::docx::style_xml::StylesPart;
 use std::io::{Read, Write};
 use std::rc::Rc;
 
@@ -74,7 +78,7 @@ fn paragraph(defs: &crate::docx::definitions::Definitions, ppr: &ParaProps, runs
     let t = defs.typed();
     let (cx, colours) = (t.styles.cx(), defs.colours());
     let root =
-        if t.styles.root.is_empty() { format!("<w:styles xmlns:w=\"{}\">", crate::docx::write::props::W_NS) } else { t.styles.root.to_string() };
+        if t.styles.root().is_empty() { format!("<w:styles xmlns:w=\"{}\">", crate::docx::write::props::W_NS) } else { t.styles.root().to_string() };
     let mut xml = root;
     xml.extend(t.styles.defaults.iter().map(|d| d.xml(&colours, &cx).into_owned()));
     xml.extend(t.styles.styles.values().map(|d| d.xml(&colours, &cx).into_owned()));

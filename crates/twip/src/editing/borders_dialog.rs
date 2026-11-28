@@ -5,6 +5,7 @@ use super::Editor;
 use crate::api::command::{Border, BorderStyle, ShadingPattern, ShadingTarget};
 use crate::api::services::{BorderSetting, BordersShadingDialog, BordersTab};
 use crate::api::value::{AutoOr, Color, NoneOr, Points};
+use crate::docx::definitions::DefinitionsXml;
 
 /// An edge's line, or none.
 pub(super) fn line(b: &Option<crate::docx::props::Border>) -> Option<Border> {

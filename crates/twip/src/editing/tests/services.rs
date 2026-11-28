@@ -1,5 +1,6 @@
 //! Host services on the document as it reads: find, spelling, word count, headings, dialogs and accessibility
 
+use crate::docx::definitions::DefinitionsXml;
 use std::io::{Read, Write};
 
 use super::fonts;

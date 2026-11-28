@@ -1,5 +1,6 @@
 //! Paste options, Paste Special, and pictures to and from the clipboard
 
+use crate::docx::definitions::TypedDefsXml;
 use std::collections::HashMap;
 use std::rc::Rc;
 

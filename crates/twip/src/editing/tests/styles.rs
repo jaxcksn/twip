@@ -3,6 +3,7 @@
 use super::super::Editor;
 use super::super::commands::Command;
 use super::{fonts, open, texts, texts_ids};
+use crate::docx::definitions::DefinitionsXml;
 use crate::docx::{Block, Inline};
 
 fn fixture() -> Editor {

@@ -7,6 +7,7 @@ use super::fonts;
 use crate::api::command::{ShadingChange, ShadingPattern, ShadingTarget};
 use crate::api::services::BordersTab;
 use crate::api::value::{AutoOr, Color, NoneOr, Points};
+use crate::docx::definitions::DefinitionsXml;
 use crate::layout::Unit;
 
 /// A 2 x 2 table in `Striped` (red stripes over yellow in its cells) with red double 2 pt borders of its own, then a

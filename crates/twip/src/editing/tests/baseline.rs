@@ -19,6 +19,7 @@ use crate::api::drawing::{ColourTransform, ColourValue, ThemeColour, TransformKi
 use crate::api::styles::{StyleChange, StyleModification};
 use crate::api::value::{Alignment, AutoOr, Bytes, Direction, HighlightColor, Points, StyleId, UnderlineStyle};
 use crate::document::paragraph::ListId;
+use crate::docx::definitions::{ListHolders, StyleHolders};
 use crate::docx::list_xml::NumberingXml;
 use crate::docx::props::{ParaProps, RunProps, ThemeColours};
 use crate::docx::style_xml::StylesPart;
@@ -1164,7 +1165,7 @@ fn style_definitions_round_trip_through_the_typed_writer() {
     let mut n = style_xml_tests::Counts::default();
     for (what, xml, colours) in styles_parts() {
         let doc = roxmltree::Document::parse(&xml).unwrap_or_else(|e| panic!("{what}: {e}"));
-        let cx = StylesPart::parse(Some(&xml)).cx();
+        let cx = StyleHolders::parse(Some(&xml)).cx();
         for el in doc.root_element().children().filter(|c| c.is_element()) {
             let style = is_w(el, "style") && attr(el, "styleId").is_some();
             if style || is_w(el, "docDefaults") || is_w(el, "latentStyles") {
@@ -1185,7 +1186,7 @@ fn typed_style_sheets_convert_to_what_reading_resolved() {
     let (mut n, mut parts) = (style_xml_tests::SheetCounts::default(), 0);
     for (what, xml, colours) in styles_parts() {
         let frozen = Styles::parse(Some(&xml), colours);
-        let k = style_xml_tests::sheet_matches(&frozen, &StylesPart::parse(Some(&xml)), &colours, &what);
+        let k = style_xml_tests::sheet_matches(&frozen, &StyleHolders::parse(Some(&xml)), &colours, &what);
         parts += 1;
         n.styles += k.styles;
         n.table_styles += k.table_styles;
@@ -1221,18 +1222,18 @@ fn bold_on_a_run_under_a_locally_bound_prefix_keeps_its_underline() {
 /// Fixture `d`'s typed definitions, read from its package's parts apart from the reader: the styles and numbering
 /// parts and the glossary's, merged as the reader merges them; picture bullets' images, the theme, the settings'
 /// rules, the font categories and the divisions as the reader's resolver holds them.
-fn typed_cascade(d: &Document, dx: &Session) -> (Cascade, StylesPart, NumberingXml) {
+fn typed_cascade(d: &Document, dx: &Session) -> (Cascade, StyleHolders, ListHolders) {
     let b = Baseline::as_read(d, dx);
     let res = &b;
     let src = dx.source.as_ref().expect("a source");
     let pkg = &src.package;
     let read = |name: Option<String>| name.and_then(|n| crate::docx::package::read(pkg, &[], &n).ok().flatten());
-    let styles = StylesPart::parse(read(related(pkg, &src.main, "styles")).as_deref());
-    let numbering = NumberingXml::parse(read(related(pkg, &src.main, "numbering")).as_deref());
+    let styles = StyleHolders::parse(read(related(pkg, &src.main, "styles")).as_deref());
+    let numbering = ListHolders::parse(read(related(pkg, &src.main, "numbering")).as_deref());
     let (mut sheet, mut lists) = (styles.sheet.clone(), numbering.lists());
     if let Some(g) = related(pkg, &src.main, "glossaryDocument") {
-        let gstyles = StylesPart::parse(read(related(pkg, &g, "styles")).as_deref());
-        let glists = NumberingXml::parse(read(related(pkg, &g, "numbering")).as_deref()).lists();
+        let gstyles = StyleHolders::parse(read(related(pkg, &g, "styles")).as_deref());
+        let glists = ListHolders::parse(read(related(pkg, &g, "numbering")).as_deref()).lists();
         crate::docx::glossary::merge_definitions(&mut sheet, &mut lists, &gstyles.sheet, &glists);
     }
     for (id, p) in lists.pictures.iter_mut() {
@@ -1266,7 +1267,7 @@ struct CascadeCounts {
 
 /// The definitions: every style's chain and its folds, its dependants, every table style's base and single regions
 /// and what it defines, every list's definition and levels, the style links.
-fn definitions_match(res: &Baseline, c: &Cascade, numbering: &NumberingXml, as_read: bool, what: &str, n: &mut CascadeCounts) {
+fn definitions_match(res: &Baseline, c: &Cascade, numbering: &ListHolders, as_read: bool, what: &str, n: &mut CascadeCounts) {
     let colours = &res.styles.colours;
     let mut ids: Vec<&String> = res.styles.by_id.keys().collect();
     ids.sort();
@@ -1460,7 +1461,7 @@ fn style_edits_work_the_read_order_rule_out_again_alike() {
     let (mut sets, mut deletes, mut loops) = (0, 0, 0);
     for (what, xml, colours) in styles_parts() {
         let mut frozen = Styles::parse(Some(&xml), colours);
-        let mut typed = StylesPart::parse(Some(&xml));
+        let mut typed = StyleHolders::parse(Some(&xml));
         let cx = typed.cx();
         let order: Vec<Rc<str>> = typed.sheet.in_order().iter().map(|e| e.style.id.clone()).collect();
         let tables: Vec<Rc<str>> = order.iter().filter(|id| typed.sheet.styles[*id].style.kind == StyleKind::Table).cloned().collect();

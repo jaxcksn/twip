@@ -2,6 +2,9 @@
 //! and latent styles, with representative inputs, the element the typed route writes is the one patching the XML
 //! wrote, byte for byte, or one that reads as the same definition. Each difference is listed with `--no-capture`.
 
+use crate::docx::definitions::DefinitionsXml;
+use crate::docx::definitions::TypedDefsXml;
+use crate::docx::style_xml::StylesPart;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 

@@ -1,5 +1,6 @@
 //! The numbering part
 
+use crate::docx::list_xml::NumberingXml;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use super::super::Session;
@@ -34,7 +35,7 @@ pub(super) fn numbering(doc: &Document, session: &Session, parts: &mut Vec<(Stri
             return Ok(());
         }
         // A document without a numbering part: one, with every list.
-        let root = if n.root.is_empty() { format!("<w:numbering xmlns:w=\"{}\">", super::props::W_NS) } else { n.root.clone() };
+        let root = if n.root().is_empty() { format!("<w:numbering xmlns:w=\"{}\">", super::props::W_NS) } else { n.root().to_string() };
         let close = format!("</{}numbering>", cx.w);
         let body: String = pics.values().chain(abstracts.values()).chain(nums.values()).map(String::as_str).collect();
         let xml = format!("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n{root}{body}{close}");

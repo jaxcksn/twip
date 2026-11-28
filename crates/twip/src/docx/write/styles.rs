@@ -1,5 +1,6 @@
 //! The styles part
 
+use crate::docx::style_xml::StylesPart;
 use std::collections::HashMap;
 
 use super::super::Session;
@@ -42,7 +43,7 @@ pub(super) fn styles(doc: &Document, session: &Session, parts: &mut Vec<(String,
         // A document without a styles part: one, with every style and the defaults and latent styles set.
         let mut sorted: Vec<(&&str, &String)> = written.iter().collect();
         sorted.sort_by(|a, b| a.0.cmp(b.0));
-        let root = if part.root.is_empty() { format!("<w:styles xmlns:w=\"{}\">", super::props::W_NS) } else { part.root.to_string() };
+        let root = if part.root().is_empty() { format!("<w:styles xmlns:w=\"{}\">", super::props::W_NS) } else { part.root().to_string() };
         let close = format!("</{}styles>", cx.w);
         let body: String = defaults_raw.iter().chain(latent_raw.iter()).cloned().chain(sorted.iter().map(|s| s.1.clone())).collect();
         let xml = format!("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n{root}{body}{close}");

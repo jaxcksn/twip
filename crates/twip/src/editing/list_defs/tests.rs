@@ -1,6 +1,9 @@
 //! The typed list edits against the XML patches they replaced: over every fixture's numbering and styles parts and
 //! representative edits, each element a typed edit's holder writes is the one the patch wrote.
 
+use crate::docx::definitions::DefinitionsXml;
+use crate::docx::list_xml::NumberingXml;
+use crate::docx::style_xml::StylesPart;
 use std::rc::Rc;
 
 use crate::api::command::{FollowNumber, LevelAlignment, ListLevel, NumberFormat};

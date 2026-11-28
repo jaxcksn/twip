@@ -160,6 +160,13 @@ impl Cascade {
         c
     }
 
+    /// The cascade over `styles` and `lists` with what this one resolves with beside its definitions.
+    pub fn over(&self, styles: Rc<StyleSheet>, lists: Rc<Lists>) -> Cascade {
+        let mut next = Cascade::new(styles, lists, self.theme.clone(), self.colours, self.rules, self.other_regions);
+        (next.categories, next.divisions) = (self.categories.clone(), self.divisions.clone());
+        next
+    }
+
     /// Works again what depends on the styles and lists: the defaults, each style's levels, the style links.
     pub fn styles_changed(&mut self) {
         let d = self.styles.defaults.as_deref();

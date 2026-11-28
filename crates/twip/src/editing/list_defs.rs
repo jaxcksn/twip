@@ -2,6 +2,8 @@
 //! them, set numbering values, and adjust indents. Each edits the typed definitions, which the numbering part's
 //! holders write over the elements they were read from.
 
+use crate::docx::definitions::DefinitionsXml;
+use crate::docx::list_xml::NumberingXml;
 use std::rc::Rc;
 
 use crate::api::command::{

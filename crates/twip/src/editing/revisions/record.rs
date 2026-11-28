@@ -1124,6 +1124,7 @@ fn note(doc: &Document, kind: NoteKind, id: i64) -> Option<&Vec<Block>> {
 #[cfg(test)]
 mod tests {
     use crate::api::value::{Alignment, ObjectWrap};
+    use crate::docx::definitions::DefinitionsXml;
     use crate::docx::{Block, Inline, Paragraph, Table, VMerge};
     use crate::editing::Editor;
     use crate::editing::commands::{Command, Dir, Outcome};

@@ -5,6 +5,7 @@ use crate::docx::char_props::RunDirect;
 use crate::docx::char_props::RunXml;
 use crate::docx::definitions::Definitions;
 use crate::docx::list_xml::ListXml;
+use crate::docx::list_xml::NumberingXml;
 use crate::docx::list_xml::{ListDefDirect, ListDirect};
 use crate::docx::write::props::Cx;
 use crate::docx::{Run, RunStyle};

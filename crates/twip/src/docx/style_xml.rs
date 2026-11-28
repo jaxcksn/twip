@@ -28,6 +28,7 @@ use roxmltree::Node;
 
 use super::as_read;
 use super::char_props::{self, RprRevisions};
+use super::definitions::StyleHolders;
 use super::para_props::{self, Owned};
 use super::prop_xml::{Compare, Out, Sink, foreign_child, props_key, reread, strip, with_attr};
 use super::props::ThemeColours;
@@ -38,6 +39,7 @@ use super::styles;
 use super::table_props::{self as tp, CellDirect, RowDirect, TableDirect};
 use super::write::props::{Cx, STYLE};
 use super::xml::{W, attr, child, children, is_w, on_off, on_off_str, val};
+use crate::document::origin::Origin;
 use crate::docx::table_props::TableXml;
 use crate::format::{
     CellSet, CharProps, Defaults, DefaultsSet, DefinedIn, ForeignChild, ForeignProps, LatentStyle, LatentStyles, ParaProps, ParaSet, QName, Region,
@@ -1442,16 +1444,7 @@ impl Expansions {
     }
 }
 
-/// Why a style edit is refused.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum StyleEditError {
-    /// The XML isn't one `w:style` element with a `w:styleId`.
-    Malformed,
-    /// It would be based on itself, through its chain.
-    Loop,
-    /// No such style.
-    Missing,
-}
+pub use super::definitions::StyleEditError;
 
 #[cfg(test)]
 impl From<styles::StyleEditError> for StyleEditError {
@@ -1464,32 +1457,54 @@ impl From<styles::StyleEditError> for StyleEditError {
     }
 }
 
-/// A styles part read: its definitions, each style's, the defaults' and the latent styles' holders, and its root start
-/// tag.
-#[derive(Clone, Debug, Default)]
-pub struct StylesPart {
-    /// The definitions.
-    pub sheet: StyleSheet,
-    /// Each style's holder, by id: the one the sheet holds.
-    pub styles: HashMap<Rc<str>, StyleDef>,
-    /// The defaults' holder.
-    pub defaults: Option<DefaultsDef>,
-    /// The latent styles' holder.
-    pub latent: Option<LatentDef>,
-    /// The part's root start tag, whose namespace declarations its definitions are read and written under.
-    pub root: Rc<str>,
-}
-
-impl StylesPart {
+/// What the WordprocessingML adapter adds to a document's styles: reading them from a styles part, and working out
+/// again what depends on them together over the elements they are written as.
+pub trait StylesPart: Sized {
     /// The styles part `xml`, read as the reader reads it: a style without an id skipped, of a repeated id the last
     /// (at its place), of the defaults and latent styles the first; none for no part or one that doesn't parse.
-    pub fn parse(xml: Option<&str>) -> StylesPart {
-        let mut part = StylesPart::default();
+    fn parse(xml: Option<&str>) -> Self;
+
+    /// The part's root start tag, whose namespace declarations its definitions are read and written under: empty for
+    /// none.
+    fn root(&self) -> &str;
+
+    /// `self` read from a part whose root start tag is `root`.
+    fn with_root(self, root: Rc<str>) -> Self;
+
+    /// The prefix and declarations its definitions are written with.
+    fn cx(&self) -> Cx;
+
+    /// What depends on the styles together worked out again, as Word reads the part again after an edit: over each
+    /// style's XML as it writes it now, `fresh` (the styles an edit has just set) read as written and the others as
+    /// the last working out left them (Word's built-in default table style without a base); with no `fresh`, as on
+    /// first reading.
+    fn refinish(&mut self, colours: &ThemeColours, fresh: Option<&[&str]>);
+
+    /// `def` in place of the style with its id (at its place in the part, from its part), or added after the styles
+    /// read; then what depends on the styles together worked out again. Refused, changing nothing, when it would be
+    /// based on itself through the styles as they are ([`StyleHolders::loops`]).
+    fn set(&mut self, def: StyleDef, colours: &ThemeColours) -> Result<(), StyleEditError>;
+
+    /// The style `raw` (one `w:style` alone) holds, as [`Self::set`] would take it: `None` when it isn't one, or
+    /// would be based on itself.
+    fn style_from_xml(&self, raw: &str) -> Option<Style>;
+
+    /// Removes style `id`: the styles based on it take its base, and references to it from a next style or a link
+    /// go; then what depends on the styles together is worked out again. False when there is no such style.
+    fn delete(&mut self, id: &str, colours: &ThemeColours) -> bool;
+}
+
+/// The root start tag of a styles part, in its holders' origin.
+struct StylesRoot(Rc<str>);
+
+impl StylesPart for StyleHolders {
+    fn parse(xml: Option<&str>) -> StyleHolders {
+        let mut part = StyleHolders::default();
         let Some(text) = xml else { return part };
         let Ok(doc) = roxmltree::Document::parse(text) else { return part };
         let root = doc.root_element();
         let open = &text[root.range().start..];
-        part.root = open[..super::binding::tag_end(open).map_or(0, |e| e + 1)].into();
+        part = part.with_root(open[..super::binding::tag_end(open).map_or(0, |e| e + 1)].into());
         if let Some(n) = child(root, "latentStyles") {
             let l = LatentDef::read(parse_latent(n), text[n.range()].into());
             part.sheet.latent = Some(l.get().clone());
@@ -1522,21 +1537,22 @@ impl StylesPart {
         part
     }
 
-    /// The prefix and declarations its definitions are written with.
-    pub fn cx(&self) -> Cx {
-        if self.root.is_empty() {
+    fn root(&self) -> &str {
+        self.origin.get::<StylesRoot>().map_or("", |r| &r.0)
+    }
+
+    fn with_root(self, root: Rc<str>) -> StyleHolders {
+        StyleHolders { origin: Origin::new(StylesRoot(root)), ..self }
+    }
+
+    fn cx(&self) -> Cx {
+        if self.root().is_empty() {
             return Cx::of_xml(&format!("<w:styles xmlns:w=\"{}\">", super::write::props::W_NS));
         }
-        Cx::of_xml(&self.root)
+        Cx::of_xml(self.root())
     }
-}
 
-impl StylesPart {
-    /// What depends on the styles together worked out again, as Word reads the part again after an edit: over each
-    /// style's XML as it writes it now, `fresh` (the styles an edit has just set) read as written and the others as
-    /// the last working out left them (Word's built-in default table style without a base); with no `fresh`, as on
-    /// first reading.
-    pub fn refinish(&mut self, colours: &ThemeColours, fresh: Option<&[&str]>) {
+    fn refinish(&mut self, colours: &ThemeColours, fresh: Option<&[&str]>) {
         let cx = self.cx();
         let styles = &self.styles;
         finish(&mut self.sheet, fresh, &mut |id, f| {
@@ -1546,53 +1562,23 @@ impl StylesPart {
         });
     }
 
-    /// `def` in place of the style with its id (at its place in the part, from its part), or added after the styles
-    /// read; then what depends on the styles together worked out again. Refused, changing nothing, when it would be
-    /// based on itself through the styles as they are ([`Self::loops`]).
-    pub fn set(&mut self, def: StyleDef, colours: &ThemeColours) -> Result<(), StyleEditError> {
+    fn set(&mut self, def: StyleDef, colours: &ThemeColours) -> Result<(), StyleEditError> {
         if self.loops(def.get()) {
             return Err(StyleEditError::Loop);
         }
         let id = def.get().id.clone();
-        self.put(def);
+        put(self, def);
         self.refinish(colours, Some(&[&id]));
         Ok(())
     }
 
-    /// The style `raw` (one `w:style` alone) holds, as [`Self::set`] would take it: `None` when it isn't one, or
-    /// would be based on itself.
-    pub fn style_from_xml(&self, raw: &str) -> Option<Style> {
+    fn style_from_xml(&self, raw: &str) -> Option<Style> {
         let cx = self.cx();
         let s = cx.parse(raw, |_, el| (alone(el) && is_w(el, "style")).then(|| parse(el)).flatten()).flatten()?;
         (!self.loops(&s)).then_some(s)
     }
 
-    /// Whether `s` would be based on itself: its bases through the sheet's styles (Word's built-in default table
-    /// style without one, as the last working out left it) reach its id, or go past 32 of them.
-    pub fn loops(&self, s: &Style) -> bool {
-        let mut base = s.based_on.as_deref();
-        let mut hops = 0;
-        while let Some(b) = base {
-            if b == &*s.id || hops > 32 {
-                return true;
-            }
-            base = self.sheet.styles.get(b).and_then(|e| e.style.based_on.as_deref().filter(|_| !e.style.word_default_table()));
-            hops += 1;
-        }
-        false
-    }
-
-    fn put(&mut self, def: StyleDef) {
-        let id = def.get().id.clone();
-        let (order, origin) = self.sheet.styles.get(&id).map_or((None, DefinedIn::Document), |e| (e.order, e.origin));
-        let entry = StyleEntry { style: def.get().clone(), order, origin, frozen: false, word_run_defaults: false };
-        self.sheet.styles.insert(id.clone(), entry);
-        self.styles.insert(id, def);
-    }
-
-    /// Removes style `id`: the styles based on it take its base, and references to it from a next style or a link
-    /// go; then what depends on the styles together is worked out again. False when there is no such style.
-    pub fn delete(&mut self, id: &str, colours: &ThemeColours) -> bool {
+    fn delete(&mut self, id: &str, colours: &ThemeColours) -> bool {
         let Some(gone) = self.sheet.styles.get(id) else { return false };
         // The base as the last working out left it
         let base = gone.style.based_on.clone().filter(|_| !gone.style.word_default_table());
@@ -1625,7 +1611,7 @@ impl StylesPart {
             match self.styles.get(r) {
                 Some(d) => {
                     let d = d.edited(s, &set);
-                    self.put(d);
+                    put(self, d);
                 }
                 None => {
                     if let Some(e) = self.sheet.styles.get_mut(r) {
@@ -1640,6 +1626,15 @@ impl StylesPart {
         self.refinish(colours, Some(&fresh));
         true
     }
+}
+
+/// `def` in place of the style with its id, at its place in the part and from its part, or added.
+fn put(part: &mut StyleHolders, def: StyleDef) {
+    let id = def.get().id.clone();
+    let (order, origin) = part.sheet.styles.get(&id).map_or((None, DefinedIn::Document), |e| (e.order, e.origin));
+    let entry = StyleEntry { style: def.get().clone(), order, origin, frozen: false, word_run_defaults: false };
+    part.sheet.styles.insert(id.clone(), entry);
+    part.styles.insert(id, def);
 }
 
 /// What depends on the styles together, worked out as reading the part in order does: the table styles' read-order

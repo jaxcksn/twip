@@ -1,5 +1,7 @@
 //! Styles: reading their flags, and editing the styles table
 
+use crate::docx::definitions::DefinitionsXml;
+use crate::docx::definitions::TypedDefsXml;
 use std::path::Path;
 
 use super::styles::{StyleEditError, StyleKind, Styles};

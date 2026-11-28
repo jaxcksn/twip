@@ -1,5 +1,7 @@
 //! Sub-templates
 
+use crate::docx::definitions::TypedDefsXml;
+use crate::docx::list_xml::NumberingXml;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
@@ -1204,6 +1206,7 @@ pub fn rules(field_type: &str, category: &str) -> crate::api::command::Command {
 #[cfg(test)]
 mod xml_route {
     use super::*;
+    use crate::docx::definitions::DefinitionsXml;
     use crate::docx::write::props::{Cx, Props};
 
     /// [`copy_lists`] over the definitions' XML, the document's main part's namespaces `cx` reading it; with `rebind`,

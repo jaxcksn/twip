@@ -1,7 +1,10 @@
 //! Pasted content from another document
 
+use crate::docx::definitions::DefinitionsXml;
+use crate::docx::list_xml::NumberingXml;
 use crate::docx::origin::EdgeOrigin;
 use crate::docx::origin::{FormFieldOrigin, PermissionOrigin, RubyOrigin};
+use crate::docx::style_xml::StylesPart;
 use crate::docx::table_props::PreviousXml;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -815,6 +818,7 @@ pub(super) mod xml_route {
     use std::cell::RefCell;
 
     use super::*;
+    use crate::docx::definitions::TypedDefsXml;
 
     /// A copied element whose bytes differ between the routes.
     #[derive(Clone, Debug)]
@@ -1084,6 +1088,7 @@ pub(super) mod xml_route {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::docx::definitions::TypedDefsXml;
 
     /// Stored XML declares the bindings it uses that the destination's root lacks, once, and only those.
     #[test]

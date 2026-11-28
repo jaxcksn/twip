@@ -1,5 +1,6 @@
 //! Clipboard
 
+use crate::docx::style_xml::StylesPart;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 

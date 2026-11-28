@@ -1,5 +1,7 @@
 //! Style definitions
 
+use crate::docx::definitions::DefinitionsXml;
+use crate::docx::style_xml::StylesPart;
 use std::rc::Rc;
 
 use crate::api::command::{CellMargins, Command};

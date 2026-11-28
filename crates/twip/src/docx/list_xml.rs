@@ -15,7 +15,7 @@
 //! (empty, or with a tracked change, a mark's properties or revisions) is kept whole beside it too.
 
 use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::rc::Rc;
 
@@ -23,6 +23,7 @@ use roxmltree::Node;
 
 use super::as_read;
 use super::char_props::{self, RprRevisions};
+use super::definitions::ListHolders;
 #[cfg(test)]
 use super::numbering::{AbstractNum, Level, Num, Numbering, PicBullet};
 use super::para_props::{self, Owned};
@@ -35,10 +36,11 @@ use super::styles::StyleOrigin;
 use super::write::props::{Cx, W_NS};
 use super::xml::{R, W, attr, attr_twips, child, children, int, on_off, on_off_str, val};
 use crate::document::authored::Authored;
+use crate::document::origin::Origin;
 use crate::document::paragraph::{ListId, ListSuffix};
 use crate::format::{
     CharProps, DefinedIn, FORMATS, ForeignChild, ForeignProps, JCS, LegacyLabel, LevelOverride, LevelProp, List, ListDef, ListDefId, ListDefProp,
-    ListLevel, ListProp, Lists, Literal, MultiLevelType, OverrideProp, ParaProps, ParaSet, PictureBullet, QName, Set, literal_name,
+    ListLevel, ListProp, Literal, MultiLevelType, OverrideProp, ParaProps, ParaSet, PictureBullet, QName, Set, literal_name,
 };
 pub use crate::format::{format_name, jc_name};
 
@@ -1358,29 +1360,38 @@ impl<T: Element> ListXml for Direct<T> {
 
 // The numbering part
 
-/// A numbering part's definitions, lists and picture bullets, each with the element it was read from.
-#[derive(Clone, Debug, Default)]
-pub struct NumberingXml {
-    /// The definitions, by id.
-    pub defs: HashMap<ListDefId, ListDefDirect>,
-    /// The lists, by id.
-    pub lists: HashMap<ListId, ListDirect>,
-    /// The picture bullets, by id.
-    pub pictures: BTreeMap<i64, PictureDirect>,
-    /// The `w:numbering` start tag, with its namespace declarations.
-    pub root: String,
-}
-
-impl NumberingXml {
+/// What the WordprocessingML adapter adds to a document's lists: reading them from a numbering part, and the part's
+/// namespaces.
+pub trait NumberingXml: Sized {
     /// The numbering part `xml`; empty for none, or for one that doesn't parse. Of elements with the same id the last
     /// counts; one without an id is left out.
-    pub fn parse(xml: Option<&str>) -> NumberingXml {
-        let mut n = NumberingXml::default();
+    fn parse(xml: Option<&str>) -> Self;
+
+    /// The `w:numbering` start tag, with its namespace declarations: empty for none.
+    fn root(&self) -> &str;
+
+    /// `self` read from a part whose `w:numbering` start tag is `root`.
+    fn with_root(self, root: String) -> Self;
+
+    /// The namespaces to parse and write this part's elements with.
+    fn cx(&self) -> Cx;
+
+    /// The XML path's numbering of the part: each element as this part writes it, read as that path reads it.
+    #[cfg(test)]
+    fn to_numbering(&self, colours: &ThemeColours) -> Numbering;
+}
+
+/// The `w:numbering` start tag of a numbering part, in its holders' origin.
+struct NumberingRoot(String);
+
+impl NumberingXml for ListHolders {
+    fn parse(xml: Option<&str>) -> ListHolders {
+        let mut n = ListHolders::default();
         let Some(text) = xml else { return n };
         let Ok(doc) = roxmltree::Document::parse(text) else { return n };
         let root = doc.root_element();
         let start = root.range().start;
-        n.root = text[start..start + text[start..].find('>').map_or(0, |e| e + 1)].to_string();
+        n = n.with_root(text[start..start + text[start..].find('>').map_or(0, |e| e + 1)].to_string());
         for p in children(root, "numPicBullet") {
             if let Some(b) = parse_picture(p) {
                 n.pictures.insert(b.id, Direct::read(b, text[p.range()].into()));
@@ -1399,32 +1410,29 @@ impl NumberingXml {
         n
     }
 
-    /// The namespaces to parse and write this part's elements with.
-    pub fn cx(&self) -> Cx {
-        if self.root.is_empty() {
-            return Cx::of_xml(&format!("<w:numbering xmlns:w=\"{W_NS}\">"));
-        }
-        Cx::of_xml(&self.root)
+    fn root(&self) -> &str {
+        self.origin.get::<NumberingRoot>().map_or("", |r| &r.0)
     }
 
-    /// The typed definitions, lists and picture bullets.
-    pub fn lists(&self) -> Lists {
-        Lists {
-            defs: self.defs.iter().map(|(k, d)| (*k, d.get().clone())).collect(),
-            lists: self.lists.iter().map(|(k, l)| (*k, l.get().clone())).collect(),
-            pictures: self.pictures.iter().map(|(k, p)| (*k, p.get().clone())).collect(),
+    fn with_root(self, root: String) -> ListHolders {
+        ListHolders { origin: Origin::new(NumberingRoot(root)), ..self }
+    }
+
+    fn cx(&self) -> Cx {
+        if self.root().is_empty() {
+            return Cx::of_xml(&format!("<w:numbering xmlns:w=\"{W_NS}\">"));
         }
+        Cx::of_xml(self.root())
     }
 
     #[cfg(test)]
-    /// The XML path's numbering of the part: each element as this part writes it, read as that path reads it.
-    pub fn to_numbering(&self, colours: &ThemeColours) -> Numbering {
+    fn to_numbering(&self, colours: &ThemeColours) -> Numbering {
         let cx = self.cx();
         Numbering {
             abstracts: self.defs.iter().map(|(k, d)| (k.0, to_abstract_num(d, colours, &cx))).collect(),
             nums: self.lists.iter().map(|(k, l)| (k.0, to_num(l, colours, &cx))).collect(),
             pic_bullets: self.pictures.iter().map(|(k, p)| (*k, to_pic_bullet(p, colours, &cx))).collect(),
-            root: self.root.clone(),
+            root: self.root().to_string(),
         }
     }
 }
@@ -1764,7 +1772,7 @@ pub(crate) mod tests {
         let x = format!(
             r#"<w:numbering {NS}><w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:start w:val="1"/></w:lvl></w:abstractNum><w:abstractNum w:abstractNumId="1"><w:numStyleLink w:val="Outline"/></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num><w:num w:numId="2"><w:abstractNumId w:val="1"/><w:lvlOverride w:ilvl="3"><w:lvl w:ilvl="3"><w:start w:val="9"/></w:lvl></w:lvlOverride></w:num></w:numbering>"#
         );
-        let lists = NumberingXml::parse(Some(&x)).lists();
+        let lists = ListHolders::parse(Some(&x)).lists();
         let linked = |s: &str| (s == "Outline").then_some(ListId(1));
         assert_eq!(lists.def_of(ListId(2), linked), Some(ListDefId(0)));
         assert_eq!(lists.def_of(ListId(2), |_| None), None, "a link to a style without a list");

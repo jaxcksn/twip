@@ -2,7 +2,10 @@
 
 use crate::docx::char_props::RunXml;
 use crate::docx::definitions::Definitions;
+use crate::docx::definitions::DefinitionsXml;
+use crate::docx::list_xml::NumberingXml;
 use crate::docx::origin::SectionOrigin;
+use crate::docx::style_xml::StylesPart;
 use crate::docx::table_props::TableXml;
 use std::fmt;
 use std::rc::Rc;
@@ -57,7 +60,7 @@ pub fn generate(doc: &Document) -> Result<Vec<u8>, GenerateError> {
         res.set_defaults(empty).map_err(|_| GenerateError::Write("the defaults don't read".into()))?;
     }
     let new = new_res.typed();
-    let res = res.unanchored(new.styles.root.clone(), new.numbering.root.clone());
+    let res = res.unanchored(new.styles.root().into(), new.numbering.root().to_string());
     let edited = section.read_page().is_some_and(|was| !super::super::page_borders::same_page(was, &section.page()))
         || (section.line_grid, section.rtl_gutter) != (blank.sections[0].line_grid, blank.sections[0].rtl_gutter);
     let out = Document {

@@ -1,5 +1,6 @@
 //! Preview paragraphs
 
+use crate::docx::definitions::DefinitionsXml;
 use std::rc::Rc;
 
 use crate::docx::char_props::RunXml;

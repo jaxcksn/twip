@@ -2,6 +2,7 @@
 
 use crate::api::command::{CommandResult, ReplaceFont, ReplaceScope};
 use crate::docx::char_props::RunXml;
+use crate::docx::definitions::DefinitionsXml;
 use crate::docx::font_table::FontRename;
 use crate::docx::{Inline, RunStyle};
 use crate::font::Fonts;

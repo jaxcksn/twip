@@ -1,5 +1,6 @@
 //! Character and paragraph formatting: what it changes, what it keeps
 
+use crate::docx::definitions::DefinitionsXml;
 use crate::docx::origin::RubyOrigin;
 use std::io::Read;
 

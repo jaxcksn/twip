@@ -12,6 +12,7 @@ use crate::api::services::{
 };
 use crate::api::state::State;
 use crate::api::value::{HeadingId, MatchId, Order};
+use crate::docx::definitions::TypedDefsXml;
 use crate::editing::commands::{Dir, Outcome, deleting};
 use crate::layout::Unit;
 use crate::services::{dialogs, find, menu};

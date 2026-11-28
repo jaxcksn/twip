@@ -1,5 +1,7 @@
 //! Undo and redo
 
+use crate::docx::definitions::TypedDefsXml;
+use crate::docx::list_xml::NumberingXml;
 use crate::docx::origin::ControlOrigin;
 use std::collections::VecDeque;
 
@@ -368,7 +370,7 @@ fn definitions_bytes(r: &Definitions) -> usize {
         .sum::<usize>();
     let cx = n.cx();
     let bullets = n.pictures.values().map(|b| 64 + b.xml(&c.colours, &cx).len()).sum::<usize>();
-    size_of::<Cascade>() + styles + abstracts + nums + bullets + n.root.len() + c.style_links.len() * 48
+    size_of::<Cascade>() + styles + abstracts + nums + bullets + n.root().len() + c.style_links.len() * 48
 }
 
 #[test]

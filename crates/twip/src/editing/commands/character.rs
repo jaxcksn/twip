@@ -5,6 +5,8 @@ use crate::api::drawing::{ColourValue, TextEffectsChange};
 use crate::api::value::{AutoOr, Color, HighlightColor, Points, StyleId, UnderlineStyle};
 use crate::docx::Inline;
 use crate::docx::char_props::RunXml;
+use crate::docx::definitions::TypedDefsXml;
+use crate::docx::style_xml::StylesPart;
 use crate::docx::{RunStyle, ThemeFont, Underline};
 use crate::font::Fonts;
 use crate::format::{CharEdit, CharProps, FontRef, Prop, ScriptClass, ThemeFace, UnderlineProps};

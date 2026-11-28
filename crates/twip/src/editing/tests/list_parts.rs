@@ -6,6 +6,7 @@ use std::io::Cursor;
 use roxmltree::Node;
 
 use crate::document::paragraph::ListId;
+use crate::docx::definitions::ListHolders;
 use crate::docx::list_xml::ListXml;
 use crate::docx::list_xml::tests::{abstract_diff, level_diff, num_diff};
 use crate::docx::list_xml::{
@@ -126,7 +127,7 @@ fn every_list_element_round_trips_and_reads_as_the_xml_path_reads_it() {
     for part in parts() {
         let Ok(doc) = roxmltree::Document::parse(&part.xml) else { continue };
         n.parts += 1;
-        let cx = NumberingXml::parse(Some(&part.xml)).cx();
+        let cx = ListHolders::parse(Some(&part.xml)).cx();
         let colours = &part.colours;
         let root = doc.root_element();
         for a in children(root, "abstractNum") {
@@ -188,7 +189,7 @@ fn every_numbering_part_reads_as_the_xml_path_reads_it() {
     let mut n = Counts::default();
     for part in parts() {
         let colours = &part.colours;
-        let typed = NumberingXml::parse(Some(&part.xml));
+        let typed = ListHolders::parse(Some(&part.xml));
         let path = Numbering::parse(Some(&part.xml), colours);
         let cx = typed.cx();
         let converted = typed.to_numbering(colours);
