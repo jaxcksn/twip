@@ -3,6 +3,7 @@
 //! before the change as they were read.
 
 use super::props::{Cx, Props, esc};
+use crate::docx::char_props::RunXml;
 use crate::docx::model::{Raw, RunStyle, VMerge};
 use crate::docx::props::ThemeColours;
 use crate::docx::review::{CellMarkKind, CellRevisions, FormatChange, GridChange, MarkKind, People, RevisionMark, RowRevisions, TableChange};

@@ -23,6 +23,7 @@ use super::run_xml;
 use super::styles::ThemeFonts;
 use super::table_props::{self, CellDirect, ExceptionsDirect, PreviousDirect, RowDirect, TableDirect};
 use super::xml::*;
+use crate::docx::char_props::RunXml;
 use crate::format::CharProps;
 use crate::format::cascade::TableRegion;
 use crate::format::cascade::div_chain;
@@ -1320,7 +1321,7 @@ struct Reader {
     /// Reading the main body for editing: paragraphs and tables get their sources, runs their direct formatting.
     record: bool,
     /// The authored run properties read so far, by the `w:rPr` written: runs written alike share them.
-    interned: HashMap<Rc<str>, Rc<CharProps>>,
+    interned: HashMap<Rc<str>, RunDirect>,
     /// The authored paragraph properties read so far, by the `w:pPr` written, likewise.
     interned_ppr: HashMap<Rc<str>, Rc<crate::format::ParaProps>>,
     /// Rows' and cells' authored properties by the `w:trPr` and `w:tcPr` they were read from, for elements written alike.
@@ -2186,14 +2187,15 @@ impl Reader {
             // Written alike and reading alike: shared
             let plain = n.namespaces().len() <= n.document().root_element().namespaces().len();
             let text = &n.document().input_text()[n.range()];
-            if let Some((x, p)) = self.interned.get_key_value(text).filter(|(_, p)| plain && ***p == props) {
-                return RunDirect::shared(p.clone(), x.clone());
+            if let Some(d) = self.interned.get(text).filter(|d| plain && d.props().is_some_and(|p| **p == props)) {
+                return d.clone();
             }
-            let (x, p) = (raw(n), Rc::new(props));
+            let x = raw(n);
+            let d = RunDirect::read(props, x.clone());
             if plain {
-                self.interned.insert(x.clone(), p.clone());
+                self.interned.insert(x, d.clone());
             }
-            return RunDirect::shared(p, x);
+            return d;
         }
         let text = n.document().input_text();
         let open = &text[n.range().start..n.first_child().map_or(n.range().end, |c| c.range().start)];

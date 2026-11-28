@@ -10,6 +10,7 @@ use crate::api::command::{Command as C, Indents};
 use crate::api::styles::{StyleChange, StyleModification};
 use crate::api::value::{Alignment, Points};
 use crate::docx::char_props::RunDirect;
+use crate::docx::char_props::RunXml;
 use crate::docx::model::ThemeColourRef;
 use crate::docx::numbering::Numbering;
 use crate::docx::props::{Jc, ParaProps, RunProps, toggle};

@@ -20,6 +20,7 @@ use super::origin::ParaSrc;
 use super::review::{CommentId, People, RangeKind, RangeMark, RevisionMark, SectionChange};
 use super::xml::{MC, W, W14, attr, child, is, is_w};
 use super::*;
+use crate::docx::char_props::RunXml;
 
 mod comments;
 mod controls;

@@ -27,6 +27,7 @@ use std::rc::Rc;
 
 use roxmltree::Node;
 
+use super::as_read::AsRead;
 use super::line_style::{emphasis, emphasis_val, shading_pattern, shading_val, underline, underline_val};
 use super::model::ThemeColourRef;
 pub use super::prop_xml::RevisionAttrs;
@@ -38,7 +39,9 @@ pub(crate) use super::prop_xml::{strip, with_attr};
 use super::props::{self as xml_props, RunProps, ThemeColours};
 use super::write::props::{Cx, RPR};
 use super::xml::{W, W14, attr, half_points, int, num, on_off, twips, val};
+use crate::document::authored::Authored;
 use crate::document::format::VertAlign;
+use crate::document::origin::Origin;
 use crate::format::{
     CharEdit, CharProps, Color, Effect, FontHint, FontRef, ForeignChild, ForeignProps, Highlight, LangProps, NumberForm, NumberSpacing, Prop, QName,
     ScriptClass, ScriptFonts, Set, Shading, TextBorder, ThemeFace, Toggle, Toggles, TypographyProps, UnderlineProps,
@@ -75,117 +78,125 @@ impl RprRevisions {
     }
 }
 
-/// A run's authored properties: typed, with the `w:rPr` they were read from (or last written as) beside them. The
-/// written form stands for the properties only while they are the ones it was read as; never part of equality.
-#[derive(Clone, Debug, Default)]
-pub struct RunDirect {
-    props: Option<Rc<CharProps>>,
-    origin: Option<(Rc<CharProps>, Rc<str>)>,
-    /// What edits since reading set, in order: written again over the `w:rPr` as read.
-    set: Vec<Set>,
-}
+/// A run's authored properties: typed (`None`: none of its own), with the `w:rPr` they were read from (or last written
+/// as) in their origin. The written form stands for the properties only while they are the ones it was read as; never
+/// part of equality.
+pub type RunDirect = Authored<Option<Rc<CharProps>>, Set>;
 
-impl RunDirect {
+/// What the WordprocessingML adapter adds to a run's authored properties: the `w:rPr` they were read from, and the
+/// `w:rPr` they are written as.
+pub trait RunXml: Sized {
     /// Properties read from `xml`, the `w:rPr` they were parsed from.
-    pub fn read(props: CharProps, xml: Rc<str>) -> RunDirect {
-        let props = Rc::new(props);
-        RunDirect { origin: Some((props.clone(), xml)), props: Some(props), set: Vec::new() }
-    }
+    fn read(props: CharProps, xml: Rc<str>) -> Self;
 
     /// The properties of `xml`, a `w:rPr` with the main namespace bound to `w`.
     #[cfg(test)]
-    pub(crate) fn in_w(xml: &str) -> RunDirect {
-        RunDirect::from_xml(Some(xml), &Cx::of_xml(&format!("<w:document xmlns:w=\"{W}\">")))
-    }
+    fn in_w(xml: &str) -> Self;
 
     /// Properties read from `xml`, shared with other runs read alike.
-    pub fn shared(props: Rc<CharProps>, xml: Rc<str>) -> RunDirect {
-        RunDirect { origin: Some((props.clone(), xml)), props: Some(props), set: Vec::new() }
-    }
-
-    /// Typed properties with no written form.
-    pub fn typed(props: Option<Rc<CharProps>>) -> RunDirect {
-        RunDirect { props, origin: None, set: Vec::new() }
-    }
+    fn shared(props: Rc<CharProps>, xml: Rc<str>) -> Self;
 
     /// The properties `xml` (a `w:rPr` in the part `cx` describes) holds; none for no XML, and nothing typed (the
     /// XML kept as written) for XML that doesn't parse.
-    pub fn from_xml(xml: Option<&str>, cx: &Cx) -> RunDirect {
+    fn from_xml(xml: Option<&str>, cx: &Cx) -> Self;
+
+    /// The typed properties; `None`: none of its own.
+    fn props(&self) -> Option<&Rc<CharProps>>;
+
+    /// The `w:rPr` as read, while the properties are the ones read from it.
+    fn as_read(&self) -> Option<&Rc<str>>;
+
+    /// The `w:rPr` to write in the part `cx` describes: as read while the properties are those, else written from
+    /// them (a theme colour's value as `colours` resolve it).
+    fn xml(&self, colours: &ThemeColours, cx: &Cx) -> Option<std::borrow::Cow<'_, str>>;
+
+    /// `props` in place of these properties, set by an edit that set `set`, in order: the `w:rPr` they were read from
+    /// kept to write them over, what was set written again.
+    fn edited(&self, props: Option<CharProps>, set: &[Set]) -> Self;
+
+    /// An edit's result as these properties' successor.
+    fn edit(&self, e: CharEdit) -> Self;
+
+    /// These properties where `cx` describes the part they are written in: `None` while the `w:rPr` they were read
+    /// from reads the same there, else without it, to be written from the properties.
+    fn moved_to(&self, cx: &Cx) -> Option<Self>;
+
+    /// The properties and the `w:rPr` they were read from, while they are still those.
+    fn read_from(&self) -> Option<(&Rc<CharProps>, &Rc<str>)>;
+
+    /// Whether a paragraph mark with these properties is a style separator (its `w:specVanish` on).
+    fn spec_vanish(&self) -> bool;
+}
+
+impl RunXml for RunDirect {
+    fn read(props: CharProps, xml: Rc<str>) -> RunDirect {
+        RunDirect::shared(Rc::new(props), xml)
+    }
+
+    #[cfg(test)]
+    fn in_w(xml: &str) -> RunDirect {
+        RunDirect::from_xml(Some(xml), &Cx::of_xml(&format!("<w:document xmlns:w=\"{W}\">")))
+    }
+
+    fn shared(props: Rc<CharProps>, xml: Rc<str>) -> RunDirect {
+        RunDirect::new(Some(props.clone()), AsRead::origin(props, xml))
+    }
+
+    fn from_xml(xml: Option<&str>, cx: &Cx) -> RunDirect {
         let Some(x) = xml else { return RunDirect::default() };
         RunDirect::read(cx.parse(x, |_, el| parse(el).0).unwrap_or_default(), x.into())
     }
 
-    /// The typed properties; `None`: none of its own.
-    pub fn props(&self) -> Option<&Rc<CharProps>> {
-        self.props.as_ref()
+    fn props(&self) -> Option<&Rc<CharProps>> {
+        self.get().as_ref()
     }
 
-    /// The `w:rPr` as read, while the properties are the ones read from it.
-    pub fn as_read(&self) -> Option<&Rc<str>> {
-        let (read, xml) = self.origin.as_ref()?;
-        let props = self.props.as_ref()?;
-        (Rc::ptr_eq(read, props) || read == props).then_some(xml)
+    fn as_read(&self) -> Option<&Rc<str>> {
+        let r = AsRead::<CharProps>::of(self.origin())?;
+        let props = self.get().as_ref()?;
+        (Rc::ptr_eq(&r.read, props) || r.read == *props).then_some(&r.xml)
     }
 
-    /// The `w:rPr` to write in the part `cx` describes: as read while the properties are those, else written from
-    /// them (a theme colour's value as `colours` resolve it).
-    pub fn xml(&self, colours: &ThemeColours, cx: &Cx) -> Option<std::borrow::Cow<'_, str>> {
+    fn xml(&self, colours: &ThemeColours, cx: &Cx) -> Option<std::borrow::Cow<'_, str>> {
         if let Some(x) = self.as_read() {
             return Some(std::borrow::Cow::Borrowed(x));
         }
-        let p = self.props.as_ref()?;
-        let origin = self.origin.as_ref().map(|(read, xml)| (&**read, &**xml));
-        written_over(p, &RprRevisions::default(), colours, cx, origin, &self.set).map(std::borrow::Cow::Owned)
+        let p = self.get().as_ref()?;
+        let origin = AsRead::<CharProps>::of(self.origin()).map(|r| (&*r.read, &*r.xml));
+        written_over(p, &RprRevisions::default(), colours, cx, origin, self.set()).map(std::borrow::Cow::Owned)
     }
 
-    /// `props` in place of these properties, set by an edit that set `set`, in order: the `w:rPr` they were read from
-    /// kept to write them over, what was set written again.
-    pub fn edited(&self, props: Option<CharProps>, set: &[Set]) -> RunDirect {
-        let mut all = self.set.clone();
-        all.extend_from_slice(set);
-        let props = props.map(|mut p| {
-            if let Some(was) = self.props.as_deref().filter(|_| p.foreign.is_some()) {
-                drop_replaced(was, &mut p, &all);
-            }
-            Rc::new(p)
-        });
-        RunDirect { props, origin: self.origin.clone(), set: all }
+    fn edited(&self, props: Option<CharProps>, set: &[Set]) -> RunDirect {
+        self.edited_with(set, |was, all| {
+            props.map(|mut p| {
+                if let Some(was) = was.as_deref().filter(|_| p.foreign.is_some()) {
+                    drop_replaced(was, &mut p, all);
+                }
+                Rc::new(p)
+            })
+        })
     }
 
-    /// An edit's result as these properties' successor.
-    pub fn edit(&self, e: CharEdit) -> RunDirect {
+    fn edit(&self, e: CharEdit) -> RunDirect {
         let props = (e.props != CharProps::default()).then_some(e.props);
         self.edited(props, &e.set)
     }
 
-    /// These properties where `cx` describes the part they are written in: `None` while the `w:rPr` they were read
-    /// from reads the same there, else without it, to be written from the properties.
-    pub fn moved_to(&self, cx: &Cx) -> Option<RunDirect> {
-        let (read, xml) = self.origin.as_ref()?;
-        if cx.parse(xml, |_, el| parse(el).0).is_some_and(|p| p == **read) {
+    fn moved_to(&self, cx: &Cx) -> Option<RunDirect> {
+        let r = AsRead::<CharProps>::of(self.origin())?;
+        if cx.parse(&r.xml, |_, el| parse(el).0).is_some_and(|p| p == *r.read) {
             return None;
         }
-        Some(RunDirect { props: self.props.clone(), origin: None, set: self.set.clone() })
+        Some(self.with_origin(Origin::NONE))
     }
 
-    /// The properties and the `w:rPr` they were read from, while they are still those.
-    pub fn read_from(&self) -> Option<(&Rc<CharProps>, &Rc<str>)> {
+    fn read_from(&self) -> Option<(&Rc<CharProps>, &Rc<str>)> {
         let xml = self.as_read()?;
-        Some((self.props.as_ref()?, xml))
+        Some((self.get().as_ref()?, xml))
     }
 
-    /// Whether a paragraph mark with these properties is a style separator (its `w:specVanish` on).
-    pub fn spec_vanish(&self) -> bool {
-        self.props.as_ref().is_some_and(|p| p.spec_vanish == Some(true))
-    }
-
-    /// Authored equality: the typed properties.
-    pub fn authored_eq(&self, o: &RunDirect) -> bool {
-        match (&self.props, &o.props) {
-            (Some(a), Some(b)) => Rc::ptr_eq(a, b) || a == b,
-            (None, None) => true,
-            _ => false,
-        }
+    fn spec_vanish(&self) -> bool {
+        self.get().as_ref().is_some_and(|p| p.spec_vanish == Some(true))
     }
 }
 

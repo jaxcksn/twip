@@ -3,6 +3,7 @@
 //! result is what a hand-written patch of the property XML as read gives
 
 use crate::docx::baseline::Baseline;
+use crate::docx::char_props::RunXml;
 use std::rc::Rc;
 
 use super::super::Editor;

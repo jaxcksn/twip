@@ -16,6 +16,7 @@ use crate::api::services::{StyleDialog, StyleDialogType, StyleOpen, StyleVisibil
 use crate::api::styles::{StyleChange, StyleList, TablePartFormatting};
 use crate::api::value::{AutoOr, CellAlignment, HorizontalAlignment, Points, StyleId};
 use crate::docx::Document;
+use crate::docx::char_props::RunXml;
 use crate::docx::props::ThemeColours;
 use crate::docx::style_xml::{DefaultsDef, StyleDef};
 use crate::docx::write::props::{Cx, Props, STYLE, TBLPR, TC_BORDERS, TCPR, TRPR, esc};

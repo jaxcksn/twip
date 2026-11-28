@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::OnceLock;
 
+use crate::docx::char_props::RunXml;
 use crate::font::Fonts;
 use crate::layout::Unit;
 

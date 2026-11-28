@@ -1,6 +1,7 @@
 //! Tables of contents and tables of figures
 
 use crate::document::format::TabKind;
+use crate::docx::char_props::RunXml;
 use crate::format::ParaProps;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;

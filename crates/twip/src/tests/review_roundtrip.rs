@@ -7,6 +7,7 @@ use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+use crate::docx::char_props::RunXml;
 use crate::docx::model::{Block, Document, Inline, Paragraph, Raw, Run, RunStyle};
 use crate::docx::review::{
     AuthorId, CellMarkKind, CellRevisions, Comment, CommentId, FormatChange, GridChange, Identity, MarkKind, ParaChange, RangeKind, RangeMark,

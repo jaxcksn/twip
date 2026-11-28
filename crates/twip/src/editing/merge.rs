@@ -7,6 +7,7 @@ use crate::api::command::{
 use crate::api::error::Error;
 use crate::api::review::Body;
 use crate::api::value::{ControlKind as KindArg, ControlLock, ControlOptions, DataBinding};
+use crate::docx::char_props::RunXml;
 use crate::docx::{
     Block, Control, ControlId, ControlKind, ControlProps, DateStorage, ElementId, FieldEdge, FieldId, FieldKind, FieldView, Inline, Lock,
 };

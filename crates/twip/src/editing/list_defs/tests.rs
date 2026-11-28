@@ -7,6 +7,7 @@ use crate::api::command::{FollowNumber, LevelAlignment, ListLevel, NumberFormat}
 use crate::api::value::{AutoOr, Color, HighlightColor, NoneOr, Points, StyleId, UnderlineStyle};
 use crate::document::paragraph::ListId;
 use crate::docx::char_props::RunDirect;
+use crate::docx::char_props::RunXml;
 use crate::docx::props::ThemeColours;
 use crate::docx::resolvers::TypedDefs;
 use crate::docx::write::props::Cx;

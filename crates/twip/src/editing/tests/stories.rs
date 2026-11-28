@@ -8,6 +8,7 @@ use super::super::text::UnitText;
 use super::{fonts, mv, open, para_id, texts};
 use crate::api::command::{DropCap, DropCapPosition};
 use crate::api::value::Orientation;
+use crate::docx::char_props::RunXml;
 use crate::docx::{Block, Inline};
 use crate::layout::{FloatId, ParaId, TableId, Unit};
 

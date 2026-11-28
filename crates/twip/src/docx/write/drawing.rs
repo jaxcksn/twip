@@ -1088,6 +1088,7 @@ mod tests {
 mod round_trip {
     use std::io::Read;
 
+    use crate::docx::char_props::RunXml;
     use crate::docx::model::{Block, Inline};
     use crate::drawing::colour::Colour;
     use crate::drawing::paint::Fill;

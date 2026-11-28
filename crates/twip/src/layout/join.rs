@@ -4,6 +4,7 @@ use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use crate::docx::char_props::RunXml;
 use crate::docx::model::{Block, Inline, NoteKind, Paragraph, Table};
 use crate::docx::review::ReviewView;
 

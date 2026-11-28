@@ -13,6 +13,7 @@ use super::review::{FormatChange, ParaChange, RunRevisions};
 use super::styles::{Region, Styles, ThemeFonts};
 #[cfg(test)]
 use super::write::props::Cx;
+use crate::docx::char_props::RunXml;
 
 #[derive(Clone)]
 pub struct Resolver {

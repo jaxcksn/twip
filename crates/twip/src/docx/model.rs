@@ -10,6 +10,7 @@ pub use crate::document::paragraph::{ListId, ListJc, ListRef, ListSuffix, TextAl
 pub use crate::document::policy::{Compat, LayoutPolicy};
 pub use crate::document::resource::Resources;
 pub use crate::document::section::{HeightRule, LineNumberingRestart, PageBorderDisplay, VerticalAlignment};
+use crate::docx::char_props::RunXml;
 
 use super::font_table::GenericFamily;
 use std::collections::HashMap;

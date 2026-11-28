@@ -1,5 +1,6 @@
 //! A package from the model alone: the writer against a new document's package, every node unanchored
 
+use crate::docx::char_props::RunXml;
 use crate::docx::resolvers::Resolvers;
 use std::fmt;
 use std::rc::Rc;

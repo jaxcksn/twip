@@ -6,6 +6,7 @@ use std::path::Path;
 use super::diagnostics::WarningCode;
 use super::review::{CellMarkKind, CommentId, MarkKind, ProtectionKind, RangeKind, RevisionMark};
 use super::*;
+use crate::docx::char_props::RunXml;
 
 fn read(name: &str) -> Document {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/review").join(format!("{name}.docx"));

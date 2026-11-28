@@ -5,6 +5,7 @@ use std::ops::ControlFlow;
 use std::rc::Rc;
 
 use crate::document::paragraph::ListJc;
+use crate::docx::char_props::RunXml;
 use crate::docx::list_xml::ListDefDirect;
 use crate::docx::props::ParaProps;
 use crate::docx::resolvers::Resolvers;

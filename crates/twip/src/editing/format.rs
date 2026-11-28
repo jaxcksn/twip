@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use crate::docx::char_props::RunXml;
 use crate::docx::model::Compat;
 use crate::docx::para_props::{self, ParaDirect};
 use crate::docx::para_xml;

@@ -7,6 +7,7 @@ use super::char_props::RunDirect;
 use super::model::{Run, RunStyle};
 use super::resolvers::Resolvers;
 use super::review::{FormatChange, RunRevisions};
+use crate::docx::char_props::RunXml;
 use crate::format::CharProps;
 use crate::format::cascade::Cascade;
 use crate::format::resolve;

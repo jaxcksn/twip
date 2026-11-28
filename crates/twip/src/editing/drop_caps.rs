@@ -8,6 +8,7 @@ use super::position::StoryId;
 use super::step::{Edges, Step};
 use crate::api::command::{DropCap, DropCapPosition};
 use crate::api::value::Points;
+use crate::docx::char_props::RunXml;
 use crate::docx::props::FramePr;
 use crate::docx::run_xml;
 use crate::docx::{Block, Inline, Paragraph};

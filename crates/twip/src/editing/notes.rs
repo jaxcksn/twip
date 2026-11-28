@@ -3,6 +3,7 @@
 use std::rc::Rc;
 
 use crate::docx::char_props::RunDirect;
+use crate::docx::char_props::RunXml;
 use crate::docx::para_props::ParaDirect;
 use crate::docx::resolvers::Resolvers;
 use crate::docx::write::props::Cx;

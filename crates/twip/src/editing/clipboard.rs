@@ -3,6 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
+use crate::docx::char_props::RunXml;
 use crate::docx::props::VertAlign;
 use crate::docx::review::CellMarkKind;
 use crate::docx::write::props::esc;

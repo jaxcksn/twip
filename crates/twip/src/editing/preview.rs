@@ -2,6 +2,7 @@
 
 use std::rc::Rc;
 
+use crate::docx::char_props::RunXml;
 use crate::docx::para_props::ParaDirect;
 use crate::docx::{Block, Inline, Paragraph, RunStyle, next_para_id};
 use crate::format::StyleKind;
