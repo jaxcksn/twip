@@ -3,6 +3,7 @@
 use super::super::Editor;
 use super::super::view::{MarkKind, MarkOptions};
 use super::{blank_body, fonts, open, para_id};
+use crate::docx::origin::ParagraphOrigin;
 use crate::layout::Unit;
 
 fn lay(body: &str) -> Editor {

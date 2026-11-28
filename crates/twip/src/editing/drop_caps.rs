@@ -1,5 +1,6 @@
 //! Drop caps: a paragraph's first letter in a frame of its own, dropped into the text or in the margin
 
+use crate::docx::origin::FloatOrigin;
 use std::rc::Rc;
 
 use super::Editor;

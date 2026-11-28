@@ -510,6 +510,7 @@ mod tests {
     //! Re-resolving every body paragraph, its mark and its text runs from their direct XML gives what the reader
     //! resolved, on every repository fixture and the corpus.
 
+    use crate::docx::origin::ParagraphOrigin;
     use std::path::{Path, PathBuf};
 
     use super::*;

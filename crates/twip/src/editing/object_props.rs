@@ -1,5 +1,6 @@
 //! Object properties and the Selection Pane
 
+use crate::docx::origin::FloatOrigin;
 use std::cmp::Reverse;
 
 use crate::api::state::ObjectKind;

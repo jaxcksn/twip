@@ -545,7 +545,7 @@ impl Editor {
             Command::InsertHyperlink(h) => self.insert_hyperlink(h, fonts),
             Command::InsertBookmark(name) => self.insert_bookmark(&name, fonts),
             Command::SetDocumentProtection(p) => self.document_protection(p, fonts),
-            Command::SetEditableRangeEditor(r) => self.set_range_editor(super::protection::RangeEditor::of_api(r.editor), r.allowed, fonts),
+            Command::SetEditableRangeEditor(r) => self.set_range_editor(super::protection::RangeEditor::from(r.editor), r.allowed, fonts),
             Command::SelectNextEditableRange(o) => self.select_next_editable_range(o == crate::api::value::Order::Next),
             Command::SelectEditableRanges => self.select_all_editable_ranges(),
             Command::SetEditingGroups(groups) => {

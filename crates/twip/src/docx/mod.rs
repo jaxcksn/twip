@@ -24,7 +24,7 @@ pub mod line_style;
 pub mod list_xml;
 pub mod model;
 pub mod numbering;
-mod origin;
+pub(crate) mod origin;
 pub mod package;
 pub mod page_borders;
 pub mod para_props;

@@ -1,5 +1,7 @@
 //! Character and paragraph formatting
 
+use crate::docx::origin::ParagraphOrigin;
+use crate::docx::origin::RubyOrigin;
 use std::collections::HashMap;
 use std::rc::Rc;
 

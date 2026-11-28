@@ -2613,7 +2613,7 @@ impl Editor {
                     format,
                     lid: o.locale.clone(),
                     calendar: o.calendar.map(|c| c.val().to_string()),
-                    storage: o.store_as.map(DateStorage::of_api),
+                    storage: o.store_as.map(DateStorage::from),
                     full_date: None,
                 }
             }
@@ -3022,7 +3022,7 @@ impl Editor {
                         *calendar = Some(c.val().to_string());
                     }
                     if let Some(s) = o.store_as {
-                        *storage = Some(DateStorage::of_api(s));
+                        *storage = Some(DateStorage::from(s));
                     }
                 }
                 (ControlKind::DropDown, ControlOptions::List(l)) => p.items = list_entries(&l.items),
@@ -3469,19 +3469,19 @@ fn list_entries(items: &[crate::api::value::ListItem]) -> Vec<crate::docx::ListE
     items.iter().map(|i| crate::docx::ListEntry { text: Some(i.text.clone()), value: Some(i.value.clone()) }).collect()
 }
 
-impl DateStorage {
-    /// The engine's storage for the API's.
-    pub fn of_api(s: crate::api::value::DateStorage) -> DateStorage {
+impl From<crate::api::value::DateStorage> for DateStorage {
+    fn from(s: crate::api::value::DateStorage) -> DateStorage {
         match s {
             crate::api::value::DateStorage::Text => DateStorage::Text,
             crate::api::value::DateStorage::Date => DateStorage::Date,
             crate::api::value::DateStorage::DateTime => DateStorage::DateTime,
         }
     }
+}
 
-    /// The API's storage for this one.
-    pub fn to_api(self) -> crate::api::value::DateStorage {
-        match self {
+impl From<DateStorage> for crate::api::value::DateStorage {
+    fn from(s: DateStorage) -> crate::api::value::DateStorage {
+        match s {
             DateStorage::Text => crate::api::value::DateStorage::Text,
             DateStorage::Date => crate::api::value::DateStorage::Date,
             DateStorage::DateTime => crate::api::value::DateStorage::DateTime,

@@ -4,6 +4,7 @@
 
 use crate::docx::baseline::Baseline;
 use crate::docx::char_props::RunXml;
+use crate::docx::origin::ParagraphOrigin;
 use crate::docx::page_borders::PageBordersXml;
 use crate::docx::para_props::ParaXml;
 use crate::docx::style_xml::StyleXml;

@@ -1,5 +1,6 @@
 //! Linked text boxes
 
+use crate::docx::origin::FloatOrigin;
 use crate::docx::{Block, Inline};
 use crate::drawing::ShapeText;
 use crate::font::Fonts;

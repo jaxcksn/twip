@@ -8,6 +8,7 @@
 //! `construct edit` pairs that still fail; one that passes fails the run. `TWIP_FIDELITY_OUT=dir` writes every saved
 //! package there, with each construct's source, for the schema check (`tests/fidelity/validate`).
 
+use crate::docx::review::PasswordHash;
 use std::collections::BTreeSet;
 use std::io::{Cursor, Read, Write};
 use std::path::Path;

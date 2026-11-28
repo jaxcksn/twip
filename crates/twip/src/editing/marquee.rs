@@ -1,5 +1,6 @@
 //! Select Objects and anchor drags
 
+use crate::docx::origin::FloatOrigin;
 use crate::font::Fonts;
 use crate::layout::{FloatId, ParaId};
 

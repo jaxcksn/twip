@@ -3,6 +3,7 @@
 use super::super::Editor;
 use super::super::commands::Command;
 use super::fonts;
+use crate::docx::origin::ParagraphOrigin;
 use crate::docx::styles::Styles;
 use crate::docx::{Block, Inline};
 

@@ -1,5 +1,6 @@
 //! Theme colours and fonts on text, and formatting read-back
 
+use crate::docx::origin::FloatOrigin;
 use std::io::Read;
 
 use super::super::Editor;

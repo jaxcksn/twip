@@ -1,5 +1,6 @@
 //! Shape saving
 
+use crate::docx::origin::FloatOrigin;
 use std::ops::Range;
 
 use crate::docx::model::Float;

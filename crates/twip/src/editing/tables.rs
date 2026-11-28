@@ -1,5 +1,6 @@
 //! Table structure commands
 
+use crate::docx::origin::ControlOrigin;
 use std::rc::Rc;
 
 use crate::api::command::TablePosition;

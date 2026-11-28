@@ -1,6 +1,7 @@
 //! Reading tracked revisions and comments: the generated review fixtures (`FX-REVIEW-*`) hold in the model what
 //! their builder wrote.
 
+use crate::docx::table_props::PreviousXml;
 use std::path::Path;
 
 use super::diagnostics::WarningCode;

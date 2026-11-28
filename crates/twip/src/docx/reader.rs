@@ -1,5 +1,7 @@
 //! DOCX package → [`Document`]: resolves styles (STYLE), numbering (LIST) and fields (FIELD) while reading.
 
+use crate::docx::origin::ControlOrigin;
+use crate::docx::origin::{FloatOrigin, FormFieldOrigin, ParagraphOrigin};
 use std::collections::{HashMap, HashSet};
 use std::io::{Cursor, Read};
 use std::rc::Rc;

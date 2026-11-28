@@ -1,3 +1,5 @@
+use crate::docx::origin::FloatOrigin;
+use crate::docx::review::PasswordHash;
 use std::cell::RefCell;
 use std::rc::Rc;
 

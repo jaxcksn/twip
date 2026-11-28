@@ -1,6 +1,7 @@
 //! Frames: the Frame dialog's properties, and setting and removing the frame the selection is in. A frame is a
 //! float whose text box holds the paragraphs that had the same `w:framePr`; each keeps its `w:framePr`.
 
+use crate::docx::origin::FloatOrigin;
 use std::rc::Rc;
 
 use super::commands::Outcome;

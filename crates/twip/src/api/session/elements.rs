@@ -81,7 +81,7 @@ fn options(s: &Session, e: &Element) -> Option<ControlOptions> {
                 format: Some(format.clone()).filter(|f| !f.is_empty()),
                 locale: lid.clone(),
                 calendar: d.as_ref().map(|d| crate::api::value::CalendarType::of_val(&d.calendar).unwrap_or_default()),
-                store_as: d.map(|d| d.storage.to_api()),
+                store_as: d.map(|d| d.storage.into()),
             })
         }
         ControlKind::Other => match p.kept.clone()? {

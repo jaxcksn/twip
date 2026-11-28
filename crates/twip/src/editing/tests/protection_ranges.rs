@@ -9,6 +9,7 @@ use super::{blank_body, fonts, para_id, texts};
 use crate::api::command::{DeleteOptions, DocumentProtection, ProtectionKind};
 use crate::api::session::Session;
 use crate::api::value::Direction;
+use crate::docx::review::PasswordHash;
 use crate::docx::{Block, Inline};
 use crate::layout::Unit;
 

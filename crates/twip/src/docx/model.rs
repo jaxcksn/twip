@@ -10,7 +10,6 @@ pub use crate::document::paragraph::{ListId, ListJc, ListRef, ListSuffix, TextAl
 pub use crate::document::policy::{Compat, LayoutPolicy};
 pub use crate::document::resource::Resources;
 pub use crate::document::section::{HeightRule, LineNumberingRestart, PageBorderDisplay, VerticalAlignment};
-use crate::docx::char_props::RunXml;
 
 use super::font_table::GenericFamily;
 use std::collections::HashMap;
@@ -735,86 +734,6 @@ impl Picture {
     }
 }
 
-impl Float {
-    /// Equal but for the text box story's blocks.
-    pub fn same_but_story(&self, o: &Float) -> bool {
-        let Float {
-            id,
-            w,
-            auto_w,
-            h,
-            image,
-            alt,
-            lock_aspect,
-            text_box,
-            h_relative,
-            h_align,
-            h_offset,
-            v_relative,
-            v_align,
-            v_offset,
-            wrap,
-            wrap_text,
-            dist,
-            effect,
-            poly,
-            poly_edited,
-            behind,
-            allow_overlap,
-            layout_in_cell,
-            order,
-            z,
-            rot_swap,
-            vml,
-            relative,
-            origin: _,
-            locked,
-            in_note,
-            parts,
-            shape,
-        } = self;
-        same_box(text_box.as_ref(), o.text_box.as_ref())
-            && *id == o.id
-            && *w == o.w
-            && *auto_w == o.auto_w
-            && *h == o.h
-            && *image == o.image
-            && *alt == o.alt
-            && *lock_aspect == o.lock_aspect
-            && *h_relative == o.h_relative
-            && *h_align == o.h_align
-            && *h_offset == o.h_offset
-            && *v_relative == o.v_relative
-            && *v_align == o.v_align
-            && *v_offset == o.v_offset
-            && *wrap == o.wrap
-            && *wrap_text == o.wrap_text
-            && *dist == o.dist
-            && *effect == o.effect
-            && *poly == o.poly
-            && *poly_edited == o.poly_edited
-            && *behind == o.behind
-            && *allow_overlap == o.allow_overlap
-            && *layout_in_cell == o.layout_in_cell
-            && *order == o.order
-            && *z == o.z
-            && *rot_swap == o.rot_swap
-            && *vml == o.vml
-            && *relative == o.relative
-            && self.src() == o.src()
-            && *locked == o.locked
-            && self.frame_src() == o.frame_src()
-            && *in_note == o.in_note
-            && *parts == o.parts
-            && crate::docx::drawing::same_shape(shape.as_deref(), o.shape.as_deref())
-    }
-
-    /// A frame (`w:framePr` paragraphs made a float): read from one, or made since.
-    pub fn is_frame(&self) -> bool {
-        self.read_as_frame() || self.text_box.as_ref().is_some_and(|tb| tb.blocks.iter().any(|b| matches!(b, Block::Para(p) if p.style.in_frame)))
-    }
-}
-
 impl Inline {
     /// The story this inline holds and the id it goes by: a float's text box, or an inline shape's text.
     pub fn story(&self) -> Option<(u64, &TextBox)> {
@@ -1000,13 +919,6 @@ impl TextBox {
     pub fn same_box(&self, o: &TextBox) -> bool {
         let TextBox { blocks: _, insets, outline, auto_fit, v_anchor, flow } = self;
         *insets == o.insets && *outline == o.outline && *auto_fit == o.auto_fit && *v_anchor == o.v_anchor && *flow == o.flow
-    }
-}
-
-fn same_box(a: Option<&TextBox>, b: Option<&TextBox>) -> bool {
-    match (a, b) {
-        (Some(a), Some(b)) => a.same_box(b),
-        (a, b) => a.is_none() && b.is_none(),
     }
 }
 
@@ -1479,11 +1391,6 @@ impl Control {
     pub fn new(props: ControlProps) -> Control {
         Control { props, origin: Origin::NONE }
     }
-
-    /// Whether it is written with the markup it was read with.
-    pub fn as_read(&self) -> bool {
-        !self.open().is_empty() && self.read() == Some(&self.props)
-    }
 }
 
 /// A content control's properties (`w:sdtPr`), parsed where they are read. The settings the
@@ -1576,13 +1483,6 @@ pub struct ControlRun {
     pub props: Rc<crate::format::CharProps>,
     /// Their `w:rPr`.
     pub xml: Rc<str>,
-}
-
-impl ControlRun {
-    /// As a run's authored properties, written as their `w:rPr`.
-    pub fn direct(&self) -> super::char_props::RunDirect {
-        super::char_props::RunDirect::shared(self.props.clone(), self.xml.clone())
-    }
 }
 
 /// A content control's kind element as read, and the kind it was read as.
@@ -1896,6 +1796,86 @@ impl Table {
 pub enum Block {
     Para(Paragraph),
     Table(Table),
+}
+
+impl Block {
+    /// A copy with ids of its own (its paragraphs', tables', floats' and inline texts', inside it too) and no origin
+    /// for its paragraphs, tables and rows: a copied subtree, saved as new. Floats and pictures keep theirs.
+    pub fn fresh_identity(&self) -> Block {
+        match self {
+            Block::Para(p) => Block::Para(p.fresh_identity()),
+            Block::Table(t) => Block::Table(t.fresh_identity()),
+        }
+    }
+}
+
+impl Paragraph {
+    /// A copy with ids of its own and no origin, as [`Block::fresh_identity`].
+    pub fn fresh_identity(&self) -> Paragraph {
+        let mut p = self.clone();
+        p.renew_identity();
+        for i in &mut p.inlines {
+            let story = match i {
+                Inline::Float(f, _) => {
+                    f.id = next_para_id();
+                    f.text_box.as_mut()
+                }
+                Inline::Picture(pic, _) => pic.text.as_mut().map(|t| {
+                    t.id = next_para_id();
+                    &mut t.text_box
+                }),
+                _ => None,
+            };
+            if let Some(tb) = story {
+                tb.blocks = tb.blocks.iter().map(Block::fresh_identity).collect();
+            }
+        }
+        p
+    }
+
+    /// A new id and no origin for it alone: what it holds keeps theirs.
+    pub fn renew_identity(&mut self) {
+        self.id = next_para_id();
+        self.detach();
+    }
+
+    /// No origin: saved as a new paragraph.
+    pub fn detach(&mut self) {
+        self.origin = Origin::NONE;
+    }
+}
+
+impl Table {
+    /// A copy with ids of its own and no origin, its rows' and cells' blocks' too, as [`Block::fresh_identity`].
+    pub fn fresh_identity(&self) -> Table {
+        let mut t = self.clone();
+        t.renew_identity();
+        for r in &mut t.rows {
+            r.detach();
+            for c in &mut r.cells {
+                c.blocks = c.blocks.iter().map(Block::fresh_identity).collect();
+            }
+        }
+        t
+    }
+
+    /// A new id and no origin for it alone: its rows keep theirs.
+    pub fn renew_identity(&mut self) {
+        self.id = next_para_id();
+        self.detach();
+    }
+
+    /// No origin: saved as a new table.
+    pub fn detach(&mut self) {
+        self.origin = Origin::NONE;
+    }
+}
+
+impl Row {
+    /// No origin: saved as a new row.
+    pub fn detach(&mut self) {
+        self.origin = Origin::NONE;
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

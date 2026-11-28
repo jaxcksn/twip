@@ -9,6 +9,10 @@
 //! and new or deleted marks split or join paragraphs. Everything that isn't text (bookmarks, comments, field codes,
 //! hidden runs, ...) is copied where it was.
 
+use crate::docx::origin::ControlOrigin;
+use crate::docx::origin::{
+    EdgeOrigin, FloatOrigin, FormFieldOrigin, ParagraphOrigin, PermissionOrigin, PictureOrigin, RowOrigin, RubyOrigin, SectionOrigin, TableOrigin,
+};
 use std::collections::HashMap;
 use std::io::{Cursor, Write};
 use std::ops::Range;
@@ -528,7 +532,7 @@ fn settings_part(doc: &Document, session: &Session, parts: &mut Vec<(String, Vec
         (a, b) => a.is_none() && b.is_none(),
     };
     if !same {
-        set_setting(&mut out, "documentProtection", now.protection.as_ref().map(|p| p.xml(&w)))?;
+        set_setting(&mut out, "documentProtection", now.protection.as_ref().map(|p| super::review::protection_xml(p, &w)))?;
     }
     if read.variables != now.variables {
         let vars: String =

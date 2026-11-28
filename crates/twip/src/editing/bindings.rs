@@ -1,6 +1,7 @@
 //! Content controls bound to custom XML data: an edited control writes its node, a changed node shows in its controls
 
 use crate::docx::binding::{self, Span};
+use crate::docx::char_props::{RunDirect, RunXml};
 use crate::docx::{ControlId, ControlKind, DataPart, Inline};
 use crate::layout::{ParaId, Unit};
 
@@ -282,7 +283,7 @@ impl Editor {
             let cx = self.cx();
             let at = crate::layout::Unit(p.inlines[..start.min(p.inlines.len())].iter().map(|i| i.units() as u32).sum());
             let base = self.run_base(para, at, res, &cx)?;
-            Some(std::rc::Rc::new(run_xml::resolve(res, &base, r.direct(), false)))
+            Some(std::rc::Rc::new(run_xml::resolve(res, &base, RunDirect::shared(r.props.clone(), r.xml.clone()), false)))
         }))
     }
 

@@ -7,6 +7,7 @@ use crate::docx::char_props::RunXml;
 use crate::docx::model::{Raw, RunStyle, VMerge};
 use crate::docx::props::ThemeColours;
 use crate::docx::review::{CellMarkKind, CellRevisions, FormatChange, GridChange, MarkKind, People, RevisionMark, RowRevisions, TableChange};
+use crate::docx::table_props::PreviousXml;
 
 /// ` w:id=".." w:author=".." w:date=".."`: a mark's attributes, its date as it was read.
 pub(super) fn attrs(w: &str, m: &RevisionMark, people: &People) -> String {

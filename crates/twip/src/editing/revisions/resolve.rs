@@ -1,5 +1,6 @@
 //! Revision accept and reject
 
+use crate::docx::table_props::PreviousXml;
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::rc::Rc;

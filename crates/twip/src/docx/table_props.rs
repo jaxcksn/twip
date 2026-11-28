@@ -18,6 +18,8 @@ use std::rc::Rc;
 
 use roxmltree::Node;
 
+pub use super::review::PreviousDirect;
+
 use super::as_read;
 use super::prop_xml::{Compare, FILL, LINE_COLOUR, Out, Sink, Twips, border, colour, colour_attrs, foreign_child, props_key};
 use super::props::{self as xml_props, Look, TableAnchor, TablePos, TblProps, TcProps, ThemeColours, TrProps};
@@ -1334,30 +1336,28 @@ holder!(
     CellDirect, Tc, CellProps, CellSet, CellEdit, ()
 );
 
-/// The earlier properties a tracked change of a table's, a row's exceptions', a row's or a cell's properties records.
-/// Its `==` is always true, as its holders' is: use [`PreviousDirect::authored_eq`] for authored equality.
-#[derive(Clone, Debug)]
-pub enum PreviousDirect {
-    /// A `w:tblPrChange`'s `w:tblPr`.
-    Table(TableDirect),
-    /// A `w:tblPrExChange`'s `w:tblPrEx`.
-    Exceptions(ExceptionsDirect),
-    /// A `w:trPrChange`'s `w:trPr`.
-    Row(RowDirect),
-    /// A `w:tcPrChange`'s `w:tcPr`.
-    Cell(CellDirect),
-}
-
-impl PartialEq for PreviousDirect {
-    fn eq(&self, _: &PreviousDirect) -> bool {
-        true
-    }
-}
-
-impl PreviousDirect {
+/// What the WordprocessingML adapter adds to a tracked change's earlier properties: their change element's parse, the
+/// element they are written as, and the element they were read from.
+pub trait PreviousXml: Sized {
     /// The earlier properties of the change element `name` (`w:tblPrChange`, `w:tblPrExChange`, `w:trPrChange` or
     /// `w:tcPrChange`) from `xml`, the properties element it holds, as written in the part `cx` describes.
-    pub fn from_xml(name: &str, xml: Option<&str>, cx: &Cx) -> PreviousDirect {
+    fn from_xml(name: &str, xml: Option<&str>, cx: &Cx) -> Self;
+
+    /// The properties element to write in the part `cx` describes, as its holder writes it.
+    fn xml(&self, colours: &ThemeColours, cx: &Cx) -> Option<std::borrow::Cow<'_, str>>;
+
+    /// The properties element they were read from (or last written as), whatever they are now.
+    fn origin_xml(&self) -> Option<&Rc<str>>;
+
+    /// These properties with `xml` in place of the element they were read from.
+    fn with_origin_xml(&self, xml: Rc<str>) -> Self;
+
+    /// The properties element as read, while the properties are the ones read from it.
+    fn as_read(&self) -> Option<&Rc<str>>;
+}
+
+impl PreviousXml for PreviousDirect {
+    fn from_xml(name: &str, xml: Option<&str>, cx: &Cx) -> PreviousDirect {
         match name {
             "tblPrChange" => PreviousDirect::Table(TableDirect::from_xml(xml, cx)),
             "tblPrExChange" => PreviousDirect::Exceptions(ExceptionsDirect::from_xml(xml, cx)),
@@ -1366,8 +1366,7 @@ impl PreviousDirect {
         }
     }
 
-    /// The properties element to write in the part `cx` describes, as its holder writes it.
-    pub fn xml(&self, colours: &ThemeColours, cx: &Cx) -> Option<std::borrow::Cow<'_, str>> {
+    fn xml(&self, colours: &ThemeColours, cx: &Cx) -> Option<std::borrow::Cow<'_, str>> {
         match self {
             PreviousDirect::Table(d) => d.xml(colours, cx),
             PreviousDirect::Exceptions(d) => d.xml(colours, cx),
@@ -1376,8 +1375,7 @@ impl PreviousDirect {
         }
     }
 
-    /// The properties element they were read from (or last written as), whatever they are now.
-    pub fn origin_xml(&self) -> Option<&Rc<str>> {
+    fn origin_xml(&self) -> Option<&Rc<str>> {
         match self {
             PreviousDirect::Table(d) => d.origin_xml(),
             PreviousDirect::Exceptions(d) => d.origin_xml(),
@@ -1386,8 +1384,7 @@ impl PreviousDirect {
         }
     }
 
-    /// These properties with `xml` in place of the element they were read from.
-    pub fn with_origin_xml(&self, xml: Rc<str>) -> PreviousDirect {
+    fn with_origin_xml(&self, xml: Rc<str>) -> PreviousDirect {
         match self {
             PreviousDirect::Table(d) => PreviousDirect::Table(d.with_origin_xml(xml)),
             PreviousDirect::Exceptions(d) => PreviousDirect::Exceptions(d.with_origin_xml(xml)),
@@ -1396,24 +1393,12 @@ impl PreviousDirect {
         }
     }
 
-    /// The properties element as read, while the properties are the ones read from it.
-    pub fn as_read(&self) -> Option<&Rc<str>> {
+    fn as_read(&self) -> Option<&Rc<str>> {
         match self {
             PreviousDirect::Table(d) => d.as_read(),
             PreviousDirect::Exceptions(d) => d.as_read(),
             PreviousDirect::Row(d) => d.as_read(),
             PreviousDirect::Cell(d) => d.as_read(),
-        }
-    }
-
-    /// Authored equality: the same kind, with the same typed properties.
-    pub fn authored_eq(&self, o: &PreviousDirect) -> bool {
-        match (self, o) {
-            (PreviousDirect::Table(a), PreviousDirect::Table(b)) => a.authored_eq(b),
-            (PreviousDirect::Exceptions(a), PreviousDirect::Exceptions(b)) => a.authored_eq(b),
-            (PreviousDirect::Row(a), PreviousDirect::Row(b)) => a.authored_eq(b),
-            (PreviousDirect::Cell(a), PreviousDirect::Cell(b)) => a.authored_eq(b),
-            _ => false,
         }
     }
 }

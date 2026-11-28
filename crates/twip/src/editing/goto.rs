@@ -1,5 +1,6 @@
 //! Go To
 
+use crate::docx::origin::PictureOrigin;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 

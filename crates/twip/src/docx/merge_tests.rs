@@ -3,6 +3,7 @@
 
 use super::fields::{code_text, parse, spans};
 use super::*;
+use crate::docx::origin::ControlOrigin;
 
 fn fixture(name: &str) -> Vec<u8> {
     let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor").join(name);

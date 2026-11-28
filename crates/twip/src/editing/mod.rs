@@ -1,5 +1,6 @@
 //! Editor
 
+use crate::docx::origin::ParagraphOrigin;
 pub mod autocorrect;
 mod background;
 mod bindings;

@@ -1,5 +1,6 @@
 //! Edit steps
 
+use crate::docx::origin::ParagraphOrigin;
 use std::collections::HashSet;
 use std::ops::Range;
 use std::rc::Rc;

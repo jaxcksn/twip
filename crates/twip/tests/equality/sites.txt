@@ -9,7 +9,7 @@ A	crates/twip/src/docx/model.rs	authored_eq	CellRevisions	&& self.rev == o.rev
 A	crates/twip/src/docx/model.rs	authored_eq	RowRevisions	&& self.rev == o.rev
 L	crates/twip/src/docx/model.rs	layout_eq	Option<Rc<ParaChange>>	&& *change == o.change
 L	crates/twip/src/docx/model.rs	layout_eq	RunRevisions	&& *rev == o.rev
-L	crates/twip/src/docx/model.rs	same_but_story	Vec<GroupPart>	&& *parts == o.parts
+L	crates/twip/src/docx/origin.rs	same_but_story	Vec<GroupPart>	&& *parts == o.parts
 L	crates/twip/src/docx/resolve.rs	check	ParaStyle	assert_eq!(*p.style, r.style, "{what}: paragraph {:?}", p.id);
 L	crates/twip/src/docx/resolve.rs	check	RunStyle	assert_eq!(**run, *res.rerun(&r.base, run, cx), "{what}: run {t:?} of {:?}", p.id);
 L	crates/twip/src/docx/resolve.rs	check	RunStyle	assert_eq!(*p.mark, mark, "{what}: the mark of {:?}", p.id);

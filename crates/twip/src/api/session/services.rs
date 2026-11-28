@@ -1279,7 +1279,7 @@ impl Session {
         list.into_iter()
             .map(|r| crate::api::services::EditableRangeInfo {
                 ids: r.ids,
-                editors: r.editors.into_iter().map(crate::editing::protection::RangeEditor::to_api).collect(),
+                editors: r.editors.into_iter().map(Into::into).collect(),
                 page: self.editor.page_showing(r.start).map(|p| p as u32 + 1),
             })
             .collect()

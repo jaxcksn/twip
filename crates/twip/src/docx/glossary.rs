@@ -284,6 +284,7 @@ pub(super) fn part_props(part: Node) -> Option<(String, String, Gallery, Option<
 #[cfg(test)]
 mod tests {
     use super::super::model::*;
+    use crate::docx::origin::ParagraphOrigin;
 
     fn fixture() -> Vec<u8> {
         let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-SUBTEMPLATES.docx");

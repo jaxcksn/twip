@@ -1,5 +1,6 @@
 //! Document protection: Restrict Editing and editable ranges
 
+use crate::docx::review::PasswordHash;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -21,43 +22,26 @@ pub use crate::docx::review::RangeEditor;
 /// The `w:edGrp` values (`ST_EdGrp`).
 const GROUPS: [&str; 7] = ["none", "everyone", "administrators", "contributors", "editors", "owners", "current"];
 
-impl RangeEditor {
-    /// The same editor, comparing names as Word does within each kind: a group never matches a person.
-    pub fn same(&self, other: &RangeEditor) -> bool {
-        match (self, other) {
-            (Self::Group(a), Self::Group(b)) | (Self::User(a), Self::User(b)) => a.eq_ignore_ascii_case(b),
-            _ => false,
-        }
+/// `e` as it is written: a group by its `w:edGrp` value, which Word writes in lower case; `None` for a group
+/// `w:edGrp` doesn't take.
+fn canonical(e: RangeEditor) -> Option<RangeEditor> {
+    match e {
+        RangeEditor::Group(g) => GROUPS.iter().find(|n| n.eq_ignore_ascii_case(&g)).map(|n| RangeEditor::Group((*n).to_string())),
+        user => Some(user),
     }
+}
 
-    /// The editor as it is written: a group by its `w:edGrp` value, which Word writes in lower case; `None` for a
-    /// group `w:edGrp` doesn't take.
-    fn canonical(self) -> Option<RangeEditor> {
-        match self {
-            Self::Group(g) => GROUPS.iter().find(|n| n.eq_ignore_ascii_case(&g)).map(|n| Self::Group((*n).to_string())),
-            user => Some(user),
-        }
-    }
-
-    /// This editor lets `author`, a member of `groups`, edit: `everyone` lets all, a group its members, a person
-    /// themselves.
-    fn lets(&self, author: &str, groups: &[String]) -> bool {
-        match self {
-            Self::Group(g) => g.eq_ignore_ascii_case("everyone") || groups.iter().any(|x| x.eq_ignore_ascii_case(g)),
-            Self::User(u) => u.eq_ignore_ascii_case(author),
-        }
-    }
-
-    /// The API's reference to this editor.
-    pub fn to_api(self) -> crate::api::value::RangeEditorRef {
-        match self {
+impl From<RangeEditor> for crate::api::value::RangeEditorRef {
+    fn from(e: RangeEditor) -> crate::api::value::RangeEditorRef {
+        match e {
             RangeEditor::Group(g) => crate::api::value::RangeEditorRef::Group(g),
             RangeEditor::User(u) => crate::api::value::RangeEditorRef::User(u),
         }
     }
+}
 
-    /// The editor an API reference names.
-    pub fn of_api(r: crate::api::value::RangeEditorRef) -> RangeEditor {
+impl From<crate::api::value::RangeEditorRef> for RangeEditor {
+    fn from(r: crate::api::value::RangeEditorRef) -> RangeEditor {
         match r {
             crate::api::value::RangeEditorRef::Group(g) => RangeEditor::Group(g),
             crate::api::value::RangeEditorRef::User(u) => RangeEditor::User(u),
@@ -569,7 +553,7 @@ impl Editor {
             auto_format_override: self.doc.settings.auto_format_override,
             block_theme_switching: self.doc.settings.style_lock_theme,
             block_style_set_switching: self.doc.settings.style_lock_style_set,
-            editors_here: self.editors_here().into_iter().map(RangeEditor::to_api).collect(),
+            editors_here: self.editors_here().into_iter().map(Into::into).collect(),
             range_count: self.editable_ranges().list.len() as u32,
         })
     }
@@ -762,7 +746,7 @@ impl Editor {
             (Some(u), None) => RangeEditor::User(u),
             (None, g) => RangeEditor::Group(g.unwrap_or_else(|| "everyone".into())),
         };
-        let Some(who) = who.canonical() else { return Outcome::invalid("not a group Word's editable ranges know") };
+        let Some(who) = canonical(who) else { return Outcome::invalid("not a group Word's editable ranges know") };
         let ranges = self.text_ranges();
         self.add_permission(who, &ranges, fonts)
     }
@@ -975,7 +959,7 @@ impl Editor {
         }
         let ranges = self.text_ranges();
         if allowed {
-            let Some(editor) = editor.canonical() else { return Outcome::invalid("not a group Word's editable ranges know") };
+            let Some(editor) = canonical(editor) else { return Outcome::invalid("not a group Word's editable ranges know") };
             // Only the spans this editor can't edit yet get a permission.
             let missing: Vec<(Position, Position)> =
                 ranges.iter().filter(|(a, b)| !self.editors_over(a, b).iter().any(|e| e.same(&editor))).copied().collect();

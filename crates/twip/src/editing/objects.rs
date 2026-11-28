@@ -1,6 +1,7 @@
 //! Object selection
 
 use crate::api::value::{HorizontalReference, ObjectHorizontalAlignment, ObjectVerticalAlignment, ObjectWrap, VerticalReference, WrapSide};
+use crate::docx::origin::FloatOrigin;
 use crate::docx::{FloatWrap, HorizontalAlign, HorizontalRelation, Inline, VerticalAlign, VerticalRelation, WrapText};
 use crate::font::Fonts;
 use crate::layout::{FloatId, Unit};

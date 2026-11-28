@@ -1,5 +1,8 @@
 //! Pasted content from another document
 
+use crate::docx::origin::EdgeOrigin;
+use crate::docx::origin::{FormFieldOrigin, PermissionOrigin, RubyOrigin};
+use crate::docx::table_props::PreviousXml;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};

@@ -1,5 +1,6 @@
 //! Fields: number pictures, results set from rich text, and bookmark texts
 
+use crate::docx::origin::EdgeOrigin;
 use serde_json::{Value, json};
 
 use super::{blank_body, fonts};

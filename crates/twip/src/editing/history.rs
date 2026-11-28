@@ -1,5 +1,6 @@
 //! Undo and redo
 
+use crate::docx::origin::ControlOrigin;
 use std::collections::VecDeque;
 
 use crate::docx::definitions::Definitions;

@@ -23,30 +23,45 @@ pub struct ParaSrc {
     pub joined: Vec<JoinedPart>,
 }
 
-impl Paragraph {
+/// A paragraph read from DOCX: its place in its part.
+pub(crate) trait ParagraphOrigin {
     /// Where it was read from.
-    pub(in crate::docx) fn src(&self) -> Option<&ParaSrc> {
-        self.origin.get()
-    }
+    fn src(&self) -> Option<&ParaSrc>;
 
     /// The paragraphs a vanished mark joined onto its start as read, in order (its own mark among them when that is
     /// vanished too).
-    pub fn joined_parts(&self) -> &[JoinedPart] {
+    fn joined_parts(&self) -> &[JoinedPart];
+
+    /// The paragraphs a vanished mark joined onto its start as read, when its own mark isn't one of them.
+    fn joined_before(&self) -> &[JoinedPart];
+
+    /// How many paragraphs it was read as: more than one when vanished marks joined them, none for one made since.
+    #[cfg(test)]
+    fn read_parts(&self) -> usize;
+
+    /// The ends of [`Self::joined_parts`] moved by `to` (part, end).
+    fn move_joined(&mut self, to: impl Fn(usize, u32) -> u32);
+}
+
+impl ParagraphOrigin for Paragraph {
+    fn src(&self) -> Option<&ParaSrc> {
+        self.origin.get()
+    }
+
+    fn joined_parts(&self) -> &[JoinedPart] {
         self.src().map_or(&[][..], |s| &s.joined[..])
     }
 
-    /// The paragraphs a vanished mark joined onto its start as read, when its own mark isn't one of them.
-    pub fn joined_before(&self) -> &[JoinedPart] {
+    fn joined_before(&self) -> &[JoinedPart] {
         self.src().filter(|s| s.joined.len() + 1 == s.ranges.len()).map_or(&[][..], |s| &s.joined[..])
     }
 
-    /// How many paragraphs it was read as: more than one when vanished marks joined them, none for one made since.
-    pub fn read_parts(&self) -> usize {
+    #[cfg(test)]
+    fn read_parts(&self) -> usize {
         self.src().map_or(0, |s| s.ranges.len())
     }
 
-    /// The ends of [`Self::joined_parts`] moved by `to` (part, end).
-    pub fn move_joined(&mut self, to: impl Fn(usize, u32) -> u32) {
+    fn move_joined(&mut self, to: impl Fn(usize, u32) -> u32) {
         let Some(s) = self.src() else { return };
         let mut s = s.clone();
         for (k, j) in s.joined.iter_mut().enumerate() {
@@ -56,96 +71,26 @@ impl Paragraph {
     }
 }
 
-impl Block {
-    /// A copy with ids of its own (its paragraphs', tables', floats' and inline texts', inside it too) and no origin
-    /// for its paragraphs, tables and rows: a copied subtree, saved as new. Floats and pictures keep theirs.
-    pub fn fresh_identity(&self) -> Block {
-        match self {
-            Block::Para(p) => Block::Para(p.fresh_identity()),
-            Block::Table(t) => Block::Table(t.fresh_identity()),
-        }
-    }
-}
-
-impl Paragraph {
-    /// A copy with ids of its own and no origin, as [`Block::fresh_identity`].
-    pub fn fresh_identity(&self) -> Paragraph {
-        let mut p = self.clone();
-        p.renew_identity();
-        for i in &mut p.inlines {
-            let story = match i {
-                Inline::Float(f, _) => {
-                    f.id = next_para_id();
-                    f.text_box.as_mut()
-                }
-                Inline::Picture(pic, _) => pic.text.as_mut().map(|t| {
-                    t.id = next_para_id();
-                    &mut t.text_box
-                }),
-                _ => None,
-            };
-            if let Some(tb) = story {
-                tb.blocks = tb.blocks.iter().map(Block::fresh_identity).collect();
-            }
-        }
-        p
-    }
-
-    /// A new id and no origin for it alone: what it holds keeps theirs.
-    pub fn renew_identity(&mut self) {
-        self.id = next_para_id();
-        self.detach();
-    }
-
-    /// No origin: saved as a new paragraph.
-    pub fn detach(&mut self) {
-        self.origin = Origin::NONE;
-    }
-}
-
-impl Table {
-    /// A copy with ids of its own and no origin, its rows' and cells' blocks' too, as [`Block::fresh_identity`].
-    pub fn fresh_identity(&self) -> Table {
-        let mut t = self.clone();
-        t.renew_identity();
-        for r in &mut t.rows {
-            r.detach();
-            for c in &mut r.cells {
-                c.blocks = c.blocks.iter().map(Block::fresh_identity).collect();
-            }
-        }
-        t
-    }
-
-    /// A new id and no origin for it alone: its rows keep theirs.
-    pub fn renew_identity(&mut self) {
-        self.id = next_para_id();
-        self.detach();
-    }
-
-    /// No origin: saved as a new table.
-    pub fn detach(&mut self) {
-        self.origin = Origin::NONE;
-    }
-}
-
-impl Row {
-    /// No origin: saved as a new row.
-    pub fn detach(&mut self) {
-        self.origin = Origin::NONE;
-    }
-}
-
-impl Table {
+/// A table read from DOCX: its place in its part.
+pub(crate) trait TableOrigin {
     /// Its element's byte range in its part.
-    pub(in crate::docx) fn src(&self) -> Option<&Range<usize>> {
+    fn src(&self) -> Option<&Range<usize>>;
+}
+
+impl TableOrigin for Table {
+    fn src(&self) -> Option<&Range<usize>> {
         self.origin.get()
     }
 }
 
-impl Row {
+/// A row read from DOCX: its place in its part.
+pub(crate) trait RowOrigin {
     /// Its element's byte range in its part.
-    pub(in crate::docx) fn src(&self) -> Option<&Range<usize>> {
+    fn src(&self) -> Option<&Range<usize>>;
+}
+
+impl RowOrigin for Row {
+    fn src(&self) -> Option<&Range<usize>> {
         self.origin.get()
     }
 }
@@ -168,30 +113,129 @@ pub struct FormSrc {
     pub read: super::forms::FormData,
 }
 
-impl Float {
+/// A float read from DOCX: its drawing or frame as read.
+pub(crate) trait FloatOrigin {
     /// An origin for a float read from its drawing at `drawing`, or from a frame's paragraphs at `frame`.
-    pub(in crate::docx) fn origin_at(drawing: Option<Range<usize>>, frame: Option<Range<usize>>) -> Origin {
+    fn origin_at(drawing: Option<Range<usize>>, frame: Option<Range<usize>>) -> Origin;
+
+    /// Its drawing's byte range in its part.
+    fn src(&self) -> Option<&Range<usize>>;
+
+    /// Its frame's paragraphs' byte range in its part.
+    fn frame_src(&self) -> Option<&Range<usize>>;
+
+    /// Read from a frame's paragraphs (`w:framePr`).
+    fn read_as_frame(&self) -> bool;
+
+    /// Whether, as read, the frame came after the start of `p`, its anchor (`None`: either was made since).
+    fn read_after(&self, p: &Paragraph) -> Option<bool>;
+
+    /// Equal but for the text box story's blocks.
+    fn same_but_story(&self, o: &Float) -> bool;
+
+    /// A frame (`w:framePr` paragraphs made a float): read from one, or made since.
+    fn is_frame(&self) -> bool;
+}
+
+impl FloatOrigin for Float {
+    fn origin_at(drawing: Option<Range<usize>>, frame: Option<Range<usize>>) -> Origin {
         if drawing.is_none() && frame.is_none() { Origin::NONE } else { Origin::new(FloatSrc { drawing, frame }) }
     }
 
-    /// Its drawing's byte range in its part.
-    pub(in crate::docx) fn src(&self) -> Option<&Range<usize>> {
+    fn src(&self) -> Option<&Range<usize>> {
         self.origin.get::<FloatSrc>()?.drawing.as_ref()
     }
 
-    /// Its frame's paragraphs' byte range in its part.
-    pub(in crate::docx) fn frame_src(&self) -> Option<&Range<usize>> {
+    fn frame_src(&self) -> Option<&Range<usize>> {
         self.origin.get::<FloatSrc>()?.frame.as_ref()
     }
 
-    /// Read from a frame's paragraphs (`w:framePr`).
-    pub fn read_as_frame(&self) -> bool {
+    fn read_as_frame(&self) -> bool {
         self.frame_src().is_some()
     }
 
-    /// Whether, as read, the frame came after the start of `p`, its anchor (`None`: either was made since).
-    pub fn read_after(&self, p: &Paragraph) -> Option<bool> {
+    fn read_after(&self, p: &Paragraph) -> Option<bool> {
         Some(self.frame_src()?.start > p.src()?.ranges.first()?.start)
+    }
+
+    fn same_but_story(&self, o: &Float) -> bool {
+        let Float {
+            id,
+            w,
+            auto_w,
+            h,
+            image,
+            alt,
+            lock_aspect,
+            text_box,
+            h_relative,
+            h_align,
+            h_offset,
+            v_relative,
+            v_align,
+            v_offset,
+            wrap,
+            wrap_text,
+            dist,
+            effect,
+            poly,
+            poly_edited,
+            behind,
+            allow_overlap,
+            layout_in_cell,
+            order,
+            z,
+            rot_swap,
+            vml,
+            relative,
+            origin: _,
+            locked,
+            in_note,
+            parts,
+            shape,
+        } = self;
+        let story = match (text_box, &o.text_box) {
+            (Some(a), Some(b)) => a.same_box(b),
+            (a, b) => a.is_none() && b.is_none(),
+        };
+        story
+            && *id == o.id
+            && *w == o.w
+            && *auto_w == o.auto_w
+            && *h == o.h
+            && *image == o.image
+            && *alt == o.alt
+            && *lock_aspect == o.lock_aspect
+            && *h_relative == o.h_relative
+            && *h_align == o.h_align
+            && *h_offset == o.h_offset
+            && *v_relative == o.v_relative
+            && *v_align == o.v_align
+            && *v_offset == o.v_offset
+            && *wrap == o.wrap
+            && *wrap_text == o.wrap_text
+            && *dist == o.dist
+            && *effect == o.effect
+            && *poly == o.poly
+            && *poly_edited == o.poly_edited
+            && *behind == o.behind
+            && *allow_overlap == o.allow_overlap
+            && *layout_in_cell == o.layout_in_cell
+            && *order == o.order
+            && *z == o.z
+            && *rot_swap == o.rot_swap
+            && *vml == o.vml
+            && *relative == o.relative
+            && self.src() == o.src()
+            && *locked == o.locked
+            && self.frame_src() == o.frame_src()
+            && *in_note == o.in_note
+            && *parts == o.parts
+            && crate::docx::drawing::same_shape(shape.as_deref(), o.shape.as_deref())
+    }
+
+    fn is_frame(&self) -> bool {
+        self.read_as_frame() || self.text_box.as_ref().is_some_and(|tb| tb.blocks.iter().any(|b| matches!(b, Block::Para(p) if p.style.in_frame)))
     }
 }
 
@@ -204,53 +248,80 @@ fn xml_of(o: &Origin) -> Option<&Rc<str>> {
     o.get::<Xml>().map(|x| &x.0)
 }
 
-impl Picture {
+/// A picture read from DOCX: its run child as read.
+pub(crate) trait PictureOrigin {
     /// Its run child as read (`w:drawing`, `w:pict`, `mc:AlternateContent`).
-    pub fn origin_xml(&self) -> Option<&Rc<str>> {
+    fn origin_xml(&self) -> Option<&Rc<str>>;
+
+    /// The program id of the embedded object it was read as (`w:object`'s first `ProgID`), when it is one.
+    fn prog_id(&self) -> Option<&str>;
+}
+
+impl PictureOrigin for Picture {
+    fn origin_xml(&self) -> Option<&Rc<str>> {
         xml_of(&self.origin)
     }
 
-    /// The program id of the embedded object it was read as (`w:object`'s first `ProgID`), when it is one.
-    pub fn prog_id(&self) -> Option<&str> {
+    fn prog_id(&self) -> Option<&str> {
         prog_id(self.origin_xml()?)
     }
 }
 
-impl Ruby {
+/// A ruby read from DOCX: its element as read.
+pub(crate) trait RubyOrigin {
     /// Its `w:ruby` element as read (or as last written).
-    pub fn origin_xml(&self) -> Option<&Rc<str>> {
+    fn origin_xml(&self) -> Option<&Rc<str>>;
+
+    /// It with `xml` in place of its `w:ruby` element: the same element, written otherwise.
+    fn with_origin_xml(&self, xml: Rc<str>) -> Ruby;
+}
+
+impl RubyOrigin for Ruby {
+    fn origin_xml(&self) -> Option<&Rc<str>> {
         xml_of(&self.origin)
     }
 
-    /// It with `xml` in place of its `w:ruby` element: the same element, written otherwise.
-    pub fn with_origin_xml(&self, xml: Rc<str>) -> Ruby {
+    fn with_origin_xml(&self, xml: Rc<str>) -> Ruby {
         Ruby { origin: xml_origin(xml), ..self.clone() }
     }
 }
 
-impl FormField {
+/// A legacy form field read from DOCX: its `w:ffData` as read.
+pub(crate) trait FormFieldOrigin {
     /// A field read with its `w:ffData` element `xml`.
-    pub(in crate::docx) fn read(xml: Rc<str>, data: super::forms::FormData) -> FormField {
+    fn read(xml: Rc<str>, data: super::forms::FormData) -> FormField;
+
+    /// Where it was read from.
+    fn src(&self) -> Option<&FormSrc>;
+
+    /// Its data changed since reading.
+    fn changed(&self) -> bool;
+
+    /// Its `w:ffData` element as read.
+    fn origin_xml(&self) -> Option<&Rc<str>>;
+
+    /// It with `xml` in place of its `w:ffData` element: the same element, written otherwise.
+    fn with_origin_xml(&self, xml: Rc<str>) -> FormField;
+}
+
+impl FormFieldOrigin for FormField {
+    fn read(xml: Rc<str>, data: super::forms::FormData) -> FormField {
         FormField { origin: Origin::new(FormSrc { xml, read: data.clone() }), data }
     }
 
-    /// Where it was read from.
-    pub(in crate::docx) fn src(&self) -> Option<&FormSrc> {
+    fn src(&self) -> Option<&FormSrc> {
         self.origin.get()
     }
 
-    /// Its data changed since reading.
-    pub(in crate::docx) fn changed(&self) -> bool {
+    fn changed(&self) -> bool {
         self.src().is_some_and(|s| s.read != self.data)
     }
 
-    /// Its `w:ffData` element as read.
-    pub fn origin_xml(&self) -> Option<&Rc<str>> {
+    fn origin_xml(&self) -> Option<&Rc<str>> {
         self.src().map(|s| &s.xml)
     }
 
-    /// It with `xml` in place of its `w:ffData` element: the same element, written otherwise.
-    pub fn with_origin_xml(&self, xml: Rc<str>) -> FormField {
+    fn with_origin_xml(&self, xml: Rc<str>) -> FormField {
         match self.src() {
             Some(s) => FormField { origin: Origin::new(FormSrc { xml, read: s.read.clone() }), data: self.data.clone() },
             None => self.clone(),
@@ -265,19 +336,28 @@ pub struct EdgeSource {
     pub at: Range<usize>,
 }
 
-impl Edge {
+/// A field edge read from DOCX: its markers' runs as read.
+pub(crate) trait EdgeOrigin {
     /// Where it was read from.
-    pub(in crate::docx) fn src(&self) -> Option<&EdgeSource> {
+    fn src(&self) -> Option<&EdgeSource>;
+
+    /// Its markers' runs as read.
+    fn origin_xml(&self) -> Option<&Rc<str>>;
+
+    /// It with `xml` in place of its markers' runs: the same runs, written otherwise.
+    fn with_origin_xml(&self, xml: Rc<str>) -> Edge;
+}
+
+impl EdgeOrigin for Edge {
+    fn src(&self) -> Option<&EdgeSource> {
         self.origin.get()
     }
 
-    /// Its markers' runs as read.
-    pub fn origin_xml(&self) -> Option<&Rc<str>> {
+    fn origin_xml(&self) -> Option<&Rc<str>> {
         self.src().map(|s| &s.xml)
     }
 
-    /// It with `xml` in place of its markers' runs: the same runs, written otherwise.
-    pub fn with_origin_xml(&self, xml: Rc<str>) -> Edge {
+    fn with_origin_xml(&self, xml: Rc<str>) -> Edge {
         match self.src() {
             Some(s) => Edge { kind: self.kind.clone(), origin: Origin::new(EdgeSource { xml, at: s.at.clone() }) },
             None => self.clone(),
@@ -285,21 +365,33 @@ impl Edge {
     }
 }
 
-impl super::review::Permission {
+/// An editing permission marker read from DOCX: its element as read.
+pub(crate) trait PermissionOrigin {
     /// Its element as read.
-    pub fn origin_xml(&self) -> Option<&Rc<str>> {
+    fn origin_xml(&self) -> Option<&Rc<str>>;
+
+    /// It with `xml` in place of its element: the same element, written otherwise.
+    fn with_origin_xml(&self, xml: Rc<str>) -> super::review::Permission;
+}
+
+impl PermissionOrigin for super::review::Permission {
+    fn origin_xml(&self) -> Option<&Rc<str>> {
         xml_of(&self.origin)
     }
 
-    /// It with `xml` in place of its element: the same element, written otherwise.
-    pub fn with_origin_xml(&self, xml: Rc<str>) -> super::review::Permission {
+    fn with_origin_xml(&self, xml: Rc<str>) -> super::review::Permission {
         super::review::Permission { origin: xml_origin(xml), ..self.clone() }
     }
 }
 
-impl Section {
+/// A section read from DOCX: its page as read.
+pub(crate) trait SectionOrigin {
     /// Its page as read.
-    pub(in crate::docx) fn read_page(&self) -> Option<&SectionPage> {
+    fn read_page(&self) -> Option<&SectionPage>;
+}
+
+impl SectionOrigin for Section {
+    fn read_page(&self) -> Option<&SectionPage> {
         self.origin.get()
     }
 }
@@ -315,34 +407,61 @@ pub struct ControlSrc {
     pub at: (usize, usize),
 }
 
-impl Control {
+/// A content control read from DOCX: its markup as read.
+pub(crate) trait ControlOrigin {
     /// Where it was read from.
-    pub(in crate::docx) fn src(&self) -> Option<&ControlSrc> {
+    fn src(&self) -> Option<&ControlSrc>;
+
+    /// Its start markup as read (empty for a new control, or one written from its properties).
+    fn open(&self) -> &str;
+
+    /// Its end markup as read.
+    fn close(&self) -> &str;
+
+    /// Its properties as read.
+    fn read(&self) -> Option<&ControlProps>;
+
+    /// Where its start and end markup start in its part.
+    fn at(&self) -> Option<(usize, usize)>;
+
+    /// Its origin rebuilt by `f` (none: nothing to change).
+    fn edit_src(&mut self, f: impl FnOnce(&mut ControlSrc));
+
+    /// The bytes its markup as read takes.
+    fn origin_bytes(&self) -> usize;
+
+    /// The `w:id` its markup as read gives it.
+    fn origin_id(&self) -> Option<i64>;
+
+    /// Its markup as read with the `w:id` it gives `id()` in place of its own, when it gives one.
+    fn renumber_origin(&mut self, id: impl FnOnce() -> i64);
+
+    /// Whether it is written with the markup it was read with.
+    fn as_read(&self) -> bool;
+}
+
+impl ControlOrigin for Control {
+    fn src(&self) -> Option<&ControlSrc> {
         self.origin.get()
     }
 
-    /// Its start markup as read (empty for a new control, or one written from its properties).
-    pub(in crate::docx) fn open(&self) -> &str {
+    fn open(&self) -> &str {
         self.src().map_or("", |s| &s.open)
     }
 
-    /// Its end markup as read.
-    pub(in crate::docx) fn close(&self) -> &str {
+    fn close(&self) -> &str {
         self.src().map_or("", |s| &s.close)
     }
 
-    /// Its properties as read.
-    pub(in crate::docx) fn read(&self) -> Option<&ControlProps> {
+    fn read(&self) -> Option<&ControlProps> {
         self.src().map(|s| &s.read)
     }
 
-    /// Where its start and end markup start in its part.
-    pub(in crate::docx) fn at(&self) -> Option<(usize, usize)> {
+    fn at(&self) -> Option<(usize, usize)> {
         self.src().map(|s| s.at)
     }
 
-    /// Its origin rebuilt by `f` (none: nothing to change).
-    pub(in crate::docx) fn edit_src(&mut self, f: impl FnOnce(&mut ControlSrc)) {
+    fn edit_src(&mut self, f: impl FnOnce(&mut ControlSrc)) {
         if let Some(s) = self.src() {
             let mut s = s.clone();
             f(&mut s);
@@ -350,22 +469,23 @@ impl Control {
         }
     }
 
-    /// The bytes its markup as read takes.
-    pub fn origin_bytes(&self) -> usize {
+    fn origin_bytes(&self) -> usize {
         self.open().len() + self.close().len()
     }
 
-    /// The `w:id` its markup as read gives it.
-    pub fn origin_id(&self) -> Option<i64> {
+    fn origin_id(&self) -> Option<i64> {
         sdt_id_at(self.open()).and_then(|r| self.open()[r].parse().ok())
     }
 
-    /// Its markup as read with the `w:id` it gives `id()` in place of its own, when it gives one.
-    pub fn renumber_origin(&mut self, id: impl FnOnce() -> i64) {
+    fn renumber_origin(&mut self, id: impl FnOnce() -> i64) {
         if let Some(r) = sdt_id_at(self.open()) {
             let n = id();
             self.edit_src(|s| s.open.replace_range(r, &n.to_string()));
         }
+    }
+
+    fn as_read(&self) -> bool {
+        !self.open().is_empty() && self.read() == Some(&self.props)
     }
 }
 

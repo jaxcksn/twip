@@ -1,5 +1,7 @@
 //! Frames
 
+use crate::docx::origin::FloatOrigin;
+use crate::docx::origin::ParagraphOrigin;
 use std::rc::Rc;
 
 use super::model::{

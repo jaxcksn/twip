@@ -1,5 +1,7 @@
 //! Paragraph shaping
 
+use crate::docx::origin::FloatOrigin;
+use crate::docx::origin::ParagraphOrigin;
 use std::collections::HashMap;
 use std::rc::Rc;
 

@@ -1,5 +1,6 @@
 //! Formatting and command state
 
+use crate::docx::origin::FloatOrigin;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
@@ -1183,7 +1184,7 @@ pub fn control_info(p: &crate::docx::ControlProps) -> crate::api::state::Control
         crate::docx::ControlKind::Date { .. } => {
             if let Some(d) = super::merge::date_settings(p) {
                 info.calendar = Some(crate::api::value::CalendarType::of_val(&d.calendar).unwrap_or_default());
-                info.store_as = Some(d.storage.to_api());
+                info.store_as = Some(d.storage.into());
             }
         }
         crate::docx::ControlKind::Other => {

@@ -1,5 +1,6 @@
 //! Column widths
 
+use crate::docx::origin::FloatOrigin;
 use std::rc::Rc;
 
 use crate::docx::Compat;
