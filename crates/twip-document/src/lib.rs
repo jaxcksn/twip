@@ -7,6 +7,7 @@
 
 pub mod anchor;
 pub mod content;
+pub mod foreign;
 pub mod format;
 pub mod graphic;
 pub mod ident;
