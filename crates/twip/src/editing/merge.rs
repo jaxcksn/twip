@@ -2604,7 +2604,7 @@ impl Editor {
             }
             (KindArg::Checkbox, o) => {
                 checked_now = matches!(o, Some(ControlOptions::Checkbox(o)) if o.checked == Some(true));
-                ControlKind::Checkbox { checked: '\u{2612}', unchecked: '\u{2610}' }
+                ControlKind::Checkbox { checked: '\u{2612}', unchecked: '\u{2610}', checked_font: None, unchecked_font: None, value: None }
             }
             (KindArg::Date, Some(ControlOptions::Date(o))) => {
                 let format = o.format.clone().unwrap_or_else(|| "M/d/yyyy".into());
@@ -2680,7 +2680,7 @@ impl Editor {
             return Ok(out);
         }
         let out = match kind {
-            ControlKind::Checkbox { checked, unchecked } => {
+            ControlKind::Checkbox { checked, unchecked, .. } => {
                 let face = if checked_now { checked } else { unchecked };
                 self.pending_controls.push((id, Control::new(props)));
                 self.pending_font("MS Gothic");
@@ -3026,15 +3026,9 @@ impl Editor {
                     }
                 }
                 (ControlKind::DropDown, ControlOptions::List(l)) => p.items = list_entries(&l.items),
-                (ControlKind::Checkbox { checked, unchecked }, ControlOptions::Checkbox(o)) => {
+                (ControlKind::Checkbox { checked, unchecked, checked_font, unchecked_font, value }, ControlOptions::Checkbox(o)) => {
                     if o.checked_symbol.is_some() || o.unchecked_symbol.is_some() {
                         let (was_checked, was_unchecked) = (*checked, *unchecked);
-                        let font = |x: &str, name: &str| {
-                            let at = x.find(&format!("{name} "))?;
-                            let f = x[at..].find("font=\"")? + at + 6;
-                            Some(x[f..f + x[f..].find('"')?].to_string())
-                        };
-                        let was = p.kind_xml.as_ref().map(|k| k.xml.clone()).unwrap_or_default();
                         let one = |s: &crate::api::value::CheckboxSymbol| s.character.chars().next();
                         if let Some(c) = o.checked_symbol.as_ref().and_then(one) {
                             *checked = c;
@@ -3042,17 +3036,13 @@ impl Editor {
                         if let Some(c) = o.unchecked_symbol.as_ref().and_then(one) {
                             *unchecked = c;
                         }
-                        let f_on = o
-                            .checked_symbol
-                            .as_ref()
-                            .map(|s| s.font.clone())
-                            .or_else(|| font(&was, "checkedState"))
-                            .unwrap_or_else(|| "MS Gothic".into());
+                        let f_on =
+                            o.checked_symbol.as_ref().map(|s| s.font.clone()).or_else(|| checked_font.clone()).unwrap_or_else(|| "MS Gothic".into());
                         let f_off = o
                             .unchecked_symbol
                             .as_ref()
                             .map(|s| s.font.clone())
-                            .or_else(|| font(&was, "uncheckedState"))
+                            .or_else(|| unchecked_font.clone())
                             .unwrap_or_else(|| "MS Gothic".into());
                         // The box's state is its face: checked when it shows the checked symbol it had (its XML's
                         // when both symbols were one).
@@ -3064,21 +3054,9 @@ impl Editor {
                                 .and_then(|i| if let Inline::Sym { ch, .. } = i { Some(*ch == was_checked) } else { None }),
                             _ => None,
                         }
-                        .unwrap_or_else(|| crate::docx::xml::checkbox_checked(&was).unwrap_or(false));
+                        .unwrap_or(value.unwrap_or(false));
                         face = Some(if on { (*checked, f_on.clone()) } else { (*unchecked, f_off.clone()) });
-                        let w14 = crate::docx::xml::W14;
-                        let esc = crate::docx::write::props::esc;
-                        p.kind_xml = Some(crate::docx::KindXml {
-                            kind: ControlKind::Other,
-                            xml: format!(
-                                r#"<w14:checkbox xmlns:w14="{w14}"><w14:checked w14:val="{}"/><w14:checkedState w14:val="{:04X}" w14:font="{}"/><w14:uncheckedState w14:val="{:04X}" w14:font="{}"/></w14:checkbox>"#,
-                                u8::from(on),
-                                *checked as u32,
-                                esc(&f_on),
-                                *unchecked as u32,
-                                esc(&f_off)
-                            ),
-                        });
+                        (*checked_font, *unchecked_font, *value) = (Some(f_on), Some(f_off), Some(on));
                     }
                 }
                 (ControlKind::RepeatingSection, ControlOptions::RepeatingSection(o)) => {

@@ -2862,7 +2862,11 @@ impl Reader {
         let id = self.control(sdt);
         if let Some(c) = self.controls.get_mut(&id) {
             // The checkbox's face is its `Sym`; written as it was read, or as a new checkbox control.
-            c.props.kind = ControlKind::Checkbox { checked: on, unchecked: off };
+            c.props.kind = pr
+                .map_or(ControlKind::Checkbox { checked: on, unchecked: off, checked_font: None, unchecked_font: None, value: None }, checkbox_kind);
+            if let Some(k) = &mut c.props.kind_xml {
+                k.kind = c.props.kind.clone();
+            }
             c.read = Some(Box::new(c.props.clone()));
         }
         let run = self.tracked(Rc::new(run), base, rpr);
@@ -4052,6 +4056,23 @@ pub fn is_symbol_font(f: &str) -> bool {
     matches!(f, "Symbol" | "Wingdings" | "Wingdings 2" | "Wingdings 3" | "Webdings")
 }
 
+/// A checkbox control's kind from the first of each of its `w14:` elements under `n`: its states' characters (Word's
+/// boxes when not given) and fonts, and its `w14:checked`.
+fn checkbox_kind(n: Node) -> ControlKind {
+    let el = |name: &str| n.descendants().find(|x| is(*x, W14, name));
+    let state = |name: &str, d: char| {
+        el(name).and_then(|s| s.attribute((W14, "val"))).and_then(|v| u32::from_str_radix(v, 16).ok()).and_then(char::from_u32).unwrap_or(d)
+    };
+    let font = |name: &str| el(name).and_then(|s| s.attribute((W14, "font"))).map(str::to_string);
+    ControlKind::Checkbox {
+        checked: state("checkedState", '\u{2612}'),
+        unchecked: state("uncheckedState", '\u{2610}'),
+        checked_font: font("checkedState"),
+        unchecked_font: font("uncheckedState"),
+        value: el("checked").map(|c| on_off_str(c.attribute((W14, "val")))),
+    }
+}
+
 /// A `w:sdtPr` as [`ControlProps`]: what the editor reads and changes, typed; every
 /// other child kept as its XML.
 fn control_props(pr: Option<Node>, xml: &str) -> ControlProps {
@@ -4077,18 +4098,7 @@ fn control_props(pr: Option<Node>, xml: &str) -> ControlProps {
             }
             "richText" => kind = Some((ControlKind::RichText, raw())),
             "picture" => kind = Some((ControlKind::Picture, raw())),
-            "checkbox" if c.tag_name().namespace() == Some(W14) => {
-                let state = |name: &str, d: char| {
-                    c.children()
-                        .find(|s| s.tag_name().name() == name)
-                        .and_then(|s| s.attribute((W14, "val")))
-                        .and_then(|v| u32::from_str_radix(v, 16).ok())
-                        .and_then(char::from_u32)
-                        .unwrap_or(d)
-                };
-                let (checked, unchecked) = (state("checkedState", '\u{2612}'), state("uncheckedState", '\u{2610}'));
-                kind = Some((ControlKind::Checkbox { checked, unchecked }, raw()))
-            }
+            "checkbox" if c.tag_name().namespace() == Some(W14) => kind = Some((checkbox_kind(c), raw())),
             "date" => {
                 let v = |n| child(c, n).and_then(|x| attr(x, "val"));
                 kind = Some((

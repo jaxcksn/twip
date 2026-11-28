@@ -437,7 +437,7 @@ fn element(e: &Element, doc: &crate::docx::Document, idx: &DocIndex) -> Value {
         v["binding"] = json!(p.binding.is_some());
         match &p.kind {
             ControlKind::PlainText { multi_line } => v["props"] = json!({ "multi_line": multi_line }),
-            ControlKind::Checkbox { checked, unchecked } => {
+            ControlKind::Checkbox { checked, unchecked, .. } => {
                 v["props"] = json!({ "checked": checked.to_string(), "unchecked": unchecked.to_string() })
             }
             ControlKind::Date { format, lid, .. } => v["props"] = json!({ "format": format, "lid": lid }),

@@ -1652,8 +1652,9 @@ pub enum ControlKind {
     RichText,
     /// `w:picture`.
     Picture,
-    /// `w14:checkbox`: the characters it shows checked and unchecked.
-    Checkbox { checked: char, unchecked: char },
+    /// `w14:checkbox`: the characters it shows checked and unchecked, their fonts (`w14:font`), and whether its markup
+    /// says it is checked (`w14:checked`; the face it shows says what it is).
+    Checkbox { checked: char, unchecked: char, checked_font: Option<String>, unchecked_font: Option<String>, value: Option<bool> },
     /// `w:date`: its display format and language, its calendar (`w:calendar`), what it stores in its data
     /// (`w:storeMappedDataAs`; `None`: not given, or a value this doesn't know) and the date it shows (`w:fullDate`,
     /// `YYYY-MM-DDTHH:MM:SSZ`).

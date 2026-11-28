@@ -1179,7 +1179,7 @@ pub fn control_info(p: &crate::docx::ControlProps) -> crate::api::state::Control
         ..Default::default()
     };
     match &p.kind {
-        crate::docx::ControlKind::Checkbox { checked, unchecked } => {
+        crate::docx::ControlKind::Checkbox { checked, unchecked, .. } => {
             (info.checked_symbol, info.unchecked_symbol) = (Some(checked.to_string()), Some(unchecked.to_string()));
         }
         crate::docx::ControlKind::RepeatingSection => {

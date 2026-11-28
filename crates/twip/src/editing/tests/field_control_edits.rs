@@ -110,13 +110,19 @@ fn a_box_whose_symbols_are_one_keeps_its_state_given_a_new_symbol() {
     );
     let mut e = ed(&sdt);
     let c = *e.document().controls.iter().find(|(_, k)| k.props.alias.as_deref() == Some("B")).map(|(k, _)| k).expect("the box");
-    let xml = |e: &Editor| e.document().controls[&c].props.kind_xml.clone().map(|k| k.xml).unwrap_or_default();
-    assert!(xml(&e).contains(r#"w14:checked w14:val="0""#), "{}", xml(&e));
+    let value = |e: &Editor| match &e.document().controls[&c].props.kind {
+        crate::docx::ControlKind::Checkbox { value, .. } => *value,
+        _ => None,
+    };
+    assert_eq!(value(&e), Some(false));
     let id = crate::editing::elements::id_str(crate::docx::ElementId::Control(c));
     let set = serde_json::json!({ "id": id, "options": { "uncheckedSymbol": { "font": "Segoe UI Symbol", "character": "\u{2610}" } } });
     let out = e.execute(Command::SetControl(serde_json::from_value(set).unwrap()), fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{out:?}");
-    assert!(xml(&e).contains(r#"w14:checked w14:val="0""#), "still unchecked: {}", xml(&e));
+    assert_eq!(value(&e), Some(false), "still unchecked");
+    let main = crate::docx::write::main_xml(e.document()).expect("writes").expect("changed");
+    let want = r#"<w14:checkedState w14:val="2610" w14:font="MS Gothic"/><w14:uncheckedState w14:val="2610" w14:font="Segoe UI Symbol"/>"#;
+    assert!(main.contains(want), "saved with its new symbol: {main}");
 }
 
 #[test]

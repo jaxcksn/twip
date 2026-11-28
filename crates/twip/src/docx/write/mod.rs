@@ -5936,7 +5936,7 @@ impl Saver<'_, '_> {
     /// references and marks, and pictures (inserted, or copied from elsewhere in the document).
     fn object_xml(&self, i: &Inline) -> Option<String> {
         if let Inline::Sym { ch, font, run, control: Some(c) } = i
-            && let Some(Control { props: ControlProps { kind: ControlKind::Checkbox { checked, unchecked }, .. }, .. }) = self.controls.get(c)
+            && let Some(Control { props: ControlProps { kind: ControlKind::Checkbox { checked, unchecked, .. }, .. }, .. }) = self.controls.get(c)
         {
             let w = &self.w;
             let hex = |c: char| format!("{:04X}", c as u32);
@@ -5948,11 +5948,14 @@ impl Saver<'_, '_> {
             let mut ctl = self.controls[c].clone();
             ctl.open.clear();
             // Its own states (their fonts) when it has them, checked as it shows.
-            let own = ctl.props.kind_xml.as_ref().map(|k| k.xml.as_str()).filter(|x| x.contains("checkedState")).map(|x| {
-                let mut x = x.to_string();
-                crate::docx::xml::set_checkbox_checked(&mut x, on == 1);
-                x
-            });
+            let own = match &ctl.props.kind_xml {
+                Some(k) if k.kind == ctl.props.kind => k.xml.contains("checkedState").then(|| {
+                    let mut x = k.xml.clone();
+                    crate::docx::xml::set_checkbox_checked(&mut x, on == 1);
+                    x
+                }),
+                _ => controls::checkbox_edited(&ctl.props, on == 1),
+            };
             let xml = own.unwrap_or_else(|| format!(
                 concat!(
                     "<w14:checkbox xmlns:w14=\"http://schemas.microsoft.com/office/word/2010/wordml\">",
@@ -7240,8 +7243,9 @@ pub(crate) fn control_open(w: &str, id: ControlId, c: &Control) -> String {
             p.kept.as_ref().and_then(|k| kept_part_xml(k, w)).or_else(|| x.as_ref().map(|x| x.xml.clone())).unwrap_or_default()
         }
         (_, ControlKind::Date { .. }) => controls::date_xml(w, p),
-        (Some(x), ControlKind::Checkbox { .. } | ControlKind::RepeatingSection) => x.xml.clone(),
         (Some(x), _) if x.kind == p.kind => x.xml.clone(),
+        (_, ControlKind::Checkbox { value, .. }) => controls::checkbox_edited(p, value.unwrap_or(false)).unwrap_or_default(),
+        (Some(x), ControlKind::RepeatingSection) => x.xml.clone(),
         (_, ControlKind::PlainText { multi_line: true }) => format!("<{w}text {w}multiLine=\"1\"/>"),
         (_, ControlKind::PlainText { .. }) => format!("<{w}text/>"),
         (_, ControlKind::RichText) => format!("<{w}richText/>"),
@@ -7249,7 +7253,6 @@ pub(crate) fn control_open(w: &str, id: ControlId, c: &Control) -> String {
         (_, ControlKind::Group) => format!("<{w}group/>"),
         (_, ControlKind::RepeatingSection) => format!("<w15:repeatingSection xmlns:w15=\"{w15}\"/>"),
         (_, ControlKind::RepeatingItem) => format!("<w15:repeatingSectionItem xmlns:w15=\"{w15}\"/>"),
-        (_, ControlKind::Checkbox { .. }) => String::new(),
     };
     format!("<{w}sdt><{w}sdtPr>{pr}{kind}</{w}sdtPr><{w}sdtContent>")
 }

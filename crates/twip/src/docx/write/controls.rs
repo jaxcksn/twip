@@ -36,6 +36,27 @@ pub(super) fn date_xml(w: &str, p: &ControlProps) -> String {
     with_full_date(&x, full_date.as_deref()).unwrap_or(x)
 }
 
+/// A checkbox's `w14:checkbox` once its symbols are set (from its settings, `checked` as given; Word's font for a
+/// symbol without one): `None` while it keeps its element as read, or for a new one whose symbols weren't set.
+pub(super) fn checkbox_edited(p: &ControlProps, checked: bool) -> Option<String> {
+    let ControlKind::Checkbox { checked: on, unchecked: off, checked_font, unchecked_font, .. } = &p.kind else { return None };
+    match &p.kind_xml {
+        Some(k) if k.kind == p.kind => return None,
+        None if checked_font.is_none() && unchecked_font.is_none() => return None,
+        _ => {}
+    }
+    let font = |f: &Option<String>| esc(f.as_deref().unwrap_or("MS Gothic"));
+    Some(format!(
+        r#"<w14:checkbox xmlns:w14="{}"><w14:checked w14:val="{}"/><w14:checkedState w14:val="{:04X}" w14:font="{}"/><w14:uncheckedState w14:val="{:04X}" w14:font="{}"/></w14:checkbox>"#,
+        super::super::xml::W14,
+        u8::from(checked),
+        *on as u32,
+        font(checked_font),
+        *off as u32,
+        font(unchecked_font)
+    ))
+}
+
 /// A `w:date` (`xml` as kept, or one of `format`) with its calendar and storage set where given.
 fn date_storage_xml(xml: Option<&str>, format: &str, lid: Option<&str>, calendar: Option<&str>, storage: Option<DateStorage>, w: &str) -> String {
     let mut x = xml.map_or_else(

@@ -1763,7 +1763,7 @@ impl Editor {
         let Some(Inline::Sym { ch, font, run, control: Some(c) }) = self.index.para(&self.doc, para).and_then(|q| inline_at(q, u)).cloned() else {
             return Outcome::Unchanged("no checkbox");
         };
-        let Some(crate::docx::ControlKind::Checkbox { checked, unchecked }) = self.doc.controls.get(&c).map(|c| c.props.kind.clone()) else {
+        let Some(crate::docx::ControlKind::Checkbox { checked, unchecked, .. }) = self.doc.controls.get(&c).map(|c| c.props.kind.clone()) else {
             return Outcome::Unchanged("no checkbox");
         };
         if !self.editable(&p) {
