@@ -15,6 +15,7 @@ use crate::document::format::{Jc, ShadingPattern, Width};
 use crate::docx::char_props::to_run_props;
 use crate::docx::para_props::to_para_props;
 use crate::docx::props::{ParaProps as XmlParaProps, RunProps, toggle};
+use crate::docx::style_xml::StyleXml;
 use crate::docx::style_xml::{LatentDef, StyleDef};
 use crate::font::Fonts;
 use crate::format::{

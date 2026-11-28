@@ -10,6 +10,7 @@ use crate::api::value::{AutoOr, NoneOr, StyleId};
 use crate::document::format::{Jc, ShadingPattern, Width};
 use crate::docx::resolvers::TypedDefs;
 use crate::docx::style_xml::StyleDef;
+use crate::docx::style_xml::StyleXml;
 use crate::font::Fonts;
 use crate::format::{
     CellMargins, CellProp, Color, ListChoice, ParaProp, RegionKind, RowProp, Shading, Style, StyleKind, StyleProp, StyleSet, StyleSheet,

@@ -6,6 +6,7 @@ use super::super::model::Document;
 use super::super::package;
 use super::super::xml::{attr, is_w};
 use super::Splice;
+use crate::docx::style_xml::StyleXml;
 use crate::format::Origin;
 
 const STYLES_REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles";

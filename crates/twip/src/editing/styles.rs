@@ -9,6 +9,7 @@ use crate::docx::para_props::ParaXml;
 use crate::docx::props::{Tab, TabKind};
 use crate::docx::resolvers::{Resolvers, TypedDefs};
 use crate::docx::style_xml::StyleEditError;
+use crate::docx::style_xml::StyleXml;
 use crate::docx::style_xml::{DefaultsDef, StyleDef};
 use crate::docx::write::props::Cx;
 use crate::docx::{Paragraph, RunStyle};

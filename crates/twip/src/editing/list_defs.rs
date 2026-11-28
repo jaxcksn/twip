@@ -14,6 +14,7 @@ use crate::docx::list_xml::{ListDefDirect, ListDirect};
 use crate::docx::props::ThemeColours;
 use crate::docx::resolvers::{Resolvers, TypedDefs};
 use crate::docx::style_xml::StyleDef;
+use crate::docx::style_xml::StyleXml;
 use crate::docx::write::props::Cx;
 use crate::font::Fonts;
 use crate::format::{

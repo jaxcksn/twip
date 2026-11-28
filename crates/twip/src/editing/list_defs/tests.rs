@@ -10,6 +10,7 @@ use crate::docx::char_props::RunDirect;
 use crate::docx::char_props::RunXml;
 use crate::docx::props::ThemeColours;
 use crate::docx::resolvers::TypedDefs;
+use crate::docx::style_xml::StyleXml;
 use crate::docx::write::props::Cx;
 use crate::format::{CharEdit, CharProps, ListDefId, MultiLevelType, Prop, Toggle};
 

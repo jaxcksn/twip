@@ -26,6 +26,7 @@ use std::rc::Rc;
 
 use roxmltree::Node;
 
+use super::as_read;
 use super::char_props::{self, RprRevisions};
 use super::para_props::{self, Owned};
 use super::prop_xml::{Compare, Out, Sink, foreign_child, props_key, reread, strip, with_attr};
@@ -37,6 +38,7 @@ use super::styles;
 use super::table_props::{self as tp, CellDirect, RowDirect, TableDirect};
 use super::write::props::{Cx, STYLE};
 use super::xml::{W, attr, child, children, is_w, on_off, on_off_str, val};
+use crate::document::authored::{Authored, Empty};
 use crate::docx::table_props::TableXml;
 use crate::format::{
     CellSet, CharProps, Defaults, DefaultsSet, ForeignChild, ForeignProps, LatentStyle, LatentStyles, Origin, ParaProps, ParaSet, QName, Region,
@@ -1282,131 +1284,112 @@ impl Element for LatentStyles {
     }
 }
 
-/// Typed definitions with the element they were read from (or last written as) beside them, and what edits since
-/// reading set.
-#[derive(Clone, Debug)]
-struct Holder<T: Element> {
-    props: Rc<T>,
-    origin: Option<(Rc<T>, Rc<str>)>,
-    set: Vec<T::Set>,
-}
+/// What the WordprocessingML adapter adds to a style, the document defaults and the latent styles: the element each
+/// was read from, and the element it is written as.
+pub trait StyleXml: Sized {
+    /// The typed definition.
+    type Def;
+    /// What an edit sets.
+    type Set;
 
-impl<T: Element> Default for Holder<T> {
-    fn default() -> Self {
-        Holder { props: Rc::default(), origin: None, set: Vec::new() }
-    }
-}
+    /// A definition read from `xml`, the element it was parsed from.
+    fn read(props: Self::Def, xml: Rc<str>) -> Self;
 
-impl<T: Element> Holder<T> {
-    fn read(props: T, xml: Rc<str>) -> Self {
-        let props = Rc::new(props);
-        Holder { origin: Some((props.clone(), xml)), props, set: Vec::new() }
-    }
+    /// The definition `xml` (the element in the part `cx` describes) holds; an empty one, the XML kept as written, for
+    /// XML that doesn't parse.
+    fn from_xml(xml: &str, cx: &Cx) -> Self;
 
-    fn as_read(&self) -> Option<&Rc<str>> {
-        let (read, xml) = self.origin.as_ref()?;
-        (Rc::ptr_eq(read, &self.props) || **read == *self.props).then_some(xml)
-    }
+    /// The element as read, while the definition is the one read from it.
+    fn as_read(&self) -> Option<&Rc<str>>;
 
-    fn xml(&self, colours: &ThemeColours, cx: &Cx) -> Cow<'_, str> {
-        if let Some(x) = self.as_read() {
-            return Cow::Borrowed(x);
-        }
-        let origin = self.origin.as_ref().map(|(read, xml)| (&**read, &**xml));
-        Cow::Owned(self.props.written_over(colours, cx, origin, &self.set))
-    }
+    /// The element it was read from (or last written as), whatever it is now.
+    fn origin_xml(&self) -> Option<&Rc<str>>;
 
-    fn edited(&self, mut props: T, set: &[T::Set]) -> Self {
-        let mut all = self.set.clone();
-        all.extend_from_slice(set);
-        T::drop_replaced(&self.props, &mut props, &all);
-        Holder { props: Rc::new(props), origin: self.origin.clone(), set: all }
-    }
+    /// The element to write in the part `cx` describes: as read while the definition is that, else written over it (a
+    /// theme colour's value as `colours` resolve it).
+    fn xml(&self, colours: &ThemeColours, cx: &Cx) -> Cow<'_, str>;
 
-    fn moved_to(&self, cx: &Cx) -> Option<Self> {
-        let (read, xml) = self.origin.as_ref()?;
-        if cx.parse(xml, |_, el| T::parse(el)).is_some_and(|p| p == **read) {
-            return None;
-        }
-        Some(Holder { props: self.props.clone(), origin: None, set: self.set.clone() })
-    }
+    /// `props` in place of this definition, set by an edit that set `set`, in order: the element it was read from kept
+    /// to write it over, what was set written again.
+    fn edited(&self, props: Self::Def, set: &[Self::Set]) -> Self;
+
+    /// This definition where `cx` describes the part it is written in: `None` while the element it was read from
+    /// reads the same there, else without it, to be written from the definition.
+    fn moved_to(&self, cx: &Cx) -> Option<Self>;
 }
 
 /// A holder of one kind of definition, with its parse and writer over the XML read.
 macro_rules! holder {
-    ($(#[$doc:meta])* $name:ident, $t:ty, $set:ty, $el:literal) => {
+    ($(#[$doc:meta])* $name:ident, $t:ty, $set:ty) => {
         $(#[$doc])*
         ///
         /// The written form stands for the definition only while it is the one it was read as; never part of
-        /// equality: use [`Self::authored_eq`].
-        #[derive(Clone, Debug, Default)]
-        pub struct $name(Holder<$t>);
+        /// equality: use [`Authored::authored_eq`].
+        pub type $name = Authored<Rc<$t>, $set>;
 
-        impl $name {
-            #[doc = concat!("A definition read from `xml`, the `", $el, "` it was parsed from.")]
-            pub fn read(props: $t, xml: Rc<str>) -> $name {
-                $name(Holder::read(props, xml))
+        impl Empty for $t {
+            fn empty() -> Rc<$t> {
+                Rc::default()
+            }
+        }
+
+        impl StyleXml for $name {
+            type Def = $t;
+            type Set = $set;
+
+            fn read(props: $t, xml: Rc<str>) -> $name {
+                as_read::read(Rc::new(props), xml)
             }
 
-            /// A typed definition with no written form.
-            pub fn typed(props: Rc<$t>) -> $name {
-                $name(Holder { props, origin: None, set: Vec::new() })
+            fn from_xml(xml: &str, cx: &Cx) -> $name {
+                $name::read(cx.parse(xml, |_, el| <$t as Element>::parse(el)).unwrap_or_default(), xml.into())
             }
 
-            #[doc = concat!("The definition `xml` (a `", $el, "` in the part `cx` describes) holds; an empty one, the XML kept as written, for XML that doesn't parse.")]
-            pub fn from_xml(xml: &str, cx: &Cx) -> $name {
-                $name(Holder::read(cx.parse(xml, |_, el| <$t as Element>::parse(el)).unwrap_or_default(), xml.into()))
+            fn as_read(&self) -> Option<&Rc<str>> {
+                as_read::as_read(self, |read, now| read == now)
             }
 
-            /// The typed definition.
-            pub fn get(&self) -> &Rc<$t> {
-                &self.0.props
+            fn origin_xml(&self) -> Option<&Rc<str>> {
+                as_read::origin_xml(self)
             }
 
-            #[doc = concat!("The `", $el, "` as read, while the definition is the one read from it.")]
-            pub fn as_read(&self) -> Option<&Rc<str>> {
-                self.0.as_read()
+            fn xml(&self, colours: &ThemeColours, cx: &Cx) -> Cow<'_, str> {
+                if let Some(x) = self.as_read() {
+                    return Cow::Borrowed(x);
+                }
+                Cow::Owned(self.get().written_over(colours, cx, as_read::record(self), self.set()))
             }
 
-            #[doc = concat!("The `", $el, "` it was read from (or last written as), whatever it is now.")]
-            pub fn origin_xml(&self) -> Option<&Rc<str>> {
-                self.0.origin.as_ref().map(|(_, x)| x)
+            fn edited(&self, mut props: $t, set: &[$set]) -> $name {
+                self.edited_with(set, |was, all| {
+                    <$t as Element>::drop_replaced(was, &mut props, all);
+                    Rc::new(props)
+                })
             }
 
-            #[doc = concat!("The `", $el, "` to write in the part `cx` describes: as read while the definition is that, else written over it (a theme colour's value as `colours` resolve it).")]
-            pub fn xml(&self, colours: &ThemeColours, cx: &Cx) -> Cow<'_, str> {
-                self.0.xml(colours, cx)
-            }
-
-            #[doc = concat!("`props` in place of this definition, set by an edit that set `set`, in order: the `", $el, "` it was read from kept to write it over, what was set written again.")]
-            pub fn edited(&self, props: $t, set: &[$set]) -> $name {
-                $name(self.0.edited(props, set))
-            }
-
-            #[doc = concat!("This definition where `cx` describes the part it is written in: `None` while the `", $el, "` it was read from reads the same there, else without it, to be written from the definition.")]
-            pub fn moved_to(&self, cx: &Cx) -> Option<$name> {
-                self.0.moved_to(cx).map($name)
-            }
-
-            /// Authored equality: the typed definitions.
-            pub fn authored_eq(&self, o: &$name) -> bool {
-                Rc::ptr_eq(&self.0.props, &o.0.props) || self.0.props == o.0.props
+            fn moved_to(&self, cx: &Cx) -> Option<$name> {
+                let (read, xml) = as_read::record(self)?;
+                if cx.parse(xml, |_, el| <$t as Element>::parse(el)).is_some_and(|p| p == *read) {
+                    return None;
+                }
+                Some(self.with_origin(crate::document::origin::Origin::NONE))
             }
         }
     };
 }
 
 holder!(
-    /// A style: typed, with the `w:style` it was read from beside it.
-    StyleDef, Style, StyleSet, "w:style"
+    /// A style: typed, with the `w:style` it was read from in its origin.
+    StyleDef, Style, StyleSet
 );
 holder!(
-    /// The document defaults: typed, with the `w:docDefaults` they were read from beside them.
-    DefaultsDef, Defaults, DefaultsSet, "w:docDefaults"
+    /// The document defaults: typed, with the `w:docDefaults` they were read from in their origin.
+    DefaultsDef, Defaults, DefaultsSet
 );
 holder!(
-    /// The latent styles: typed, with the `w:latentStyles` they were read from beside them. An edit replaces them whole.
-    LatentDef, LatentStyles, std::convert::Infallible, "w:latentStyles"
+    /// The latent styles: typed, with the `w:latentStyles` they were read from in their origin. An edit replaces them
+    /// whole.
+    LatentDef, LatentStyles, std::convert::Infallible
 );
 
 // A whole styles part

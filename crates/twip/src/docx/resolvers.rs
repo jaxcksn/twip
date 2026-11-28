@@ -11,6 +11,7 @@ use super::list_xml::{ListDefDirect, ListDirect, NumberingXml, PictureDirect};
 use super::style_xml::{DefaultsDef, LatentDef, StyleDef, StylesPart, alone};
 use super::write::props::Cx;
 use crate::document::paragraph::ListId;
+use crate::docx::style_xml::StyleXml;
 use crate::format::cascade::{Cascade, Rules};
 use crate::format::{ListDefId, Lists, Origin, StyleSheet};
 

@@ -355,6 +355,7 @@ pub fn display_name(s: &Style) -> String {
 #[cfg(test)]
 mod tests {
     use super::describe;
+    use crate::docx::style_xml::StyleXml;
 
     fn cascade() -> std::rc::Rc<crate::format::cascade::Cascade> {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/editor/FX-STYLES.docx");

@@ -18,6 +18,7 @@ use crate::api::value::{AutoOr, CellAlignment, HorizontalAlignment, Points, Styl
 use crate::docx::Document;
 use crate::docx::char_props::RunXml;
 use crate::docx::props::ThemeColours;
+use crate::docx::style_xml::StyleXml;
 use crate::docx::style_xml::{DefaultsDef, StyleDef};
 use crate::docx::write::props::{Cx, Props, STYLE, TBLPR, TC_BORDERS, TCPR, TRPR, esc};
 use crate::format::{

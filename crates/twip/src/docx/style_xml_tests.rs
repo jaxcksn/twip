@@ -9,6 +9,7 @@ use super::style_xml::{self as sx, DefaultsDef, LatentDef, StyleDef, StylesPart}
 use super::styles::{self, Styles};
 use super::write::props::Cx;
 use super::xml::W;
+use crate::docx::style_xml::StyleXml;
 use crate::format::cascade::{Cascade, Rules, TableRegion};
 use crate::format::{Color, ParaProp, ParaSet, RegionKind, StyleKind, StyleProp, StyleSet};
 
