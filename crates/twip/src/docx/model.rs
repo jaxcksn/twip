@@ -1476,7 +1476,7 @@ pub struct Control {
     /// The content's and the control's end tags, as read.
     pub close: String,
     /// Its properties as read: while `props` equals them, `open` is what is written.
-    pub read: Option<ControlProps>,
+    pub read: Option<Box<ControlProps>>,
     /// Where `open` and `close` start in the part it was read from (the writer checks the bytes there before using
     /// them).
     pub at: Option<(usize, usize)>,
@@ -1526,7 +1526,7 @@ impl Control {
 
     /// Whether it is written with the markup it was read with.
     pub fn as_read(&self) -> bool {
-        !self.open.is_empty() && self.read.as_ref() == Some(&self.props)
+        !self.open.is_empty() && self.read.as_deref() == Some(&self.props)
     }
 }
 
@@ -1545,9 +1545,10 @@ pub struct ControlProps {
     pub placeholder: Option<String>,
     /// `w:dataBinding` as read: kept, not evaluated.
     pub binding: Option<String>,
-    /// The kind's element as read (`w:date` with its children, `w:dropDownList`, ...): written back unchanged, a
-    /// drop-down's and a kept kind's while their typed settings are as read.
-    pub kind_xml: Option<String>,
+    /// The kind's element as read (`w:date` with its children, `w:dropDownList`, ...), with the kind it was read as:
+    /// written back while the control's kind is that one, a drop-down's and a kept kind's while their typed settings
+    /// are as read.
+    pub kind_xml: Option<KindXml>,
     /// A drop-down's entries.
     pub items: Vec<ListEntry>,
     /// A drop-down is a combo box (`w:comboBox`, else `w:dropDownList`): its entries suggest, any text goes.
@@ -1558,6 +1559,47 @@ pub struct ControlProps {
     pub temporary: bool,
     /// Every other `w:sdtPr` child (`w:rPr`, `w:id`, `w:temporary` as read, ...), by local name, in reading order.
     pub rest: Vec<(String, String)>,
+}
+
+/// A content control's kind element as read, and the kind it was read as.
+#[derive(Clone, Debug, PartialEq)]
+pub struct KindXml {
+    /// The element as read.
+    pub xml: String,
+    /// The kind read from it.
+    pub kind: ControlKind,
+}
+
+/// What a date control stores in its data (`w:storeMappedDataAs`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum DateStorage {
+    /// The text it shows.
+    Text,
+    /// The date (`xsd:date`).
+    Date,
+    /// The date and time (`xsd:dateTime`), Word's default.
+    DateTime,
+}
+
+impl DateStorage {
+    /// The storage a `w:storeMappedDataAs` value names; `None` for one this doesn't know.
+    pub fn parse(v: &str) -> Option<DateStorage> {
+        match v {
+            "text" => Some(DateStorage::Text),
+            "date" => Some(DateStorage::Date),
+            "dateTime" => Some(DateStorage::DateTime),
+            _ => None,
+        }
+    }
+
+    /// The `w:storeMappedDataAs` value.
+    pub fn xml(self) -> &'static str {
+        match self {
+            DateStorage::Text => "text",
+            DateStorage::Date => "date",
+            DateStorage::DateTime => "dateTime",
+        }
+    }
 }
 
 /// `w:lock`: what the user may not do to a control.
@@ -1602,7 +1644,7 @@ impl Lock {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Default)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
 pub enum ControlKind {
     /// `w:text`.
     PlainText { multi_line: bool },
@@ -1612,8 +1654,10 @@ pub enum ControlKind {
     Picture,
     /// `w14:checkbox`: the characters it shows checked and unchecked.
     Checkbox { checked: char, unchecked: char },
-    /// `w:date`: its display format and language.
-    Date { format: String, lid: Option<String> },
+    /// `w:date`: its display format and language, its calendar (`w:calendar`), what it stores in its data
+    /// (`w:storeMappedDataAs`; `None`: not given, or a value this doesn't know) and the date it shows (`w:fullDate`,
+    /// `YYYY-MM-DDTHH:MM:SSZ`).
+    Date { format: String, lid: Option<String>, calendar: Option<String>, storage: Option<DateStorage>, full_date: Option<String> },
     /// `w:dropDownList` or `w:comboBox` (its entries in `ControlProps::items`).
     DropDown,
     /// `w:group`.

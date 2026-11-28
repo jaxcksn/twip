@@ -110,7 +110,7 @@ fn a_box_whose_symbols_are_one_keeps_its_state_given_a_new_symbol() {
     );
     let mut e = ed(&sdt);
     let c = *e.document().controls.iter().find(|(_, k)| k.props.alias.as_deref() == Some("B")).map(|(k, _)| k).expect("the box");
-    let xml = |e: &Editor| e.document().controls[&c].props.kind_xml.clone().unwrap_or_default();
+    let xml = |e: &Editor| e.document().controls[&c].props.kind_xml.clone().map(|k| k.xml).unwrap_or_default();
     assert!(xml(&e).contains(r#"w14:checked w14:val="0""#), "{}", xml(&e));
     let id = crate::editing::elements::id_str(crate::docx::ElementId::Control(c));
     let set = serde_json::json!({ "id": id, "options": { "uncheckedSymbol": { "font": "Segoe UI Symbol", "character": "\u{2610}" } } });

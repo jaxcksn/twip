@@ -12,6 +12,14 @@ fn control(e: &Editor, alias: &str) -> (ControlId, crate::api::value::ElementId)
     (id, super::super::merge::api_id(crate::docx::ElementId::Control(id)))
 }
 
+/// A date control's full date (`w:fullDate`).
+fn full_date(e: &Editor, c: ControlId) -> Option<String> {
+    match &e.document().controls[&c].props.kind {
+        crate::docx::ControlKind::Date { full_date, .. } => full_date.clone(),
+        _ => None,
+    }
+}
+
 fn run(e: &mut Editor, c: Command) {
     let out = e.execute(c.clone(), fonts());
     assert!(matches!(out, Outcome::Changed(_)), "{c:?}: {out:?}");
@@ -252,13 +260,14 @@ fn filling_a_bound_date_writes_its_date() {
     let (c, id) = control(&e, "C");
     run(&mut e, fill(&id, "3/5/2025"));
     assert!(case_xml(&e).contains("<d>2025-03-05T00:00:00Z</d>"), "{}", case_xml(&e));
-    let full = e.document().controls[&c].props.kind_xml.clone().unwrap_or_default();
-    assert!(full.contains(r#"w:fullDate="2025-03-05T00:00:00Z""#), "{full}");
+    assert_eq!(full_date(&e, c).as_deref(), Some("2025-03-05T00:00:00Z"));
+    let main = crate::docx::write::main_xml(e.document()).expect("writes").expect("changed");
+    assert!(main.contains(r#"<w:date w:fullDate="2025-03-05T00:00:00Z"><w:dateFormat"#), "saved in its place");
     let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
     assert!(texts(&again)[0].contains("3/5/2025"), "{:?}", texts(&again));
     run(&mut e, fill(&id, "not a date"));
     assert!(case_xml(&e).contains("<d>not a date</d>"), "text that isn't a date is stored as it is: {}", case_xml(&e));
-    assert!(!e.document().controls[&c].props.kind_xml.clone().unwrap_or_default().contains("fullDate"), "and has no full date");
+    assert_eq!(full_date(&e, c), None, "and has no full date");
 }
 
 #[test]
@@ -274,8 +283,7 @@ fn a_tracked_replacement_in_a_date_reads_only_its_current_text() {
         let at = |u| super::super::position::Position::text(super::super::position::StoryId::Body, para, crate::layout::Unit(u));
         e.selection = super::super::selection::Selection::range(at(7), at(8), super::super::selection::Granularity::Char);
         run(&mut e, Command::InsertText("2".into()));
-        let xml = e.document().controls[&c].props.kind_xml.clone().unwrap_or_default();
-        assert!(xml.contains(r#"w:fullDate="2026-02-01T00:00:00Z""#), "tracked {track}: {xml}");
+        assert_eq!(full_date(&e, c).as_deref(), Some("2026-02-01T00:00:00Z"), "tracked {track}");
     }
 }
 
@@ -303,8 +311,7 @@ fn typing_beside_a_date_keeps_its_date() {
             crate::layout::Unit(at),
         ));
         run(&mut e, Command::InsertText("x".into()));
-        let xml = e.document().controls[&c].props.kind_xml.clone().unwrap_or_default();
-        assert!(xml.contains(r#"w:fullDate="2025-03-05T00:00:00Z""#), "typing at {at}, outside it, leaves its date: {xml}");
+        assert_eq!(full_date(&e, c).as_deref(), Some("2025-03-05T00:00:00Z"), "typing at {at}, outside it, leaves its date");
     }
     assert_eq!(texts(&e)[0], "xBefore 5 mars 2025x");
 }

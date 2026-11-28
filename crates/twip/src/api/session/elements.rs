@@ -82,7 +82,7 @@ fn options(s: &Session, e: &Element) -> Option<ControlOptions> {
         ControlKind::Checkbox { checked, .. } => {
             ControlOptions::Checkbox(CheckboxOptions { checked: Some(e.display == checked.to_string()), ..Default::default() })
         }
-        ControlKind::Date { format, lid } => {
+        ControlKind::Date { format, lid, .. } => {
             let d = crate::editing::date_settings(p);
             ControlOptions::Date(DateOptions {
                 format: Some(format.clone()).filter(|f| !f.is_empty()),

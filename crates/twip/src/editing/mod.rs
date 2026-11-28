@@ -113,12 +113,13 @@ use crate::docx::{Block, BreakKind, Document, Inline, Paragraph, Run};
 use crate::font::Fonts;
 use crate::layout::{Budget, Change, DocumentLayout, ParaId, Revision, Snapshot, Step as LayoutStep, TableId, Target, Unit};
 
+pub use crate::docx::DateStorage;
 use commands::{Command, Dir, MoveBy, Outcome};
 use geometry::Pages;
 use history::{History, SelectionRecord, Transaction, Typing, TypingRun};
 use index::{Container, DocIndex};
 use input::{PointerKind, Request, Viewport};
-pub use merge::{DateSettings, DateStorage, date_formats, date_settings};
+pub use merge::{DateSettings, date_formats, date_settings};
 use navigate::Nav;
 pub use notes::NoteSeparatorInfo;
 use position::{Affinity, Place, Position, StoryId};

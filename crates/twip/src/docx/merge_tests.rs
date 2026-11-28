@@ -94,7 +94,7 @@ fn controls_read_with_their_properties() {
     assert_eq!(by_tag("Recipient/Name").props.alias.as_deref(), Some("Recipient name"));
     assert_eq!(by_tag("Recipient/Address").props.kind, ControlKind::PlainText { multi_line: true });
     assert_eq!(by_tag("Content:Complaint").props.kind, ControlKind::RichText);
-    assert_eq!(by_tag("Statement/Date").props.kind, ControlKind::Date { format: "M/d/yyyy".into(), lid: Some("en-US".into()) });
+    assert!(matches!(&by_tag("Statement/Date").props.kind, ControlKind::Date { format, lid: Some(l), .. } if format == "M/d/yyyy" && l == "en-US"));
     assert!(matches!(by_tag("Check:Done").props.kind, ControlKind::Checkbox { .. }));
     assert_eq!(by_tag("Barcode:7").props.kind, ControlKind::Picture);
     assert_eq!(by_tag("Statement/Status").props.kind, ControlKind::DropDown);

@@ -114,7 +114,6 @@ impl Editor {
             return;
         }
         let edits = edits(tx);
-        let w = self.cx().w;
         let mut changes = Vec::new();
         for para in edited_paras(&edits) {
             let Some(p) = self.index.para(&self.doc, para) else { continue };
@@ -136,9 +135,9 @@ impl Editor {
                                 _ => None,
                             })
                             .collect();
-                        if let Some(xml) = binding::with_full_date(&ctl.props, &text, &w) {
+                        if let Some(kind) = binding::with_full_date(&ctl.props, &text) {
                             let mut ctl = ctl.clone();
-                            ctl.props.kind_xml = Some(xml);
+                            ctl.props.kind = kind;
                             changes.push((c, ctl));
                         }
                     }

@@ -7,7 +7,9 @@ use crate::api::command::{
 use crate::api::error::Error;
 use crate::api::review::Body;
 use crate::api::value::{ControlKind as KindArg, ControlLock, ControlOptions, DataBinding};
-use crate::docx::{Block, Control, ControlId, ControlKind, ControlProps, ElementId, FieldEdge, FieldId, FieldKind, FieldView, Inline, Lock};
+use crate::docx::{
+    Block, Control, ControlId, ControlKind, ControlProps, DateStorage, ElementId, FieldEdge, FieldId, FieldKind, FieldView, Inline, Lock,
+};
 use crate::font::Fonts;
 use crate::layout::{ParaId, Unit};
 
@@ -720,7 +722,7 @@ impl Editor {
                 .skip(1)
                 .any(|(x, _)| matches!(x, ElementId::Control(c) if self.doc.controls.get(c).is_some_and(|k| !k.props.lock.editable())))
         });
-        if props.kind_xml.as_deref().is_some_and(items_fixed) || !props.lock.editable() || around_locked {
+        if props.kind_xml.as_ref().is_some_and(|k| items_fixed(&k.xml)) || !props.lock.editable() || around_locked {
             return Err(locked());
         }
         if props.binding.is_some() || props.rest.iter().any(|(n, _)| n == "dataBinding") {
@@ -1048,9 +1050,9 @@ impl Editor {
         }
         let full = crate::docx::review::Timestamp::from_utc(secs).raw.to_string();
         let text = crate::docx::binding::shown(&control.props, &full);
-        if let Some(xml) = crate::docx::binding::with_full_date_value(&control.props, Some(full), &self.cx().w) {
+        if let Some(kind) = crate::docx::binding::with_full_date_value(&control.props, Some(full)) {
             let mut control = control;
-            control.props.kind_xml = Some(xml);
+            control.props.kind = kind;
             let mut tx = self.begin("Fill Content Control");
             if self.step(&mut tx, Step::Control { id: c, control: Some(control) }).is_err() {
                 self.abort(tx);
@@ -2583,7 +2585,6 @@ impl Editor {
     fn control_insert(&mut self, c: InsertControl, fonts: &Fonts) -> Result<Outcome, Refused> {
         let w = self.cx().w;
         let mut checked_now = false;
-        let mut kind_xml = None;
         let (mut items, mut combo, mut kept) = (Vec::new(), false, None);
         let mut size = (144.0, 108.0);
         let placeholder_image = match &c.placeholder_image {
@@ -2607,13 +2608,15 @@ impl Editor {
             }
             (KindArg::Date, Some(ControlOptions::Date(o))) => {
                 let format = o.format.clone().unwrap_or_else(|| "M/d/yyyy".into());
-                if o.calendar.is_some() || o.store_as.is_some() {
-                    let calendar = o.calendar.map(crate::api::value::CalendarType::val);
-                    kind_xml = Some(date_storage_xml(None, &format, o.locale.as_deref(), calendar, o.store_as.map(DateStorage::of_api), &w));
+                ControlKind::Date {
+                    format,
+                    lid: o.locale.clone(),
+                    calendar: o.calendar.map(|c| c.val().to_string()),
+                    storage: o.store_as.map(DateStorage::of_api),
+                    full_date: None,
                 }
-                ControlKind::Date { format, lid: o.locale.clone() }
             }
-            (KindArg::Date, _) => ControlKind::Date { format: "M/d/yyyy".into(), lid: None },
+            (KindArg::Date, _) => ControlKind::Date { format: "M/d/yyyy".into(), lid: None, calendar: None, storage: None, full_date: None },
             (k @ (KindArg::DropDown | KindArg::ComboBox), o) => {
                 combo = k == KindArg::ComboBox;
                 if let Some(ControlOptions::List(l)) = o {
@@ -2657,7 +2660,6 @@ impl Editor {
             alias: c.title,
             lock: c.lock.map(lock_of).unwrap_or_default(),
             binding: c.binding.as_ref().map(|b| binding_xml(b, &w)),
-            kind_xml,
             items,
             combo,
             kept,
@@ -2958,12 +2960,12 @@ impl Editor {
             let (e, _) = self.element(id)?;
             let ElementId::Control(c) = e else { return Err(bad("id")) };
             let mut control = self.doc.controls.get(&c).cloned().ok_or_else(no_element)?;
-            let ControlKind::Date { format, lid } = &control.props.kind else { return Err(bad("id")) };
-            let x = date_storage_xml(control.props.kind_xml.as_deref(), format, lid.as_deref(), calendar, storage, &self.cx().w);
-            if control.props.kind_xml.as_deref() == Some(x.as_str()) {
+            let ControlKind::Date { calendar: cal, storage: store, .. } = &mut control.props.kind else { return Err(bad("id")) };
+            let now = (calendar.map(str::to_string).or_else(|| cal.clone()), storage.or(*store));
+            if now == (cal.clone(), *store) {
                 return Ok(Outcome::Unchanged("already so"));
             }
-            control.props.kind_xml = Some(x);
+            (*cal, *store) = now;
             let mut tx = self.begin("Content Control Properties");
             if self.step(&mut tx, Step::Control { id: c, control: Some(control) }).is_err() {
                 self.abort(tx);
@@ -3009,26 +3011,18 @@ impl Editor {
                         *multi_line = m;
                     }
                 }
-                (ControlKind::Date { format, lid }, ControlOptions::Date(o)) => {
+                (ControlKind::Date { format, lid, calendar, storage, .. }, ControlOptions::Date(o)) => {
                     if let Some(f) = &o.format {
                         *format = f.clone();
                     }
                     if o.locale.is_some() {
                         *lid = o.locale.clone();
                     }
-                    // Only the format and locale of the `w:date` read change.
-                    if let Some(x) = &mut p.kind_xml {
-                        if let Some(f) = &o.format {
-                            *x = with_child_val(x, "dateFormat", f, &prefix, None);
-                        }
-                        if let Some(l) = &o.locale {
-                            *x = with_child_val(x, "lid", l, &prefix, Some("dateFormat"));
-                        }
+                    if let Some(c) = o.calendar {
+                        *calendar = Some(c.val().to_string());
                     }
-                    if o.calendar.is_some() || o.store_as.is_some() {
-                        let calendar = o.calendar.map(crate::api::value::CalendarType::val);
-                        let storage = o.store_as.map(DateStorage::of_api);
-                        p.kind_xml = Some(date_storage_xml(p.kind_xml.as_deref(), format, lid.as_deref(), calendar, storage, &prefix));
+                    if let Some(s) = o.store_as {
+                        *storage = Some(DateStorage::of_api(s));
                     }
                 }
                 (ControlKind::DropDown, ControlOptions::List(l)) => p.items = list_entries(&l.items),
@@ -3040,7 +3034,7 @@ impl Editor {
                             let f = x[at..].find("font=\"")? + at + 6;
                             Some(x[f..f + x[f..].find('"')?].to_string())
                         };
-                        let was = p.kind_xml.clone().unwrap_or_default();
+                        let was = p.kind_xml.as_ref().map(|k| k.xml.clone()).unwrap_or_default();
                         let one = |s: &crate::api::value::CheckboxSymbol| s.character.chars().next();
                         if let Some(c) = o.checked_symbol.as_ref().and_then(one) {
                             *checked = c;
@@ -3074,18 +3068,21 @@ impl Editor {
                         face = Some(if on { (*checked, f_on.clone()) } else { (*unchecked, f_off.clone()) });
                         let w14 = crate::docx::xml::W14;
                         let esc = crate::docx::write::props::esc;
-                        p.kind_xml = Some(format!(
-                            r#"<w14:checkbox xmlns:w14="{w14}"><w14:checked w14:val="{}"/><w14:checkedState w14:val="{:04X}" w14:font="{}"/><w14:uncheckedState w14:val="{:04X}" w14:font="{}"/></w14:checkbox>"#,
-                            u8::from(on),
-                            *checked as u32,
-                            esc(&f_on),
-                            *unchecked as u32,
-                            esc(&f_off)
-                        ));
+                        p.kind_xml = Some(crate::docx::KindXml {
+                            kind: ControlKind::Other,
+                            xml: format!(
+                                r#"<w14:checkbox xmlns:w14="{w14}"><w14:checked w14:val="{}"/><w14:checkedState w14:val="{:04X}" w14:font="{}"/><w14:uncheckedState w14:val="{:04X}" w14:font="{}"/></w14:checkbox>"#,
+                                u8::from(on),
+                                *checked as u32,
+                                esc(&f_on),
+                                *unchecked as u32,
+                                esc(&f_off)
+                            ),
+                        });
                     }
                 }
                 (ControlKind::RepeatingSection, ControlOptions::RepeatingSection(o)) => {
-                    let was = p.kind_xml.clone().unwrap_or_default();
+                    let was = p.kind_xml.as_ref().map(|k| k.xml.clone()).unwrap_or_default();
                     let title = o.section_title.clone().or_else(|| {
                         let at = was.find("sectionTitle ")?;
                         let v = was[at..].find("val=\"")? + at + 5;
@@ -3097,7 +3094,10 @@ impl Editor {
                         .filter(|t| !t.is_empty())
                         .map_or(String::new(), |t| format!(r#"<w15:sectionTitle w15:val="{}"/>"#, crate::docx::write::props::esc(&t)));
                     let fixed = if fixed { "<w15:doNotAllowInsertDeleteSection/>" } else { "" };
-                    p.kind_xml = Some(format!(r#"<w15:repeatingSection xmlns:w15="{w15}">{title}{fixed}</w15:repeatingSection>"#));
+                    p.kind_xml = Some(crate::docx::KindXml {
+                        kind: ControlKind::Other,
+                        xml: format!(r#"<w15:repeatingSection xmlns:w15="{w15}">{title}{fixed}</w15:repeatingSection>"#),
+                    });
                 }
                 (ControlKind::Picture, ControlOptions::Picture(o)) => resize = Some(o.clone()),
                 (ControlKind::Other, ControlOptions::Gallery(o)) => {
@@ -3262,89 +3262,6 @@ fn around_controls(inlines: &[Inline], mut i: usize, mut j: usize) -> (usize, us
             (None, Some(k)) => j = k + 1,
             (None, None) => return (i, j),
         }
-    }
-}
-
-/// Element `xml` with its child `local`'s `val` set to `val`: a child it doesn't have is added (after child `after`,
-/// else first), written with prefix `w`.
-fn with_child_val(xml: &str, local: &str, val: &str, w: &str, after: Option<&str>) -> String {
-    let esc = crate::docx::write::props::esc;
-    let find = |name: &str| {
-        let mut from = 0;
-        while let Some(k) = xml[from..].find('<').map(|k| from + k) {
-            let n = xml[k + 1..].split(|c: char| c.is_whitespace() || c == '/' || c == '>').next().unwrap_or_default();
-            if n.rsplit(':').next() == Some(name) && !n.starts_with('/') {
-                return Some((k, k + crate::docx::binding::tag_end(&xml[k..])? + 1));
-            }
-            from = k + 1;
-        }
-        None
-    };
-    let name_end = |tag: &str| tag.find(|c: char| c.is_whitespace() || c == '/' || c == '>').unwrap_or(tag.len());
-    if let Some((start, end)) = find(local) {
-        let tag = &xml[start..end];
-        let new = match attr_value(tag, "val") {
-            Some(v) => format!("{}{}{}", &tag[..v.start], esc(val), &tag[v.end..]),
-            None => {
-                let at = name_end(tag);
-                format!("{} {w}val=\"{}\"{}", &tag[..at], esc(val), &tag[at..])
-            }
-        };
-        return format!("{}{new}{}", &xml[..start], &xml[end..]);
-    }
-    let child = format!("<{w}{local} {w}val=\"{}\"/>", esc(val));
-    if let Some((k, end)) = after.and_then(find) {
-        // After the whole sibling, its end tag too
-        let at = if xml[..end].ends_with("/>") {
-            end
-        } else {
-            let close = format!("</{}>", &xml[k + 1..k + name_end(&xml[k..])]);
-            xml[end..].find(&close).map_or(end, |c| end + c + close.len())
-        };
-        return format!("{}{child}{}", &xml[..at], &xml[at..]);
-    }
-    let Some(at) = crate::docx::binding::tag_end(xml).map(|e| e + 1) else { return format!("{xml}{child}") };
-    // A root without children opens for the child
-    match xml[..at].strip_suffix("/>") {
-        Some(head) => {
-            let name = &xml[1..name_end(xml)];
-            format!("{}>{child}</{name}>{}", head.trim_end(), &xml[at..])
-        }
-        None => format!("{}{child}{}", &xml[..at], &xml[at..]),
-    }
-}
-
-/// Where the value of `tag`'s attribute of local name `local` is (`w:val = "x"` as well as `w:val="x"`).
-fn attr_value(tag: &str, local: &str) -> Option<std::ops::Range<usize>> {
-    let b = tag.as_bytes();
-    let space = |i: usize| b.get(i).is_some_and(u8::is_ascii_whitespace);
-    let mut i = tag.find(|c: char| c.is_whitespace() || c == '/' || c == '>')?;
-    loop {
-        while space(i) {
-            i += 1;
-        }
-        let start = i;
-        while i < b.len() && !b[i].is_ascii_whitespace() && !matches!(b[i], b'=' | b'/' | b'>') {
-            i += 1;
-        }
-        let name = &tag[start..i];
-        while space(i) {
-            i += 1;
-        }
-        if name.is_empty() || b.get(i) != Some(&b'=') {
-            return None;
-        }
-        i += 1;
-        while space(i) {
-            i += 1;
-        }
-        let q = *b.get(i).filter(|q| matches!(q, b'"' | b'\''))?;
-        let from = i + 1;
-        let to = from + tag[from..].find(char::from(q))?;
-        if name.rsplit(':').next() == Some(local) {
-            return Some(from..to);
-        }
-        i = to + 1;
     }
 }
 
@@ -3577,31 +3494,6 @@ fn new_item_id(xml: &str, n: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::with_child_val;
-
-    #[test]
-    fn a_child_value_is_set_where_its_attribute_is() {
-        let x = r#"<w:date w:fullDate="2026-01-01T00:00:00Z"><w:dateFormat w:val = "M/d/yyyy"/></w:date>"#;
-        assert_eq!(
-            with_child_val(x, "dateFormat", "d MMM", "w:", None),
-            r#"<w:date w:fullDate="2026-01-01T00:00:00Z"><w:dateFormat w:val = "d MMM"/></w:date>"#
-        );
-        let x = r#"<w:date><w:dateFormat w:x="1"/></w:date>"#;
-        assert_eq!(with_child_val(x, "dateFormat", "d", "w:", None), r#"<w:date><w:dateFormat w:val="d" w:x="1"/></w:date>"#);
-    }
-
-    #[test]
-    fn a_child_goes_inside_a_root_without_children() {
-        let x = r#"<w:date w:fullDate="2026-01-01T00:00:00Z"/>"#;
-        let with = with_child_val(x, "dateFormat", "d", "w:", None);
-        assert_eq!(with, r#"<w:date w:fullDate="2026-01-01T00:00:00Z"><w:dateFormat w:val="d"/></w:date>"#);
-        assert_eq!(
-            with_child_val(&with, "lid", "en-GB", "w:", Some("dateFormat")),
-            r#"<w:date w:fullDate="2026-01-01T00:00:00Z"><w:dateFormat w:val="d"/><w:lid w:val="en-GB"/></w:date>"#
-        );
-        assert_eq!(with_child_val("<w:date/>", "lid", "en-GB", "w:", Some("dateFormat")), r#"<w:date><w:lid w:val="en-GB"/></w:date>"#);
-    }
-
     #[test]
     fn items_are_fixed_by_the_element_not_its_name_in_text() {
         use super::items_fixed;
@@ -3616,36 +3508,6 @@ mod tests {
         assert_eq!(super::date_formats("en_US"), super::date_formats("en-US"));
         assert_eq!(super::date_formats("en_GB")[0], "dd/MM/yyyy");
         assert_ne!(super::date_formats("en"), super::date_formats("en-GB"));
-    }
-
-    #[test]
-    fn a_child_goes_after_a_siblings_end_tag() {
-        let x = r#"<w:date><w:lid w:val="en-US"></w:lid></w:date>"#;
-        assert_eq!(
-            with_child_val(x, "storeMappedDataAs", "date", "w:", Some("lid")),
-            r#"<w:date><w:lid w:val="en-US"></w:lid><w:storeMappedDataAs w:val="date"/></w:date>"#
-        );
-    }
-}
-
-/// What a date control stores in its data (`w:storeMappedDataAs`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DateStorage {
-    /// The text it shows.
-    Text,
-    /// The date (`xsd:date`).
-    Date,
-    /// The date and time (`xsd:dateTime`), Word's default.
-    DateTime,
-}
-
-impl DateStorage {
-    fn xml(self) -> &'static str {
-        match self {
-            DateStorage::Text => "text",
-            DateStorage::Date => "date",
-            DateStorage::DateTime => "dateTime",
-        }
     }
 }
 
@@ -3666,34 +3528,6 @@ pub struct DateSettings {
 /// A drop-down's entries from the API's items: each with its text and value.
 fn list_entries(items: &[crate::api::value::ListItem]) -> Vec<crate::docx::ListEntry> {
     items.iter().map(|i| crate::docx::ListEntry { text: Some(i.text.clone()), value: Some(i.value.clone()) }).collect()
-}
-
-/// A date control's `w:date` (`kind_xml` as kept, or one of `format`) with its calendar and storage set where given.
-fn date_storage_xml(
-    kind_xml: Option<&str>,
-    format: &str,
-    lid: Option<&str>,
-    calendar: Option<&str>,
-    storage: Option<DateStorage>,
-    w: &str,
-) -> String {
-    let esc = crate::docx::write::props::esc;
-    let mut x = kind_xml.map_or_else(
-        || {
-            let lid = lid.map(|l| format!("<{w}lid {w}val=\"{}\"/>", esc(l))).unwrap_or_default();
-            format!("<{w}date><{w}dateFormat {w}val=\"{}\"/>{lid}</{w}date>", esc(format))
-        },
-        str::to_string,
-    );
-    let after_lid = if x.contains("lid") { "lid" } else { "dateFormat" };
-    if let Some(s) = storage {
-        x = with_child_val(&x, "storeMappedDataAs", s.xml(), w, Some(after_lid));
-    }
-    if let Some(cal) = calendar {
-        let after = if x.contains("storeMappedDataAs") { "storeMappedDataAs" } else { after_lid };
-        x = with_child_val(&x, "calendar", cal, w, Some(after));
-    }
-    x
 }
 
 impl DateStorage {
@@ -3718,26 +3552,12 @@ impl DateStorage {
 
 /// Date control `props`' settings; `None` for another kind.
 pub fn date_settings(props: &ControlProps) -> Option<DateSettings> {
-    let ControlKind::Date { format, lid } = &props.kind else { return None };
-    let x = props.kind_xml.as_deref().unwrap_or_default();
-    let val = |local: &str| {
-        // The element's name, then any XML whitespace before its attributes.
-        let at = [format!(":{local}"), format!("<{local}")].iter().find_map(|name| {
-            x.match_indices(name.as_str()).find(|(i, _)| x[i + name.len()..].starts_with(|c: char| c.is_ascii_whitespace())).map(|(i, _)| i)
-        })?;
-        let tag = &x[at..at + crate::docx::binding::tag_end(&x[at..])?];
-        attr_value(tag, "val").map(|r| crate::docx::binding::unescape(&tag[r]))
-    };
-    let storage = match val("storeMappedDataAs").as_deref() {
-        Some("text") => DateStorage::Text,
-        Some("date") => DateStorage::Date,
-        _ => DateStorage::DateTime,
-    };
+    let ControlKind::Date { format, lid, calendar, storage, .. } = &props.kind else { return None };
     Some(DateSettings {
         format: if format.is_empty() { "M/d/yyyy".into() } else { format.clone() },
         locale: lid.clone(),
-        calendar: val("calendar").unwrap_or_else(|| "gregorian".into()),
-        storage,
+        calendar: calendar.clone().unwrap_or_else(|| "gregorian".into()),
+        storage: storage.unwrap_or(DateStorage::DateTime),
     })
 }
 
@@ -3850,7 +3670,8 @@ pub(super) fn items_fixed(kind_xml: &str) -> bool {
         let tag = &kind_xml[k..end];
         let name = tag[1..].split(|c: char| c.is_whitespace() || c == '/').next().unwrap_or_default();
         if name.rsplit(':').next() == Some("doNotAllowInsertDeleteSection") {
-            return attr_value(tag, "val").is_none_or(|r| !matches!(&tag[r], "0" | "false" | "off"));
+            let val = crate::docx::binding::tag_attrs(tag).find(|(n, ..)| n.rsplit(':').next() == Some("val"));
+            return val.is_none_or(|(_, v, _)| !matches!(v, "0" | "false" | "off"));
         }
         from = end + 1;
     }

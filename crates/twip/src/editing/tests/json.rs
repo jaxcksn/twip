@@ -440,7 +440,7 @@ fn element(e: &Element, doc: &crate::docx::Document, idx: &DocIndex) -> Value {
             ControlKind::Checkbox { checked, unchecked } => {
                 v["props"] = json!({ "checked": checked.to_string(), "unchecked": unchecked.to_string() })
             }
-            ControlKind::Date { format, lid } => v["props"] = json!({ "format": format, "lid": lid }),
+            ControlKind::Date { format, lid, .. } => v["props"] = json!({ "format": format, "lid": lid }),
             _ => {}
         }
     }

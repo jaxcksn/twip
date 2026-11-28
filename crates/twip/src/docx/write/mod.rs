@@ -21,6 +21,7 @@ use super::xml::{MC, W, W14, attr, child, is, is_w};
 use super::*;
 
 mod comments;
+mod controls;
 pub(crate) mod drawing;
 mod fonts;
 mod generate;
@@ -5947,12 +5948,12 @@ impl Saver<'_, '_> {
             let mut ctl = self.controls[c].clone();
             ctl.open.clear();
             // Its own states (their fonts) when it has them, checked as it shows.
-            let own = ctl.props.kind_xml.as_deref().filter(|x| x.contains("checkedState")).map(|x| {
+            let own = ctl.props.kind_xml.as_ref().map(|k| k.xml.as_str()).filter(|x| x.contains("checkedState")).map(|x| {
                 let mut x = x.to_string();
                 crate::docx::xml::set_checkbox_checked(&mut x, on == 1);
                 x
             });
-            ctl.props.kind_xml = own.or(Some(format!(
+            let xml = own.unwrap_or_else(|| format!(
                 concat!(
                     "<w14:checkbox xmlns:w14=\"http://schemas.microsoft.com/office/word/2010/wordml\">",
                     "<w14:checked w14:val=\"{on}\"/><w14:checkedState w14:val=\"{cs}\" w14:font=\"{f}\"/><w14:uncheckedState w14:val=\"{us}\" w14:font=\"{f}\"/>",
@@ -5962,7 +5963,8 @@ impl Saver<'_, '_> {
                 cs = cs,
                 us = us,
                 f = f,
-            )));
+            ));
+            ctl.props.kind_xml = Some(KindXml { xml, kind: ctl.props.kind.clone() });
             return Some(format!(
                 "{PARA_LEVEL}{}<{w}r>{rpr}<{w}t>{}</{w}t></{w}r></{w}sdtContent></{w}sdt>",
                 control_open(w, *c, &ctl),
@@ -7233,22 +7235,21 @@ pub(crate) fn control_open(w: &str, id: ControlId, c: &Control) -> String {
     let w15 = "http://schemas.microsoft.com/office/word/2012/wordml";
     let kind = match (&p.kind_xml, &p.kind) {
         (_, ControlKind::DropDown) => list_xml(w, c),
-        (Some(x), ControlKind::Other) if c.read.as_ref().is_some_and(|r| r.kept == p.kept) => x.clone(),
-        (x, ControlKind::Other) => p.kept.as_ref().and_then(|k| kept_part_xml(k, w)).or_else(|| x.clone()).unwrap_or_default(),
-        (Some(x), _) => x.clone(),
-        (None, ControlKind::PlainText { multi_line: true }) => format!("<{w}text {w}multiLine=\"1\"/>"),
-        (None, ControlKind::PlainText { .. }) => format!("<{w}text/>"),
-        (None, ControlKind::RichText) => format!("<{w}richText/>"),
-        (None, ControlKind::Picture) => format!("<{w}picture/>"),
-        (None, ControlKind::Date { format, lid }) => format!(
-            "<{w}date><{w}dateFormat {w}val=\"{}\"/>{}<{w}storeMappedDataAs {w}val=\"dateTime\"/><{w}calendar {w}val=\"gregorian\"/></{w}date>",
-            esc(format),
-            lid.as_ref().map_or(String::new(), |l| format!("<{w}lid {w}val=\"{}\"/>", esc(l)))
-        ),
-        (None, ControlKind::Group) => format!("<{w}group/>"),
-        (None, ControlKind::RepeatingSection) => format!("<w15:repeatingSection xmlns:w15=\"{w15}\"/>"),
-        (None, ControlKind::RepeatingItem) => format!("<w15:repeatingSectionItem xmlns:w15=\"{w15}\"/>"),
-        (None, ControlKind::Checkbox { .. }) => String::new(),
+        (Some(x), ControlKind::Other) if c.read.as_ref().is_some_and(|r| r.kept == p.kept) => x.xml.clone(),
+        (x, ControlKind::Other) => {
+            p.kept.as_ref().and_then(|k| kept_part_xml(k, w)).or_else(|| x.as_ref().map(|x| x.xml.clone())).unwrap_or_default()
+        }
+        (_, ControlKind::Date { .. }) => controls::date_xml(w, p),
+        (Some(x), ControlKind::Checkbox { .. } | ControlKind::RepeatingSection) => x.xml.clone(),
+        (Some(x), _) if x.kind == p.kind => x.xml.clone(),
+        (_, ControlKind::PlainText { multi_line: true }) => format!("<{w}text {w}multiLine=\"1\"/>"),
+        (_, ControlKind::PlainText { .. }) => format!("<{w}text/>"),
+        (_, ControlKind::RichText) => format!("<{w}richText/>"),
+        (_, ControlKind::Picture) => format!("<{w}picture/>"),
+        (_, ControlKind::Group) => format!("<{w}group/>"),
+        (_, ControlKind::RepeatingSection) => format!("<w15:repeatingSection xmlns:w15=\"{w15}\"/>"),
+        (_, ControlKind::RepeatingItem) => format!("<w15:repeatingSectionItem xmlns:w15=\"{w15}\"/>"),
+        (_, ControlKind::Checkbox { .. }) => String::new(),
     };
     format!("<{w}sdt><{w}sdtPr>{pr}{kind}</{w}sdtPr><{w}sdtContent>")
 }
@@ -7260,7 +7261,7 @@ fn list_xml(w: &str, c: &Control) -> String {
     if let Some(x) = &p.kind_xml
         && c.read.as_ref().is_some_and(|r| r.items == p.items && r.combo == p.combo)
     {
-        return x.clone();
+        return x.xml.clone();
     }
     let esc = props::esc;
     let mut items = String::new();
@@ -7275,7 +7276,7 @@ fn list_xml(w: &str, c: &Control) -> String {
         items += "/>";
     }
     let name = if p.combo { "comboBox" } else { "dropDownList" };
-    let head = p.kind_xml.as_deref().and_then(|x| Some(x[..crate::docx::binding::tag_end(x)?].trim_end_matches('/')));
+    let head = p.kind_xml.as_ref().map(|k| k.xml.as_str()).and_then(|x| Some(x[..crate::docx::binding::tag_end(x)?].trim_end_matches('/')));
     let qname = head.and_then(|h| h.get(1..)).and_then(|h| h.split(|c: char| c.is_whitespace() || c == '/').next());
     match (head, qname) {
         (Some(head), Some(q)) if q.rsplit(':').next() == Some(name) => format!("{head}>{items}</{q}>"),

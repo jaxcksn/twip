@@ -338,7 +338,7 @@ fn setting_a_drop_downs_entries_replaces_them() {
     assert!(x.contains(r#"w:displayText="One" w:value="1""#) && x.contains(r#"w:displayText="Two &amp; more" w:value="2""#), "{x}");
     assert!(!x.contains(r#"w:value="a""#), "the old entries are gone: {x}");
     let again = Editor::open(&crate::docx::write::save(e.document()).expect("saves"), fonts()).expect("reopens");
-    let x = again.document().controls[&by_alias(&again, "C")].props.kind_xml.clone().unwrap_or_default();
+    let x = again.document().controls[&by_alias(&again, "C")].props.kind_xml.clone().map(|k| k.xml).unwrap_or_default();
     assert!(x.contains(r#"w:displayText="One""#), "saved: {x}");
 }
 
@@ -443,10 +443,12 @@ fn a_repeating_section_adds_a_copy_of_its_item() {
     let id = ctl(&e, |c| c.props.kind == ControlKind::RepeatingSection);
     let flag = |e: &mut Editor, v: &str| {
         let props = &mut e.doc.controls.get_mut(&id).expect("the section").props;
-        let xml = props.kind_xml.as_deref().expect("its kind").to_string();
+        let kind = props.kind_xml.as_ref().expect("its kind");
+        let xml = kind.xml.clone();
         let at = xml.find("<w15:doNotAllowInsertDeleteSection").expect("the flag");
         let end = at + xml[at..].find("/>").expect("closed") + 2;
-        props.kind_xml = Some(format!("{}<w15:doNotAllowInsertDeleteSection w15:val=\"{v}\"/>{}", &xml[..at], &xml[end..]));
+        let xml = format!("{}<w15:doNotAllowInsertDeleteSection w15:val=\"{v}\"/>{}", &xml[..at], &xml[end..]);
+        props.kind_xml = Some(crate::docx::KindXml { xml, kind: kind.kind.clone() });
     };
     flag(&mut e, "true");
     assert!(matches!(e.add_repeating_item(&s, None, false, fonts()), Outcome::Refused(_)), "on");

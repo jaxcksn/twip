@@ -297,7 +297,8 @@ impl Rebind {
 
     /// A pasted content control's properties.
     pub(super) fn control(&self, p: &mut crate::docx::ControlProps) {
-        let strings = p.placeholder.iter_mut().chain(&mut p.binding).chain(&mut p.kind_xml).chain(p.rest.iter_mut().map(|(_, x)| x));
+        let strings =
+            p.placeholder.iter_mut().chain(&mut p.binding).chain(p.kind_xml.iter_mut().map(|k| &mut k.xml)).chain(p.rest.iter_mut().map(|(_, x)| x));
         strings.for_each(|x| self.string(x));
     }
 

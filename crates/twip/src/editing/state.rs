@@ -1183,7 +1183,7 @@ pub fn control_info(p: &crate::docx::ControlProps) -> crate::api::state::Control
             (info.checked_symbol, info.unchecked_symbol) = (Some(checked.to_string()), Some(unchecked.to_string()));
         }
         crate::docx::ControlKind::RepeatingSection => {
-            let x = p.kind_xml.as_deref().unwrap_or_default();
+            let x = p.kind_xml.as_ref().map_or("", |k| k.xml.as_str());
             info.section_title = x.find("sectionTitle").and_then(|at| val(&x[at..], "val=\""));
             info.allow_insert_delete = Some(!super::merge::items_fixed(x));
         }

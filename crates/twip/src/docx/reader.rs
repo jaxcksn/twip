@@ -2863,7 +2863,7 @@ impl Reader {
         if let Some(c) = self.controls.get_mut(&id) {
             // The checkbox's face is its `Sym`; written as it was read, or as a new checkbox control.
             c.props.kind = ControlKind::Checkbox { checked: on, unchecked: off };
-            c.read = Some(c.props.clone());
+            c.read = Some(Box::new(c.props.clone()));
         }
         let run = self.tracked(Rc::new(run), base, rpr);
         out.push(Inline::Sym { ch, font, run, control: Some(id) });
@@ -2893,7 +2893,7 @@ impl Reader {
             }
         };
         let id = ControlId::next();
-        self.controls.insert(id, Control { read: Some(props.clone()), props, open, close, at: Some((r.start, end)) });
+        self.controls.insert(id, Control { read: Some(Box::new(props.clone())), props, open, close, at: Some((r.start, end)) });
         id
     }
 
@@ -4090,9 +4090,17 @@ fn control_props(pr: Option<Node>, xml: &str) -> ControlProps {
                 kind = Some((ControlKind::Checkbox { checked, unchecked }, raw()))
             }
             "date" => {
-                let format = child(c, "dateFormat").and_then(|f| attr(f, "val")).unwrap_or("").to_string();
-                let lid = child(c, "lid").and_then(|l| attr(l, "val")).map(str::to_string);
-                kind = Some((ControlKind::Date { format, lid }, raw()));
+                let v = |n| child(c, n).and_then(|x| attr(x, "val"));
+                kind = Some((
+                    ControlKind::Date {
+                        format: v("dateFormat").unwrap_or("").to_string(),
+                        lid: v("lid").map(str::to_string),
+                        calendar: v("calendar").map(str::to_string),
+                        storage: v("storeMappedDataAs").and_then(DateStorage::parse),
+                        full_date: attr(c, "fullDate").map(str::to_string),
+                    },
+                    raw(),
+                ));
             }
             "dropDownList" | "comboBox" => {
                 p.combo = name == "comboBox";
@@ -4138,8 +4146,8 @@ fn control_props(pr: Option<Node>, xml: &str) -> ControlProps {
     if k != ControlKind::DropDown {
         (p.items, p.combo) = (Vec::new(), false);
     }
+    p.kind_xml = (!x.is_empty()).then(|| KindXml { xml: x, kind: k.clone() });
     p.kind = k;
-    p.kind_xml = (!x.is_empty()).then_some(x);
     p
 }
 
