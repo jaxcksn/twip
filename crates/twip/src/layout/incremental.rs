@@ -142,7 +142,7 @@ fn same_props(a: &Section, b: &Section) -> bool {
         form_protected,
         blocks: _,
         change,
-        read: _,
+        origin: _,
     } = a;
     *break_kind == b.break_kind
         && [*page_w, *page_h, *top, *bottom, *left, *right, *header, *footer, *gutter]

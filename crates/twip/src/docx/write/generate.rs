@@ -54,7 +54,7 @@ pub fn generate(doc: &Document) -> Result<Vec<u8>, GenerateError> {
     }
     let new = new_res.typed();
     let res = res.unanchored(new.styles.root.clone(), new.numbering.root.clone());
-    let edited = section.read.as_deref().is_some_and(|was| *was != section.page())
+    let edited = section.read_page().is_some_and(|was| *was != section.page())
         || (section.line_grid, section.rtl_gutter) != (blank.sections[0].line_grid, blank.sections[0].rtl_gutter);
     let out = Document {
         sections: vec![section],
@@ -150,7 +150,7 @@ fn page(s: &Section, blank: &Section, blocks: Vec<Block>) -> Result<Section, Gen
         headers: blank.headers,
         footers: blank.footers,
         change: None,
-        read: Some(Rc::new(blank.page())),
+        origin: Origin::new(blank.page()),
         ..s.clone()
     })
 }

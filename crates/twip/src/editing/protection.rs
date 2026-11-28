@@ -6,8 +6,8 @@ use std::rc::Rc;
 use crate::api::command::{Command, CommandId, DeleteOptions, DeleteUnit, DocumentProtection, EditableRange, ProtectionKind as Kind};
 use crate::api::error::{Error, ErrorCode};
 use crate::api::value::Direction;
+use crate::docx::Inline;
 use crate::docx::review::{Password, Permission, Protection, ProtectionKind, RangeKind, RangeMark};
-use crate::docx::{Inline, Raw};
 use crate::font::Fonts;
 use crate::layout::{ParaId, Unit};
 
@@ -835,7 +835,7 @@ impl Editor {
             return Outcome::unavailable("no free permission id");
         }
         let marker = |kind, id, editor| {
-            let permission = Some(Rc::new(Permission { editor, columns: (None, None), xml: Raw(None) }));
+            let permission = Some(Rc::new(Permission { editor, columns: (None, None), origin: crate::docx::Origin::NONE }));
             Inline::Range(RangeMark { kind, id, name: None, permission })
         };
         let mut tx = self.begin("Editable Range");

@@ -490,7 +490,7 @@ impl Editor {
     }
 
     pub(super) fn fresh_items(&mut self, rows: &mut [Row], inside: &[crate::docx::ControlId]) {
-        let given = |c: &crate::docx::Control| sdt_id_at(&c.open).and_then(|r| c.open[r].parse::<i64>().ok());
+        let given = |c: &crate::docx::Control| c.origin_id();
         let mut next = self.doc.controls.values().chain(self.pending_controls.iter().map(|(_, c)| c)).filter_map(given).max().unwrap_or(0);
         for row in rows {
             for id in row.controls.iter_mut() {
@@ -502,10 +502,10 @@ impl Editor {
                 };
                 let n = crate::docx::ControlId::next();
                 let mut c = c;
-                if let Some(r) = sdt_id_at(&c.open) {
+                c.renumber_origin(|| {
                     next = if next >= 0x7fff_ffff { 1 } else { next + 1 };
-                    c.open.replace_range(r, &next.to_string());
-                }
+                    next
+                });
                 self.pending_controls.push((n, c));
                 *id = n;
             }
@@ -1588,10 +1588,4 @@ pub(super) fn table_on(geo: &super::geometry::PageGeometry, table: TableId) -> O
         .filter(|r| r.table == table && !r.repeat)
         .map(|r| r.rect)
         .reduce(|a, b| [a[0].min(b[0]), a[1].min(b[1]), a[2].max(b[2]), a[3].max(b[3])])
-}
-
-fn sdt_id_at(open: &str) -> Option<std::ops::Range<usize>> {
-    let k = open.find(":id ").or_else(|| open.find("<w:id "))?;
-    let v = k + open[k..].find("val=\"")? + 5;
-    Some(v..v + open[v..].find('"')?)
 }

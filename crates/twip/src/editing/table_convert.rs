@@ -423,7 +423,7 @@ impl Editor {
         moved.dedup();
         let moved: Vec<(ControlId, Control)> = moved
             .into_iter()
-            .filter_map(|id| self.doc.controls.get(&id).filter(|c| !c.open.is_empty()).map(|c| (id, Control::new(c.props.clone()))))
+            .filter_map(|id| self.doc.controls.get(&id).filter(|c| c.origin.is_some()).map(|c| (id, Control::new(c.props.clone()))))
             .collect();
         let mut out: Vec<Block> = Vec::new();
         flatten(t, r0..=r1, &[], sep, depth, &mut out);

@@ -353,11 +353,8 @@ impl Rebind {
                 for i in &mut p.inlines {
                     match i {
                         Inline::FieldEdge { edge, .. } => {
-                            if let Some(src) = &edge.src
-                                && let Some(xml) = self.element(&src.xml)
-                            {
-                                let src = crate::docx::EdgeSource { xml: xml.into(), at: src.at.clone() };
-                                *edge = Rc::new(crate::docx::Edge { kind: edge.kind.clone(), src: Some(src) });
+                            if let Some(xml) = edge.origin_xml().and_then(|x| self.element(x)) {
+                                *edge = Rc::new(edge.with_origin_xml(xml.into()));
                             }
                         }
                         Inline::Foreign(o) => {
@@ -365,10 +362,8 @@ impl Rebind {
                                 *o = Rc::new(f);
                             }
                         }
-                        Inline::Range(r) if let Some(p) = r.permission.as_deref().filter(|p| needs(&p.xml)) => {
-                            let mut p = p.clone();
-                            self.raw(&mut p.xml);
-                            r.permission = Some(Rc::new(p));
+                        Inline::Range(r) if let Some(x) = r.permission.as_deref().and_then(|p| p.origin_xml()).and_then(|x| self.element(x)) => {
+                            r.permission = r.permission.as_deref().map(|p| Rc::new(p.with_origin_xml(x.into())));
                         }
                         Inline::Ruby(r, _) => {
                             if let Some(x) = r.origin_xml().and_then(|x| self.element(x)) {

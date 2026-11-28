@@ -1300,7 +1300,13 @@ impl Editor {
                     refs.push((footer, slot, part));
                 }
             }
-            let shell = crate::docx::Section { headers: Default::default(), footers: Default::default(), change: None, read: None, ..s };
+            let shell = crate::docx::Section {
+                headers: Default::default(),
+                footers: Default::default(),
+                change: None,
+                origin: crate::docx::Origin::NONE,
+                ..s
+            };
             breaks.breaks.push(FileBreak { after: blocks.len() - 1, shell, refs });
         }
         // A last empty paragraph stays with this document's, unless a section break comes before it. The reader ends

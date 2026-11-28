@@ -116,7 +116,7 @@ fn controls_read_with_their_properties() {
     assert_eq!(t.rows[0].cells[1].controls, [id("Cell/One")]);
     assert_eq!(t.rows[1].controls, [id("Row/One")]);
     // The customXml wrapper is a control of kind Other.
-    assert!(d.controls.values().any(|c| c.props.kind == ControlKind::Other && c.open.contains("customXml")));
+    assert!(d.controls.values().any(|c| c.props.kind == ControlKind::Other && c.open().contains("customXml")));
 }
 
 #[test]

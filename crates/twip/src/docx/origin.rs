@@ -154,6 +154,7 @@ impl FormField {
         FormField { origin: Origin::new(FormSrc { xml, read: data.clone() }), data }
     }
 
+    /// Where it was read from.
     pub(in crate::docx) fn src(&self) -> Option<&FormSrc> {
         self.origin.get()
     }
@@ -175,6 +176,124 @@ impl FormField {
             None => self.clone(),
         }
     }
+}
+
+/// A field edge's markers' runs as read: their XML, and where they are in their part.
+#[derive(Debug)]
+pub struct EdgeSource {
+    pub xml: Rc<str>,
+    pub at: Range<usize>,
+}
+
+impl Edge {
+    /// Where it was read from.
+    pub(in crate::docx) fn src(&self) -> Option<&EdgeSource> {
+        self.origin.get()
+    }
+
+    /// Its markers' runs as read.
+    pub fn origin_xml(&self) -> Option<&Rc<str>> {
+        self.src().map(|s| &s.xml)
+    }
+
+    /// It with `xml` in place of its markers' runs: the same runs, written otherwise.
+    pub fn with_origin_xml(&self, xml: Rc<str>) -> Edge {
+        match self.src() {
+            Some(s) => Edge { kind: self.kind.clone(), origin: Origin::new(EdgeSource { xml, at: s.at.clone() }) },
+            None => self.clone(),
+        }
+    }
+}
+
+impl super::review::Permission {
+    /// Its element as read.
+    pub fn origin_xml(&self) -> Option<&Rc<str>> {
+        xml_of(&self.origin)
+    }
+
+    /// It with `xml` in place of its element: the same element, written otherwise.
+    pub fn with_origin_xml(&self, xml: Rc<str>) -> super::review::Permission {
+        super::review::Permission { origin: xml_origin(xml), ..self.clone() }
+    }
+}
+
+impl Section {
+    /// Its page as read.
+    pub(in crate::docx) fn read_page(&self) -> Option<&SectionPage> {
+        self.origin.get()
+    }
+}
+
+/// A content control as read: its start tag with its properties (`w:sdtPr`, `w:sdtEndPr`) and the content's start
+/// tag, the content's and the control's end tags, its properties, and where the tags start in its part (the writer
+/// checks the bytes there before using them).
+#[derive(Clone, Debug)]
+pub struct ControlSrc {
+    pub open: String,
+    pub close: String,
+    pub read: ControlProps,
+    pub at: (usize, usize),
+}
+
+impl Control {
+    /// Where it was read from.
+    pub(in crate::docx) fn src(&self) -> Option<&ControlSrc> {
+        self.origin.get()
+    }
+
+    /// Its start markup as read (empty for a new control, or one written from its properties).
+    pub(in crate::docx) fn open(&self) -> &str {
+        self.src().map_or("", |s| &s.open)
+    }
+
+    /// Its end markup as read.
+    pub(in crate::docx) fn close(&self) -> &str {
+        self.src().map_or("", |s| &s.close)
+    }
+
+    /// Its properties as read.
+    pub(in crate::docx) fn read(&self) -> Option<&ControlProps> {
+        self.src().map(|s| &s.read)
+    }
+
+    /// Where its start and end markup start in its part.
+    pub(in crate::docx) fn at(&self) -> Option<(usize, usize)> {
+        self.src().map(|s| s.at)
+    }
+
+    /// Its origin rebuilt by `f` (none: nothing to change).
+    pub(in crate::docx) fn edit_src(&mut self, f: impl FnOnce(&mut ControlSrc)) {
+        if let Some(s) = self.src() {
+            let mut s = s.clone();
+            f(&mut s);
+            self.origin = Origin::new(s);
+        }
+    }
+
+    /// The bytes its markup as read takes.
+    pub fn origin_bytes(&self) -> usize {
+        self.open().len() + self.close().len()
+    }
+
+    /// The `w:id` its markup as read gives it.
+    pub fn origin_id(&self) -> Option<i64> {
+        sdt_id_at(self.open()).and_then(|r| self.open()[r].parse().ok())
+    }
+
+    /// Its markup as read with the `w:id` it gives `id()` in place of its own, when it gives one.
+    pub fn renumber_origin(&mut self, id: impl FnOnce() -> i64) {
+        if let Some(r) = sdt_id_at(self.open()) {
+            let n = id();
+            self.edit_src(|s| s.open.replace_range(r, &n.to_string()));
+        }
+    }
+}
+
+/// Where a control's start markup holds its `w:id` value.
+fn sdt_id_at(open: &str) -> Option<Range<usize>> {
+    let k = open.find(":id ").or_else(|| open.find("<w:id "))?;
+    let v = k + open[k..].find("val=\"")? + 5;
+    Some(v..v + open[v..].find('"')?)
 }
 
 /// The local name of the element `xml` starts with, whatever its prefix.

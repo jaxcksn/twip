@@ -1039,7 +1039,7 @@ fn section_pages(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(
     for k in edited {
         let r = sects[k].clone();
         let s = &doc.sections[k];
-        let page = SectPage { page: &s.page(), was: s.read.as_deref(), grid: Some((s.line_grid, s.rtl_gutter)) };
+        let page = SectPage { page: &s.page(), was: s.read_page(), grid: Some((s.line_grid, s.rtl_gutter)) };
         let new = sect_with_page(&xml[r.clone()], &w, page, s.change.as_deref(), &doc.people, &cx, &colours);
         xml.replace_range(r, &new);
     }
@@ -1497,7 +1497,7 @@ fn new_stories(doc: &Document, parts: &mut Vec<(String, Vec<u8>)>) -> Result<(),
     // Each slot that needs a reference written: one showing a part made, or a part read it didn't show as read.
     fn wants(src: &Source, s: &Section, footer: bool, slot: usize) -> Option<HeaderFooterId> {
         let now = if footer { &s.footers } else { &s.headers }[slot]?;
-        match s.read.as_deref() {
+        match s.read_page() {
             _ if !src.stories.contains_key(&now) => Some(now),
             Some(r) => (if footer { &r.footers } else { &r.headers }[slot] != Some(now)).then_some(now),
             None => None,
@@ -2048,7 +2048,7 @@ pub fn main_xml(doc: &Document) -> Result<Option<String>, String> {
             for j in made.drain(..) {
                 let new = &doc.sections[j];
                 let Some(Block::Para(last)) = new.blocks.last() else { return Err("a new section that doesn't end in a paragraph".into()) };
-                let page = SectPage { page: &new.page(), was: s.read.as_deref(), grid: None };
+                let page = SectPage { page: &new.page(), was: s.read_page(), grid: None };
                 edits.made.insert(last.id, sect_with_page(base, &w, page, None, &doc.people, &cx, &colours));
                 blocks.extend(new.blocks.iter().cloned());
             }
@@ -2281,10 +2281,10 @@ impl<'a, 'i> Saver<'a, 'i> {
         let inline = |at: usize| self.paras.values().any(|n| n.range().start < at && at < n.range().end);
         let free = |r: &Range<usize>| !self.splices.iter().any(|(x, _)| x.start < r.end && r.start < x.end);
         for c in gone {
-            let Some((a, b)) = c.at else { continue };
-            let (open, close) = (a..a + c.open.len(), b..b + c.close.len());
-            if self.xml.get(open.clone()) == Some(c.open.as_str())
-                && self.xml.get(close.clone()) == Some(c.close.as_str())
+            let Some((a, b)) = c.at() else { continue };
+            let (open, close) = (a..a + c.open().len(), b..b + c.close().len());
+            if self.xml.get(open.clone()) == Some(c.open())
+                && self.xml.get(close.clone()) == Some(c.close())
                 && !inline(a)
                 && free(&open)
                 && free(&close)
@@ -2294,9 +2294,9 @@ impl<'a, 'i> Saver<'a, 'i> {
             }
         }
         for (id, c) in &self.controls {
-            let Some((at, _)) = c.at else { continue };
-            let r = at..at + c.open.len();
-            if c.as_read() || self.xml.get(r.clone()) != Some(c.open.as_str()) {
+            let Some((at, _)) = c.at() else { continue };
+            let r = at..at + c.open().len();
+            if c.as_read() || self.xml.get(r.clone()) != Some(c.open()) {
                 continue;
             }
             let inline = self.paras.values().any(|n| n.range().start < at && at < n.range().end);
@@ -2329,7 +2329,7 @@ impl<'a, 'i> Saver<'a, 'i> {
         // shortcut: a table among them still starts a group of its own (the control is written once per group).
         let new_ctl = |b: &Block| -> Vec<ControlId> {
             match b {
-                Block::Para(p) => p.controls.iter().copied().filter(|c| self.controls.get(c).is_some_and(|k| k.open.is_empty())).collect(),
+                Block::Para(p) => p.controls.iter().copied().filter(|c| self.controls.get(c).is_some_and(|k| k.open().is_empty())).collect(),
                 Block::Table(_) => Vec::new(),
             }
         };
@@ -2648,7 +2648,7 @@ impl<'a, 'i> Saver<'a, 'i> {
             if let Some(Block::Table(t)) = b {
                 // shortcut: a new table's new block controls wrap it alone, not the paragraphs around it with it.
                 let new: Vec<(ControlId, &Control)> =
-                    t.controls.iter().filter_map(|c| self.controls.get(c).filter(|k| k.open.is_empty()).map(|k| (*c, k))).collect();
+                    t.controls.iter().filter_map(|c| self.controls.get(c).filter(|k| k.open().is_empty()).map(|k| (*c, k))).collect();
                 let opens: String = new.iter().map(|(id, c)| control_open(&self.w, *id, c)).collect();
                 let closes: String = new.iter().rev().map(|(_, c)| control_close(&self.w, c)).collect();
                 text.push_str(&opens);
@@ -2929,9 +2929,9 @@ impl<'a, 'i> Saver<'a, 'i> {
         controls
             .iter()
             .take_while(|id| {
-                self.controls.get(id).is_some_and(|c| {
-                    c.at.is_some_and(|(a, b)| a < r.start && r.end <= b && self.xml.get(a..a + c.open.len()) == Some(c.open.as_str()))
-                })
+                self.controls
+                    .get(id)
+                    .is_some_and(|c| c.at().is_some_and(|(a, b)| a < r.start && r.end <= b && self.xml.get(a..a + c.open().len()) == Some(c.open())))
             })
             .count()
     }
@@ -3066,7 +3066,7 @@ impl<'a, 'i> Saver<'a, 'i> {
                 Block::Table(t) => (&t.controls, t.src().map(|r| r.start)),
             };
             let want: Vec<ControlId> = match b {
-                Block::Para(_) => controls.iter().copied().filter(|c| self.controls.get(c).is_some_and(|k| !k.open.is_empty())).collect(),
+                Block::Para(_) => controls.iter().copied().filter(|c| self.controls.get(c).is_some_and(|k| !k.open().is_empty())).collect(),
                 Block::Table(_) => controls.clone(),
             };
             let keep = open.iter().zip(&want).take_while(|(a, b)| a == b).count();
@@ -3792,7 +3792,7 @@ fn permission_ptr(r: &RangeMark) -> *const () {
 /// made since from its settings.
 fn permission_xml(w: &str, r: &RangeMark) -> String {
     let p = r.permission.as_deref();
-    if let Some(x) = p.and_then(|p| p.xml.0.as_deref()) {
+    if let Some(x) = p.and_then(|p| p.origin_xml()) {
         return with_perm_id(x, r.id).unwrap_or_else(|| x.to_string());
     }
     let el = range_element(r.kind);
@@ -4235,7 +4235,7 @@ fn edge_prefix(xml: &str) -> &str {
 /// A field edge's markers' runs: as read, else written from the edge in the main namespace's prefix `w` (`w:`).
 fn edge_xml<'e>(w: &str, e: &'e super::model::Edge) -> std::borrow::Cow<'e, str> {
     use super::model::FieldEdge;
-    if let Some(s) = &e.src {
+    if let Some(s) = e.src() {
         return std::borrow::Cow::Borrowed(&s.xml);
     }
     std::borrow::Cow::Owned(match &e.kind {
@@ -4266,7 +4266,7 @@ fn gone_edges<'q>(qs: &'q [&Paragraph], ps: &'q [&Paragraph]) -> impl Iterator<I
         ps.iter().flat_map(|p| p.inlines.iter()).any(|i| matches!(i, Inline::FieldEdge { edge, .. } if Rc::ptr_eq(edge, e)))
     };
     qs.iter().flat_map(|p| p.inlines.iter()).filter_map(move |i| match i {
-        Inline::FieldEdge { edge, .. } if !held(edge) => edge.src.as_ref().map(|s| s.at.clone()),
+        Inline::FieldEdge { edge, .. } if !held(edge) => edge.src().map(|s| s.at.clone()),
         _ => None,
     })
 }
@@ -4400,7 +4400,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                 sdts.insert(d.range().start, (child(d, "sdtContent").map(|c| c.range().start), child(d, "sdtPr").map(|p| p.range())));
             }
         }
-        let sdt_of = |id: &ControlId| s.controls.get(id).and_then(|k| k.at).map(|a| a.0).filter(|a| sdts.contains_key(a));
+        let sdt_of = |id: &ControlId| s.controls.get(id).and_then(|k| k.at()).map(|a| a.0).filter(|a| sdts.contains_key(a));
         let mut now_ids = Vec::new();
         for m in cur.iter().flat_map(|c| c.ctl.iter()) {
             if let Marker::Control(id, _) = m
@@ -4568,7 +4568,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
         let mut heads: Vec<(String, String)> = heads;
         let new_ctl = |m: Option<usize>| -> Vec<ControlId> {
             m.and_then(|m| ps.get(m))
-                .map(|p| p.controls.iter().copied().filter(|c| s.controls.get(c).is_some_and(|k| k.open.is_empty())).collect())
+                .map(|p| p.controls.iter().copied().filter(|c| s.controls.get(c).is_some_and(|k| k.open().is_empty())).collect())
                 .unwrap_or_default()
         };
         for (m, head) in heads.iter_mut().enumerate() {
@@ -4668,7 +4668,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
             qs.iter().flat_map(|q| q.inlines.iter()).for_each(|i| marker(i, &mut read));
             marker_outside = read.iter().filter_map(Marker::element).filter(|k| !marker_src.contains_key(k)).collect();
             // A field edge the reader made (not its source's) is its paragraph's.
-            let made = |m: &Marker| matches!(m, Marker::Edge(e, _) if e.src.is_none());
+            let made = |m: &Marker| matches!(m, Marker::Edge(e, _) if e.origin.is_none());
             for m in read.iter().filter(|m| !made(m) && s.marker_range(m, srcs).is_none()) {
                 match m {
                     Marker::Bookmark(n, start) => marks_outside.0.push((n.clone(), *start)),
@@ -5948,7 +5948,7 @@ impl Saver<'_, '_> {
             let (cs, us, f) = (hex(*checked), hex(*unchecked), esc(font));
             // From its properties (alias, tag, lock and the rest), with the state it shows now.
             let mut ctl = self.controls[c].clone();
-            ctl.open.clear();
+            ctl.edit_src(|s| s.open.clear());
             // Its own states (their fonts) when it has them, checked as it shows.
             let own = match &ctl.props.kind_xml {
                 Some(k) if k.kind == ctl.props.kind => k.xml.contains("checkedState").then(|| {
@@ -7195,7 +7195,7 @@ fn strip_attr(tag: &str, name: &str) -> String {
 /// from them (`w:sdtPr` children in schema order, the settings the editor doesn't change as read).
 pub(crate) fn control_open(w: &str, id: ControlId, c: &Control) -> String {
     if c.as_read() {
-        return c.open.clone();
+        return c.open().to_string();
     }
     let p = &c.props;
     let esc = props::esc;
@@ -7218,7 +7218,7 @@ pub(crate) fn control_open(w: &str, id: ControlId, c: &Control) -> String {
     let read_id = first("id").and_then(controls::val).and_then(|v| v.trim().parse::<i64>().ok());
     match p.id {
         Some(n) if read_id == Some(n) => pr.push_str(&given_id),
-        None if !given_id.is_empty() && c.read.as_ref().is_some_and(|r| r.id.is_none()) => pr.push_str(&given_id),
+        None if !given_id.is_empty() && c.read().is_some_and(|r| r.id.is_none()) => pr.push_str(&given_id),
         Some(n) => pr.push_str(&format!("<{w}id {w}val=\"{n}\"/>")),
         // Word's `w:id`: a signed 32-bit number, unique in the document.
         None => pr.push_str(&format!("<{w}id {w}val=\"{}\"/>", (id.0 % 0x7fff_ffff) as i64 + 1)),
@@ -7229,7 +7229,7 @@ pub(crate) fn control_open(w: &str, id: ControlId, c: &Control) -> String {
     // `w:placeholder` and `w:dataBinding` as read (the last of each) while they are, else as set
     let last = |name: &str| p.rest.iter().rfind(|(n, _)| n == name).map(|(_, x)| x.as_str());
     let placeholder = last("placeholder");
-    let same = match &c.read {
+    let same = match c.read() {
         Some(r) => r.placeholder == p.placeholder,
         None => placeholder.and_then(controls::placeholder_of) == p.placeholder,
     };
@@ -7239,7 +7239,7 @@ pub(crate) fn control_open(w: &str, id: ControlId, c: &Control) -> String {
         _ => {}
     }
     // `w:temporary` as read while it is, else from the flag.
-    match &c.read {
+    match c.read() {
         Some(r) if r.temporary == p.temporary => pr.push_str(&rest("temporary")),
         _ if p.temporary => pr.push_str(&format!("<{w}temporary/>")),
         _ => {}
@@ -7248,7 +7248,7 @@ pub(crate) fn control_open(w: &str, id: ControlId, c: &Control) -> String {
         pr.push_str(&format!("<{w}showingPlcHdr/>"));
     }
     let binding = last("dataBinding");
-    let same = match &c.read {
+    let same = match c.read() {
         Some(r) => r.binding == p.binding,
         None => binding.map(controls::binding_of) == p.binding,
     };
@@ -7259,11 +7259,11 @@ pub(crate) fn control_open(w: &str, id: ControlId, c: &Control) -> String {
     }
     let w15 = "http://schemas.microsoft.com/office/word/2012/wordml";
     // `w15:appearance` and `w15:color` as read while they are, else as set, after the rest
-    let appearance = match &c.read {
+    let appearance = match c.read() {
         Some(r) => r.appearance != p.appearance,
         None => first("appearance").and_then(controls::val).as_deref().and_then(ControlAppearance::parse) != p.appearance,
     };
-    let color = match &c.read {
+    let color = match c.read() {
         Some(r) => r.color != p.color,
         None => first("color").map(|x| controls::val(x).and_then(|v| u32::from_str_radix(&v, 16).ok())) != p.color,
     };
@@ -7282,7 +7282,7 @@ pub(crate) fn control_open(w: &str, id: ControlId, c: &Control) -> String {
     }
     let kind = match (&p.kind_xml, &p.kind) {
         (_, ControlKind::DropDown) => list_xml(w, c),
-        (Some(x), ControlKind::Other) if c.read.as_ref().is_some_and(|r| r.kept == p.kept) => x.xml.clone(),
+        (Some(x), ControlKind::Other) if c.read().is_some_and(|r| r.kept == p.kept) => x.xml.clone(),
         (x, ControlKind::Other) => {
             p.kept.as_ref().and_then(|k| kept_part_xml(k, w)).or_else(|| x.as_ref().map(|x| x.xml.clone())).unwrap_or_default()
         }
@@ -7310,7 +7310,7 @@ pub(crate) fn control_open(w: &str, id: ControlId, c: &Control) -> String {
 fn list_xml(w: &str, c: &Control) -> String {
     let p = &c.props;
     if let Some(x) = &p.kind_xml
-        && c.read.as_ref().is_some_and(|r| r.items == p.items && r.combo == p.combo)
+        && c.read().is_some_and(|r| r.items == p.items && r.combo == p.combo)
     {
         return x.xml.clone();
     }
@@ -7360,7 +7360,7 @@ fn kept_part_xml(k: &super::model::KeptKind, w: &str) -> Option<String> {
 
 /// The end markup matching [`control_open`].
 pub(crate) fn control_close(w: &str, c: &Control) -> String {
-    if c.as_read() { c.close.clone() } else { format!("</{w}sdtContent></{w}sdt>") }
+    if c.as_read() { c.close().to_string() } else { format!("</{w}sdtContent></{w}sdt>") }
 }
 
 #[cfg(test)]

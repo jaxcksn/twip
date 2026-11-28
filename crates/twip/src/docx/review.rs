@@ -453,9 +453,9 @@ pub struct Permission {
     pub editor: Option<RangeEditor>,
     /// `w:colFirst`, `w:colLast`: the first and last table column a start's range covers.
     pub columns: (Option<u32>, Option<u32>),
-    /// The element as read (`None`: a marker made since): what is written, with the marker's id, for one read. A
-    /// permission whose settings change is a new one, without it.
-    pub xml: Raw,
+    /// Where it was read from (its element as read; none for a marker made since): what is written, with the marker's
+    /// id, for one read. A permission whose settings change is a new one, without it.
+    pub origin: super::model::Origin,
 }
 
 /// Who an editable range lets edit it.

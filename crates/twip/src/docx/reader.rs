@@ -9,7 +9,7 @@ use roxmltree::Node;
 use super::char_props::{self, RunDirect};
 use super::diagnostics::{Diagnostics, WarningCode};
 use super::model::*;
-use super::origin::{ParaSrc, xml_origin};
+use super::origin::{ControlSrc, EdgeSource, ParaSrc, xml_origin};
 use super::para_props::{self, ParaDirect};
 use super::para_xml;
 use super::props::*;
@@ -1643,7 +1643,7 @@ impl Reader {
         };
         let col = |n| attr(e, n).and_then(|v| v.trim().parse::<u32>().ok());
         let columns = if start { (col("colFirst"), col("colLast")) } else { (None, None) };
-        let permission = Some(Rc::new(Permission { editor, columns, xml: Raw(Some(raw(e))) }));
+        let permission = Some(Rc::new(Permission { editor, columns, origin: xml_origin(raw(e)) }));
         let kind = if start { RangeKind::PermissionStart } else { RangeKind::PermissionEnd };
         out.push(Inline::Range(RangeMark { kind, id, name: None, permission }));
     }
@@ -2047,7 +2047,7 @@ impl Reader {
             form_protected: true,
             blocks: Vec::new(),
             change: None,
-            read: None,
+            origin: Origin::NONE,
         }
     }
 
@@ -2171,7 +2171,7 @@ impl Reader {
             sec.change = Some(Rc::new(SectionChange { mark, previous, previous_raw: Raw(before.map(raw)) }));
         }
         if self.record {
-            sec.read = Some(Rc::new(sec.page()));
+            sec.origin = Origin::new(sec.page());
         }
         sec
     }
@@ -2661,7 +2661,8 @@ impl Reader {
                                 let src = marker_runs(r, c, c.range().start)
                                     .map(|at| EdgeSource { xml: Rc::from(&r.document().input_text()[at.clone()]), at });
                                 self.lossy |= src.is_none();
-                                out.push(Inline::FieldEdge { edge: Rc::new(Edge { kind: FieldEdge::End, src }), run: run.clone() });
+                                let origin = src.map_or(Origin::NONE, Origin::new);
+                                out.push(Inline::FieldEdge { edge: Rc::new(Edge { kind: FieldEdge::End, origin }), run: run.clone() });
                             }
                         }
                     }
@@ -2881,7 +2882,8 @@ impl Reader {
             if let Some(k) = &mut c.props.kind_xml {
                 k.kind = c.props.kind.clone();
             }
-            c.read = Some(Box::new(c.props.clone()));
+            let read = c.props.clone();
+            c.edit_src(|s| s.read = read);
         }
         let run = self.tracked(Rc::new(run), base, rpr);
         out.push(Inline::Sym { ch, font, run, control: Some(id) });
@@ -2911,7 +2913,8 @@ impl Reader {
             }
         };
         let id = ControlId::next();
-        self.controls.insert(id, Control { read: Some(Box::new(props.clone())), props, open, close, at: Some((r.start, end)) });
+        let origin = Origin::new(ControlSrc { open, close, read: props.clone(), at: (r.start, end) });
+        self.controls.insert(id, Control { props, origin });
         id
     }
 
@@ -3060,7 +3063,8 @@ impl Reader {
         if let (Some(kind), Some(run)) = (edge, begin_run) {
             let src = self.fields[first].marker_runs.clone().map(|at| EdgeSource { xml: Rc::from(&n.document().input_text()[at.clone()]), at });
             self.lossy |= src.is_none();
-            out.insert(begin, Inline::FieldEdge { edge: Rc::new(Edge { kind, src }), run });
+            let origin = src.map_or(Origin::NONE, Origin::new);
+            out.insert(begin, Inline::FieldEdge { edge: Rc::new(Edge { kind, origin }), run });
             self.fields[first].edge = true;
         }
         for f in &mut self.fields[first..] {

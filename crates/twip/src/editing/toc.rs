@@ -1685,7 +1685,7 @@ impl Editor {
     fn toc_control(&self) -> crate::docx::Control {
         let kept = Some(crate::docx::KeptKind::BuildingBlock { gallery: Some("Table of Contents".into()), category: None, unique: true });
         let props = crate::docx::ControlProps { kind: crate::docx::ControlKind::Other, kept, ..Default::default() };
-        crate::docx::Control { props, open: String::new(), close: String::new(), read: None, at: None }
+        crate::docx::Control::new(props)
     }
 
     /// A table's result paragraphs: the start edge (code `code`) leading the first, one paragraph per entry, or Word's

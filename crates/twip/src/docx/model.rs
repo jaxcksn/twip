@@ -1109,17 +1109,9 @@ pub struct FormField {
 pub struct Edge {
     /// What edge it is.
     pub kind: FieldEdge,
-    /// Its markers' runs as read (`None`: an edge made since, or one read from runs holding more than its markers).
-    pub src: Option<EdgeSource>,
-}
-
-/// A field edge's markers' runs as read: written back from there.
-#[derive(Clone, Debug, PartialEq)]
-pub struct EdgeSource {
-    /// The runs' XML.
-    pub xml: Rc<str>,
-    /// Where they are in their part.
-    pub at: std::ops::Range<usize>,
+    /// Where it was read from (its markers' runs as read; none for an edge made since, or one read from runs holding
+    /// more than its markers).
+    pub origin: Origin,
 }
 
 /// An edge of a field whose result runs across paragraphs (a table of contents): its start (its begin marker, code
@@ -1157,7 +1149,7 @@ impl FieldEdge {
 
     /// A new marker of this edge in `run`.
     pub fn inline(self, run: Run) -> Inline {
-        Inline::FieldEdge { edge: Rc::new(Edge { kind: self, src: None }), run }
+        Inline::FieldEdge { edge: Rc::new(Edge { kind: self, origin: Origin::NONE }), run }
     }
 }
 
@@ -1430,21 +1422,13 @@ pub enum PartState {
     Removed,
 }
 
-/// A content control (`w:sdt`) or custom XML wrapper: its properties, and the markup it was read
-/// with (written back as it was while its properties are unchanged).
+/// A content control (`w:sdt`) or custom XML wrapper: its properties, and where it was read from (written back as it
+/// was while its properties are unchanged).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Control {
     pub props: ControlProps,
-    /// Its start tag with its properties (`w:sdtPr`, `w:sdtEndPr`) and the content's start tag, as read; empty for a
-    /// new control.
-    pub open: String,
-    /// The content's and the control's end tags, as read.
-    pub close: String,
-    /// Its properties as read: while `props` equals them, `open` is what is written.
-    pub read: Option<Box<ControlProps>>,
-    /// Where `open` and `close` start in the part it was read from (the writer checks the bytes there before using
-    /// them).
-    pub at: Option<(usize, usize)>,
+    /// Where it was read from (its markup and properties as read; none for a new control).
+    pub origin: Origin,
 }
 
 /// A content control kind the editor keeps as written (`ControlKind::Other`), as its kind element names it.
@@ -1492,12 +1476,12 @@ impl ControlProps {
 impl Control {
     /// A new control (no markup read).
     pub fn new(props: ControlProps) -> Control {
-        Control { props, open: String::new(), close: String::new(), read: None, at: None }
+        Control { props, origin: Origin::NONE }
     }
 
     /// Whether it is written with the markup it was read with.
     pub fn as_read(&self) -> bool {
-        !self.open.is_empty() && self.read.as_deref() == Some(&self.props)
+        !self.open().is_empty() && self.read() == Some(&self.props)
     }
 }
 
@@ -2020,7 +2004,7 @@ impl Section {
             form_protected: self.form_protected,
             blocks: Vec::new(),
             change: self.change.clone(),
-            read: None,
+            origin: Origin::NONE,
         }
     }
 
@@ -2141,8 +2125,9 @@ pub struct Section {
     pub blocks: Vec<Block>,
     /// A tracked change of the section's properties.
     pub change: Option<Rc<SectionChange>>,
-    /// Its page as read (editable reads only): saving rewrites only the page settings that changed.
-    pub read: Option<Rc<SectionPage>>,
+    /// Where it was read from (its page as read; editable reads only): saving rewrites only the page settings that
+    /// changed.
+    pub origin: Origin,
 }
 
 #[derive(Clone, Debug, Default)]

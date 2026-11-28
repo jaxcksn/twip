@@ -55,7 +55,7 @@ fn section(blocks: Vec<Block>) -> Section {
         form_protected: true,
         blocks,
         change: None,
-        read: None,
+        origin: crate::docx::Origin::NONE,
     }
 }
 

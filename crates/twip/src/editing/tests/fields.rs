@@ -236,7 +236,7 @@ fn spanning_fields_ending_in_one_run_keep_each_its_own_end() {
         .flat_map(|p| p.inlines.iter())
         .filter_map(|i| match i {
             Inline::FieldEdge { edge, .. } if edge.kind == crate::docx::FieldEdge::End => {
-                Some(edge.src.as_ref().map_or(1, |s| s.xml.matches("fldCharType=\"end\"").count()))
+                Some(edge.origin_xml().map_or(1, |x| x.matches("fldCharType=\"end\"").count()))
             }
             _ => None,
         })

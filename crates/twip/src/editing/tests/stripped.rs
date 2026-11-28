@@ -20,7 +20,7 @@ fn stripped(d: &crate::docx::Document) -> crate::docx::Document {
     });
     for s in &mut d.sections {
         s.blocks = s.blocks.iter().map(fresh).collect();
-        s.read = None;
+        s.origin = crate::docx::Origin::NONE;
     }
     d
 }
