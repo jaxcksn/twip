@@ -4,7 +4,7 @@ use crate::docx::{Block, Row, Table};
 use crate::font::Fonts;
 
 use super::Editor;
-use super::clipboard::{Fragment, fresh};
+use super::clipboard::Fragment;
 use super::commands::Outcome;
 use super::paste::PasteChoice;
 use super::selection::{CellShape, Selection};
@@ -28,7 +28,7 @@ impl Editor {
         let mut rows = Vec::new();
         for r in r0..=r1.min(t.rows.len().saturating_sub(1)) {
             let mut row: Row = t.rows[r].clone();
-            row.origin = crate::docx::Origin::NONE;
+            row.detach();
             row.grid_before = 0;
             row.grid_after = 0;
             row.cells = t.rows[r]
@@ -47,13 +47,8 @@ impl Editor {
         }
         let whole_rows = shape == CellShape::Rows || (c0 == 0 && c1 + 1 >= g.cols);
         let whole_table = whole_rows && r0 == 0 && r1 + 1 >= t.rows.len();
-        let sub = Table {
-            grid: super::tables::full_grid(t, g.cols)[c0..=c1].to_vec(),
-            rows,
-            origin: crate::docx::Origin::NONE,
-            id: crate::docx::next_para_id(),
-            ..t.clone()
-        };
+        let mut sub = Table { grid: super::tables::full_grid(t, g.cols)[c0..=c1].to_vec(), rows, ..t.clone() };
+        sub.renew_identity();
         Some(Fragment { id, blocks: vec![Block::Table(sub)], cells: Some(CellCopy { whole_rows, whole_table }), ..Default::default() })
     }
 
@@ -152,7 +147,7 @@ impl Editor {
             let row = src.rows.get(r % src.rows.len().max(1))?;
             row.cells.get(j % row.cells.len().max(1))
         };
-        let tile = |r: usize, j: usize| -> Option<Vec<Block>> { source(r, j).map(|c| c.blocks.iter().map(fresh).collect()) };
+        let tile = |r: usize, j: usize| -> Option<Vec<Block>> { source(r, j).map(|c| c.blocks.iter().map(Block::fresh_identity).collect()) };
         // Whole rows
         let at_row_start = !block && self.selection.focus().is_some_and(|p| p.para_offset().is_some_and(|(_, o)| o.0 == 0)) && tg.cols.0 == 0;
         let over_rows = matches!(self.selection, Selection::Cells { shape: CellShape::Rows, .. });
@@ -172,7 +167,7 @@ impl Editor {
                 self.abort(tx);
                 return None;
             };
-            let mut sub = vec![fresh(&Block::Table(src.clone()))];
+            let mut sub = vec![Block::Table(src.fresh_identity())];
             self.take_in(&mut tx, &mut sub, f, &mut taken);
             let cell = &mut rows[tg.rows.0].cells[k];
             let closing = empty_cell(cell).blocks;
@@ -231,7 +226,7 @@ impl Editor {
                     self.abort(tx);
                     return None;
                 };
-                add.origin = crate::docx::Origin::NONE;
+                add.detach();
                 add.rev = Default::default();
                 add.cells.iter_mut().for_each(|c| *c = empty_cell(c));
                 rows.push(add);
@@ -279,7 +274,7 @@ impl Editor {
                 r
             })
             .collect();
-        let mut blocks = vec![fresh(&Block::Table(Table { rows: copied, controls: Vec::new(), ..src.clone() }))];
+        let mut blocks = vec![Block::Table(Table { rows: copied, controls: Vec::new(), ..src.clone() }.fresh_identity())];
         self.take_in(tx, &mut blocks, f, &mut super::clipboard::Taken::default());
         let Some(Block::Table(t)) = blocks.pop() else { return Vec::new() };
         let neighbour = at
@@ -310,7 +305,7 @@ fn merged_rows(new: &[Row], like: &Row) -> Vec<Row> {
     new.iter()
         .map(|r| {
             let mut row = like.clone();
-            row.origin = crate::docx::Origin::NONE;
+            row.detach();
             (row.controls, row.rev) = (r.controls.clone(), r.rev.clone());
             for (k, c) in row.cells.iter_mut().enumerate() {
                 c.v_merge = crate::docx::VMerge::None;

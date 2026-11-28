@@ -660,7 +660,7 @@ impl Recording {
         let old = idx.blocks(doc, container).and_then(|b| b.get(range.clone()));
         let Some(old) = old.filter(|o| !o.is_empty()) else {
             // Copies of blocks still indexed where they stay deleted (a removed frame's paragraphs)
-            let with = with.into_iter().map(|b| if indexed(idx, &b) { super::super::clipboard::fresh(&b) } else { b }).collect();
+            let with = with.into_iter().map(|b| if indexed(idx, &b) { b.fresh_identity() } else { b }).collect();
             let with = self.ins_blocks(with, ids);
             return vec![Step::Blocks { container, range, with }];
         };
@@ -696,7 +696,7 @@ impl Recording {
         let added = |n: &Row| {
             let mut r = n.clone();
             if in_place {
-                r.cells.iter_mut().for_each(|c| c.blocks = c.blocks.iter().map(super::super::clipboard::fresh).collect());
+                r.cells.iter_mut().for_each(|c| c.blocks = c.blocks.iter().map(Block::fresh_identity).collect());
             }
             r
         };
@@ -908,7 +908,7 @@ impl Recording {
                 kept
             }
             _ => {
-                let fresh: Vec<Block> = new.iter().map(super::super::clipboard::fresh).collect();
+                let fresh: Vec<Block> = new.iter().map(Block::fresh_identity).collect();
                 let mut out = self.ins_blocks(fresh, ids);
                 out.extend(kept);
                 out

@@ -90,7 +90,7 @@ fn detach(blocks: &mut [Block]) {
     for b in blocks {
         match b {
             Block::Para(p) => {
-                p.origin = crate::docx::Origin::NONE;
+                p.detach();
                 for i in &mut p.inlines {
                     if let Inline::Float(f, _) = i {
                         for tb in f.parts.iter_mut().filter_map(|part| part.text_box.as_mut()) {
@@ -103,7 +103,7 @@ fn detach(blocks: &mut [Block]) {
                 }
             }
             Block::Table(t) => {
-                t.origin = crate::docx::Origin::NONE;
+                t.detach();
                 t.rows.iter_mut().flat_map(|r| r.cells.iter_mut()).for_each(|c| detach(&mut c.blocks));
             }
         }

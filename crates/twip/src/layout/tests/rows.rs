@@ -2,7 +2,6 @@
 
 use std::collections::HashMap;
 
-use crate::docx::model::next_para_id;
 use crate::docx::{Block, Inline};
 use crate::layout::fragment::{Child, PageChild, PageFragment, RowFragment};
 use crate::layout::ids::{ParaId, TableId};
@@ -54,8 +53,7 @@ fn row_split_three_pages() {
         .map(|i| {
             let mut p = template.clone();
             p.inlines = vec![Inline::Text(format!("Line {i} of the tall cell."), run.clone())];
-            p.id = next_para_id();
-            p.origin = crate::docx::Origin::NONE;
+            p.renew_identity();
             tall.push(ParaId(p.id));
             Block::Para(p)
         })

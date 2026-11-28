@@ -6,7 +6,6 @@
 use std::fmt::Write;
 
 use super::super::Editor;
-use super::super::clipboard::fresh;
 use super::super::inspect::inspect;
 use super::fonts;
 
@@ -19,7 +18,7 @@ fn stripped(d: &crate::docx::Document) -> crate::docx::Document {
         std::rc::Rc::new(r.unanchored(t.styles.root.clone(), t.numbering.root.clone()))
     });
     for s in &mut d.sections {
-        s.blocks = s.blocks.iter().map(fresh).collect();
+        s.blocks = s.blocks.iter().map(crate::docx::Block::fresh_identity).collect();
         s.origin = crate::docx::Origin::NONE;
     }
     d

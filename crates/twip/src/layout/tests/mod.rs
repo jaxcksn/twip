@@ -129,8 +129,7 @@ pub fn plain_doc(texts: &[String]) -> Option<Document> {
         .map(|t| {
             let mut p = template.clone();
             p.inlines = vec![Inline::Text(t.clone(), run.clone())];
-            p.origin = crate::docx::Origin::NONE;
-            p.id = crate::docx::model::next_para_id();
+            p.renew_identity();
             Block::Para(p)
         })
         .collect();

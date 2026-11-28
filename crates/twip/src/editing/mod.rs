@@ -2890,7 +2890,7 @@ impl Editor {
     fn add_row(&mut self, table: TableId, after: usize, story: StoryId, fonts: &Fonts) -> Outcome {
         let Some(t) = self.index.table(&self.doc, table) else { return Outcome::Unchanged("no table") };
         let Some(mut row) = t.rows.get(after).cloned() else { return Outcome::Unchanged("no row") };
-        row.origin = crate::docx::Origin::NONE;
+        row.detach();
         for cell in &mut row.cells {
             let Some(p) = cell.blocks.iter().find_map(|b| match b {
                 Block::Para(p) => Some(p),

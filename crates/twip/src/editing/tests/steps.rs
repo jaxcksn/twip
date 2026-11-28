@@ -51,8 +51,8 @@ fn steps(doc: &Document, idx: &DocIndex) -> Vec<Step> {
             out.push(Step::Text { para: p, range: Unit(0)..Unit(2), with: Vec::new(), edges: Default::default() });
         }
         let par = idx.para(doc, p).expect("paragraph");
-        let second =
-            crate::docx::Paragraph { inlines: Vec::new(), origin: crate::docx::Origin::NONE, id: crate::docx::next_para_id(), ..par.clone() };
+        let mut second = crate::docx::Paragraph { inlines: Vec::new(), ..par.clone() };
+        second.renew_identity();
         out.push(Step::Split { para: p, at: mid, second, kept: Vec::new() });
     }
     for w in ps.windows(2).step_by((ps.len() / 4).max(1)) {

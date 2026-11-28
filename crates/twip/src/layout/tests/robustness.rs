@@ -31,8 +31,7 @@ fn first_para(d: &Document) -> Paragraph {
 fn para_with(template: &Paragraph, inlines: Vec<Inline>) -> Block {
     let mut p = template.clone();
     p.inlines = inlines;
-    p.id = next_para_id();
-    p.origin = crate::docx::Origin::NONE;
+    p.renew_identity();
     Block::Para(p)
 }
 

@@ -154,8 +154,7 @@ fn noted(text: &str, notes: &[u32]) -> String {
 fn fresh_copy(block: &Block) -> Block {
     let Block::Para(p) = block else { unreachable!("a paragraph") };
     let mut p = p.clone();
-    p.origin = crate::docx::Origin::NONE;
-    p.id = crate::docx::model::next_para_id();
+    p.renew_identity();
     Block::Para(p)
 }
 

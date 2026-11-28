@@ -49,8 +49,7 @@ fn provisional_pages_do_not_resolve() {
     dl.complete(&d, &fonts);
     let Block::Para(p) = d.sections[0].blocks[2].clone() else { return };
     let mut q = p;
-    q.id = crate::docx::model::next_para_id();
-    q.origin = crate::docx::Origin::NONE;
+    q.renew_identity();
     q.inlines.clear();
     d.sections[0].blocks.insert(3, Block::Para(q));
     dl.edit(Revision(2), Some(Change { section: 0, first: 3, old_end: 3, new_end: 4, row: None }));

@@ -294,7 +294,7 @@ impl Editor {
         if unchanged {
             return Outcome::Unchanged("already so");
         }
-        let blocks = blocks.map(|b| b.iter().map(super::clipboard::fresh).collect());
+        let blocks = blocks.map(|b| b.iter().map(crate::docx::Block::fresh_identity).collect());
         let mut tx = self.begin("Note Separator");
         if self.step(&mut tx, Step::Separator { key, blocks }).is_err() {
             self.abort(tx);

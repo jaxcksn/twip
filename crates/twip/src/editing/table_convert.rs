@@ -172,7 +172,7 @@ fn flatten(
                             _ => {
                                 let mut nested = nested.clone();
                                 nested.controls = inside.iter().chain(&nested.controls).copied().collect();
-                                out.push(super::clipboard::fresh(&Block::Table(nested)));
+                                out.push(Block::Table(nested.fresh_identity()));
                             }
                         }
                     }
@@ -432,13 +432,13 @@ impl Editor {
             let mut x = t.clone();
             x.rows.truncate(r0);
             tidy_merges(&mut x.rows);
-            super::clipboard::fresh(&Block::Table(x))
+            Block::Table(x.fresh_identity())
         });
         let after = (r1 + 1 < t.rows.len()).then(|| {
             let mut x = t.clone();
             x.rows.drain(..=r1);
             tidy_merges(&mut x.rows);
-            super::clipboard::fresh(&Block::Table(x))
+            Block::Table(x.fresh_identity())
         });
         let mut with: Vec<Block> = before.into_iter().chain(out).chain(after).collect();
         let Some(blocks) = self.index.blocks(&self.doc, slot.container) else { return Outcome::unavailable("not in a table") };

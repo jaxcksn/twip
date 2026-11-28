@@ -526,7 +526,7 @@ fn commented(doc: &mut Document) -> Vec<u8> {
             Block::Para(p) => p.clone(),
             Block::Table(_) => unreachable!("a paragraph"),
         };
-        p.origin = crate::docx::Origin::NONE;
+        p.detach();
         p.inlines = vec![Inline::Text(text.into(), base.clone())];
         vec![Block::Para(p)]
     };
@@ -692,7 +692,9 @@ fn a_reviewed_paragraph_rewritten_from_the_model_reads_back() {
         .expect("a moved paragraph");
     let author = doc.people.author("Author A", None);
     let Block::Para(body) = &doc.sections[0].blocks[0] else { panic!("a paragraph") };
-    let body = vec![Block::Para(Paragraph { origin: crate::docx::Origin::NONE, ..body.clone() })];
+    let mut body = body.clone();
+    body.detach();
+    let body = vec![Block::Para(body)];
     let comment = Comment {
         id: CommentId(500),
         author,

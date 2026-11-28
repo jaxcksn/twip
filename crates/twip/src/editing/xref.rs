@@ -515,7 +515,7 @@ impl Editor {
                         } else {
                             low[k] = to_id + 1;
                         }
-                        let mut copy: Vec<crate::docx::Block> = body.iter().map(super::clipboard::fresh).collect();
+                        let mut copy: Vec<crate::docx::Block> = body.iter().map(crate::docx::Block::fresh_identity).collect();
                         // Its fields and controls their own.
                         let controls = super::clipboard::adopt(&mut copy, &self.doc.controls);
                         renumber_marks(&mut copy, *kind, to_id);

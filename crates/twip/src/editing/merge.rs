@@ -771,7 +771,7 @@ impl Editor {
                 let f = self.whole_fragment(copied);
                 self.pending_controls.push((new_item, item_props(self, src)));
                 let mut tx = self.begin("Insert Item");
-                let mut with: Vec<Block> = f.blocks.iter().map(super::clipboard::fresh).collect();
+                let mut with: Vec<Block> = f.blocks.iter().map(crate::docx::Block::fresh_identity).collect();
                 self.take_in(&mut tx, &mut with, &f, &mut super::clipboard::Taken::default());
                 for (b, l) in with.iter_mut().zip(leads) {
                     match b {
@@ -806,7 +806,7 @@ impl Editor {
                 let f = self.whole_fragment(vec![Block::Table(shell)]);
                 self.pending_controls.push((new_item, item_props(self, src)));
                 let mut tx = self.begin("Insert Item");
-                let mut with: Vec<Block> = f.blocks.iter().map(super::clipboard::fresh).collect();
+                let mut with: Vec<Block> = f.blocks.iter().map(crate::docx::Block::fresh_identity).collect();
                 self.take_in(&mut tx, &mut with, &f, &mut super::clipboard::Taken::default());
                 let Some(Block::Table(copy)) = with.pop() else {
                     self.abort(tx);
@@ -1148,7 +1148,7 @@ impl Editor {
                     let mut tx = self.begin(label);
                     let mut new: Vec<Block> = match f {
                         Some(f) if plain_text.is_none() => {
-                            let mut b: Vec<Block> = f.blocks.iter().map(super::clipboard::fresh).collect();
+                            let mut b: Vec<Block> = f.blocks.iter().map(crate::docx::Block::fresh_identity).collect();
                             self.take_in(&mut tx, &mut b, &f, &mut super::clipboard::Taken::default());
                             b
                         }
@@ -1375,7 +1375,7 @@ impl Editor {
         let mut tx = self.begin("Insert File");
         let mut stories = Vec::with_capacity(order.len());
         for (&(part, _), &id) in order.iter().zip(&ids) {
-            let mut blocks: Vec<Block> = breaks.parts[breaks.stories[part].1.clone()].iter().map(super::clipboard::fresh).collect();
+            let mut blocks: Vec<Block> = breaks.parts[breaks.stories[part].1.clone()].iter().map(crate::docx::Block::fresh_identity).collect();
             self.take_in(&mut tx, &mut blocks, &hf, &mut taken);
             stories.push((id, blocks));
         }

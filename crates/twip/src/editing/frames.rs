@@ -353,7 +353,7 @@ impl Editor {
         // The paragraphs are written as new ones: their source is the frame's, which goes.
         for b in &mut blocks {
             if let Block::Para(p) = b {
-                p.origin = crate::docx::Origin::NONE;
+                p.detach();
             }
         }
         let mut tx = self.begin("Remove Frame");

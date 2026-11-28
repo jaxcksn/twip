@@ -56,6 +56,86 @@ impl Paragraph {
     }
 }
 
+impl Block {
+    /// A copy with ids of its own (its paragraphs', tables', floats' and inline texts', inside it too) and no origin
+    /// for its paragraphs, tables and rows: a copied subtree, saved as new. Floats and pictures keep theirs.
+    pub fn fresh_identity(&self) -> Block {
+        match self {
+            Block::Para(p) => Block::Para(p.fresh_identity()),
+            Block::Table(t) => Block::Table(t.fresh_identity()),
+        }
+    }
+}
+
+impl Paragraph {
+    /// A copy with ids of its own and no origin, as [`Block::fresh_identity`].
+    pub fn fresh_identity(&self) -> Paragraph {
+        let mut p = self.clone();
+        p.renew_identity();
+        for i in &mut p.inlines {
+            let story = match i {
+                Inline::Float(f, _) => {
+                    f.id = next_para_id();
+                    f.text_box.as_mut()
+                }
+                Inline::Picture(pic, _) => pic.text.as_mut().map(|t| {
+                    t.id = next_para_id();
+                    &mut t.text_box
+                }),
+                _ => None,
+            };
+            if let Some(tb) = story {
+                tb.blocks = tb.blocks.iter().map(Block::fresh_identity).collect();
+            }
+        }
+        p
+    }
+
+    /// A new id and no origin for it alone: what it holds keeps theirs.
+    pub fn renew_identity(&mut self) {
+        self.id = next_para_id();
+        self.detach();
+    }
+
+    /// No origin: saved as a new paragraph.
+    pub fn detach(&mut self) {
+        self.origin = Origin::NONE;
+    }
+}
+
+impl Table {
+    /// A copy with ids of its own and no origin, its rows' and cells' blocks' too, as [`Block::fresh_identity`].
+    pub fn fresh_identity(&self) -> Table {
+        let mut t = self.clone();
+        t.renew_identity();
+        for r in &mut t.rows {
+            r.detach();
+            for c in &mut r.cells {
+                c.blocks = c.blocks.iter().map(Block::fresh_identity).collect();
+            }
+        }
+        t
+    }
+
+    /// A new id and no origin for it alone: its rows keep theirs.
+    pub fn renew_identity(&mut self) {
+        self.id = next_para_id();
+        self.detach();
+    }
+
+    /// No origin: saved as a new table.
+    pub fn detach(&mut self) {
+        self.origin = Origin::NONE;
+    }
+}
+
+impl Row {
+    /// No origin: saved as a new row.
+    pub fn detach(&mut self) {
+        self.origin = Origin::NONE;
+    }
+}
+
 impl Table {
     /// Its element's byte range in its part.
     pub(in crate::docx) fn src(&self) -> Option<&Range<usize>> {

@@ -1092,8 +1092,11 @@ impl Editor {
                 let mut blocks: Vec<Block> = match read {
                     Chunk::Html(read) => {
                         let mut images = crate::docx::Resources::default();
-                        let blocks =
-                            self.html_blocks(read, &res, &nums[j], template, width, &mut images).iter().map(super::clipboard::fresh).collect();
+                        let blocks = self
+                            .html_blocks(read, &res, &nums[j], template, width, &mut images)
+                            .iter()
+                            .map(crate::docx::Block::fresh_identity)
+                            .collect();
                         if !images.is_empty() {
                             let o = super::import::Origin {
                                 key: super::import::next_key(),
@@ -1111,7 +1114,7 @@ impl Editor {
                         Ok(d) => {
                             f = d;
                             f.look = if *match_src { super::clipboard::Look::Source } else { super::clipboard::Look::Destination };
-                            f.blocks.iter().map(super::clipboard::fresh).collect()
+                            f.blocks.iter().map(crate::docx::Block::fresh_identity).collect()
                         }
                         Err(_) => Vec::new(),
                     },

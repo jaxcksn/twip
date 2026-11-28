@@ -18,7 +18,9 @@ fn read(name: &str) -> Document {
 }
 
 fn blank_para_like(p: &Paragraph) -> Paragraph {
-    Paragraph { inlines: Vec::new(), origin: crate::docx::Origin::NONE, id: crate::docx::next_para_id(), ..p.clone() }
+    let mut q = Paragraph { inlines: Vec::new(), ..p.clone() };
+    q.renew_identity();
+    q
 }
 
 fn a_float() -> (Box<Float>, Run) {
@@ -174,8 +176,7 @@ fn a_table_in_a_text_box_in_a_deep_cell_is_refused_for_its_depth() {
     let Some(Block::Table(outer)) = doc.sections[0].blocks.iter().find(|b| matches!(b, Block::Table(_))).cloned() else { panic!("a table") };
     let para = |text: &str| {
         let Some(Block::Para(mut p)) = outer.rows[0].cells[0].blocks.first().cloned() else { panic!("a paragraph") };
-        p.id = crate::docx::next_para_id();
-        p.origin = crate::docx::Origin::NONE;
+        p.renew_identity();
         let run = p.mark.clone();
         p.inlines = vec![Inline::Text(text.to_string(), run)];
         p
@@ -186,8 +187,7 @@ fn a_table_in_a_text_box_in_a_deep_cell_is_refused_for_its_depth() {
         t.rows[0].cells.truncate(1);
         t.rows[0].cells[0].span = 1;
         t.rows[0].cells[0].blocks = content;
-        t.origin = crate::docx::Origin::NONE;
-        t.id = crate::docx::next_para_id();
+        t.renew_identity();
         t
     };
     let (mut f, run) = a_float();

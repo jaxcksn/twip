@@ -219,7 +219,7 @@ impl Editor {
                 // A copy of what it shows now: the nearest section before's.
                 let inherited = (0..section).rev().find_map(|k| refs(self, k).and_then(|r| r[slot]));
                 let blocks = match inherited.and_then(|n| self.doc.stories.get(&n)) {
-                    Some(b) => b.iter().map(super::clipboard::fresh).collect(),
+                    Some(b) => b.iter().map(crate::docx::Block::fresh_identity).collect(),
                     None => match self.empty_story_para(footer) {
                         Some(p) => vec![crate::docx::Block::Para(p)],
                         None => return Outcome::Unchanged("no styles"),

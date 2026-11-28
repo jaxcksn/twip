@@ -352,45 +352,6 @@ pub(super) fn slice(p: &Paragraph, a: Unit, b: Unit) -> Vec<Inline> {
     out
 }
 
-pub(super) fn fresh(b: &Block) -> Block {
-    match b {
-        Block::Para(p) => {
-            let mut p = p.clone();
-            p.id = crate::docx::next_para_id();
-            p.origin = crate::docx::Origin::NONE;
-            for i in &mut p.inlines {
-                let story = match i {
-                    Inline::Float(f, _) => {
-                        f.id = crate::docx::next_para_id();
-                        f.text_box.as_mut()
-                    }
-                    Inline::Picture(pic, _) => pic.text.as_mut().map(|t| {
-                        t.id = crate::docx::next_para_id();
-                        &mut t.text_box
-                    }),
-                    _ => None,
-                };
-                if let Some(tb) = story {
-                    tb.blocks = tb.blocks.iter().map(fresh).collect();
-                }
-            }
-            Block::Para(p)
-        }
-        Block::Table(t) => {
-            let mut t = t.clone();
-            t.id = crate::docx::next_para_id();
-            t.origin = crate::docx::Origin::NONE;
-            for r in &mut t.rows {
-                r.origin = crate::docx::Origin::NONE;
-                for c in &mut r.cells {
-                    c.blocks = c.blocks.iter().map(fresh).collect();
-                }
-            }
-            Block::Table(t)
-        }
-    }
-}
-
 fn plain(blocks: &[Block], hidden: bool, out: &mut String) {
     for b in blocks {
         match b {
@@ -922,7 +883,7 @@ impl Editor {
         let mut stories = Vec::with_capacity(refs.notes.len());
         for (kind, id, body) in &refs.notes {
             let to = to_ids[&(*kind, *id)];
-            let mut body: Vec<Block> = body.iter().map(fresh).collect();
+            let mut body: Vec<Block> = body.iter().map(Block::fresh_identity).collect();
             for (c, k) in defs.map(|d| adopt(&mut body, d)).unwrap_or_default() {
                 let _ = self.step(tx, Step::Control { id: c, control: Some(k) });
             }
@@ -976,7 +937,7 @@ impl Editor {
             }
             c.id = to;
             c.parent = c.parent.map(|p| map.get(&p).copied().unwrap_or(p));
-            c.body = c.body.iter().map(fresh).collect();
+            c.body = c.body.iter().map(Block::fresh_identity).collect();
             for (id, k) in defs.map(|d| adopt(&mut c.body, d)).unwrap_or_default() {
                 let _ = self.step(tx, Step::Control { id, control: Some(k) });
             }
@@ -1143,7 +1104,7 @@ impl Editor {
             return None;
         }
         let mut tx = self.begin("Paste");
-        let mut blocks: Vec<Block> = f.blocks.iter().map(fresh).collect();
+        let mut blocks: Vec<Block> = f.blocks.iter().map(Block::fresh_identity).collect();
         self.take_in(&mut tx, &mut blocks, f, &mut Taken::default());
         for b in &mut blocks {
             match b {
@@ -1192,7 +1153,7 @@ impl Editor {
             self.abort(tx);
             return Outcome::Unchanged("caret at a row end");
         };
-        let mut blocks: Vec<Block> = f.blocks.iter().map(fresh).collect();
+        let mut blocks: Vec<Block> = f.blocks.iter().map(Block::fresh_identity).collect();
         self.take_in(&mut tx, &mut blocks, f, &mut Taken::default());
         // Landing in a list item: its list goes on through the pasted items.
         if self.paste_defaults.lists()

@@ -136,8 +136,7 @@ fn reflow_moves_later_paragraphs() {
     dl.edit(Revision(1), None);
     dl.complete(&d, &fonts);
     let Block::Para(mut copy) = d.sections[0].blocks[2].clone() else { return };
-    copy.id = crate::docx::model::next_para_id();
-    copy.origin = crate::docx::Origin::NONE;
+    copy.renew_identity();
     d.sections[0].blocks.insert(3, Block::Para(copy));
     crate::prof::take_reuse();
     dl.edit(Revision(2), Some(Change { section: 0, first: 2, old_end: 3, new_end: 4, row: None }));

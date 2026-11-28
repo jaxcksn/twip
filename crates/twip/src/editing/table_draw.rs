@@ -372,8 +372,8 @@ impl Editor {
         });
         let mut lower = rows[r].clone();
         lower.rev = Default::default();
-        lower.origin = crate::docx::Origin::NONE;
-        rows[r].origin = crate::docx::Origin::NONE;
+        lower.detach();
+        rows[r].detach();
         for (k, cell) in lower.cells.iter_mut().enumerate() {
             let upper = &mut rows[r].cells[k];
             let continued = g.cell_at(r + 1, g.rows[r][k].0).is_some_and(|b| g.rows[r + 1][b].0 == g.rows[r][k].0 && g.continues(r + 1, b));
@@ -529,7 +529,7 @@ impl Editor {
             set_cell_sides(cell, RIGHT, &pen);
             set_cell_sides(&mut new, LEFT, &pen);
             rows[r].cells.insert(k + 1, new);
-            rows[r].origin = crate::docx::Origin::NONE;
+            rows[r].detach();
         }
         self.rebuild(DRAW_TABLE, table, rows, grid, caret, fonts)
     }
