@@ -3,8 +3,11 @@
 /// A custom property's value.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
+    /// Text.
     Text(String),
+    /// A number.
     Number(f64),
+    /// Yes or no.
     Bool(bool),
     /// An ISO 8601 date and time.
     Date(String),
@@ -30,20 +33,26 @@ impl Value {
 /// The document's properties: core and extended by element name, custom in order.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Properties {
+    /// The core properties, by element name.
     pub core: Vec<(&'static str, String)>,
+    /// The extended (application) properties, by element name.
     pub app: Vec<(&'static str, String)>,
+    /// The custom properties, in order.
     pub custom: Vec<(String, Value)>,
 }
 
 impl Properties {
+    /// Core property `name`.
     pub fn core(&self, name: &str) -> Option<&str> {
         self.core.iter().find(|(n, _)| *n == name).map(|(_, v)| v.as_str())
     }
 
+    /// Extended property `name`.
     pub fn app(&self, name: &str) -> Option<&str> {
         self.app.iter().find(|(n, _)| *n == name).map(|(_, v)| v.as_str())
     }
 
+    /// Sets core property `name` to `v`; none or empty takes it away.
     pub fn set_core(&mut self, name: &'static str, v: Option<String>) {
         self.core.retain(|(n, _)| *n != name);
         if let Some(v) = v.filter(|v| !v.is_empty()) {
@@ -51,6 +60,7 @@ impl Properties {
         }
     }
 
+    /// Sets extended property `name` to `v`, as [`Self::set_core`].
     pub fn set_app(&mut self, name: &'static str, v: Option<String>) {
         self.app.retain(|(n, _)| *n != name);
         if let Some(v) = v.filter(|v| !v.is_empty()) {

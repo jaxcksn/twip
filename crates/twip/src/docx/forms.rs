@@ -5,9 +5,7 @@ use roxmltree::Node;
 use super::write::props::esc;
 use super::xml::{attr, child, children, int, val};
 
-mod data;
-
-pub use data::*;
+pub use crate::document::forms::*;
 
 fn on(n: Option<Node>) -> Option<bool> {
     n.map(|n| !matches!(attr(n, "val"), Some("0" | "false" | "off")))

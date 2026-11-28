@@ -2,9 +2,7 @@
 
 use super::write::props::esc as esc_text;
 
-mod data;
-
-pub use data::*;
+pub use crate::document::properties::*;
 
 pub const CORE: &str = "http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties";
 pub const APP: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties";

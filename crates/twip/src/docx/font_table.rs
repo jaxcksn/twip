@@ -2,9 +2,7 @@
 
 use std::collections::HashMap;
 
-mod data;
-
-pub use data::*;
+pub use crate::document::fonts::*;
 
 /// The descriptions in a font table part, by lowercase family name. Malformed XML gives none.
 pub fn parse(xml: &str) -> HashMap<String, FontDescription> {

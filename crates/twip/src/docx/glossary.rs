@@ -22,9 +22,7 @@ use crate::document::paragraph::ListId;
 use crate::format::{DefinedIn, ListChoice, ListDefId, Lists, StyleSheet};
 use std::rc::Rc;
 
-mod data;
-
-pub use data::*;
+pub use crate::document::glossary::*;
 
 /// The glossary part's XML with its body's style and list ids as `map`'s document tables hold them.
 pub fn to_view_xml<'a>(map: &GlossaryMap, xml: &'a str) -> Cow<'a, str> {

@@ -40,7 +40,10 @@ impl<K: Eq + Hash + Clone> IdMap<K> {
 /// How the glossary's style, list and list definition ids map onto the document's tables.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct GlossaryMap {
+    /// Style ids.
     pub styles: IdMap<String>,
+    /// List ids.
     pub nums: IdMap<i64>,
+    /// List definition ids.
     pub abstracts: IdMap<i64>,
 }

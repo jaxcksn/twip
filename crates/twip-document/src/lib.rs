@@ -8,8 +8,11 @@
 pub mod anchor;
 pub mod authored;
 pub mod content;
+pub mod fonts;
 pub mod foreign;
 pub mod format;
+pub mod forms;
+pub mod glossary;
 pub mod graphic;
 pub mod ident;
 pub mod line;
@@ -18,5 +21,6 @@ pub mod origin;
 pub mod paragraph;
 pub mod policy;
 pub mod position;
+pub mod properties;
 pub mod resource;
 pub mod section;
