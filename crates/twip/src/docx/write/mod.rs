@@ -3407,7 +3407,7 @@ impl<'a, 'i> Saver<'a, 'i> {
     }
 
     /// The source element at exactly `r`, inside one of the part's paragraphs.
-    /// A marker's element in the group's source paragraphs: a range or comment reference by its name and id, opaque
+    /// A marker's element in the group's source paragraphs: a range or comment reference by its name and id, foreign
     /// content by its text.
     fn marker_range(&self, m: &Marker, srcs: &[&ParaSrc]) -> Option<Range<usize>> {
         let mut nodes = srcs.iter().flat_map(|x| x.ranges.iter()).filter_map(|r| self.paras.get(&r.start));
@@ -3428,8 +3428,8 @@ impl<'a, 'i> Saver<'a, 'i> {
                         .map(|d| d.range())
                 })
             }
-            Marker::Opaque(o) => {
-                let raw = o.xml.0.as_deref()?;
+            Marker::Foreign(o) => {
+                let raw = &*o.payload;
                 srcs.iter().flat_map(|x| x.ranges.iter()).find_map(|r| self.xml[r.clone()].find(raw).map(|k| r.start + k..r.start + k + raw.len()))
             }
             Marker::Edge(e, _) => {
@@ -3715,8 +3715,8 @@ enum Marker {
     Range(RangeMark),
     /// A comment's reference mark, in its run's formatting.
     Comment(CommentId, Run),
-    /// Content kept as read ([`Inline::Opaque`]).
-    Opaque(Rc<super::model::Opaque>),
+    /// Content kept as read ([`Inline::Foreign`]).
+    Foreign(Rc<super::model::Foreign>),
     /// A field edge ([`Inline::FieldEdge`]) in its markers' run.
     Edge(Rc<super::model::Edge>, Run),
     /// An editing permission's start or end.
@@ -3729,7 +3729,7 @@ impl Marker {
     /// The element it is in the source, and the id that names it there.
     fn element(&self) -> Option<(&'static str, i64)> {
         match self {
-            Marker::Control(..) | Marker::Opaque(_) | Marker::Edge(..) | Marker::Permission(_) | Marker::Bookmark(..) => None,
+            Marker::Control(..) | Marker::Foreign(_) | Marker::Edge(..) | Marker::Permission(_) | Marker::Bookmark(..) => None,
             Marker::Range(r) => Some((range_element(r.kind), r.id)),
             Marker::Comment(id, _) => Some(("commentReference", id.0)),
         }
@@ -3743,7 +3743,7 @@ impl Marker {
             Marker::Control(id, start) => (u8::from(*start), id.0 as i64),
             Marker::Range(r) => (2 + r.kind as u8, r.id),
             Marker::Comment(id, _) => (u8::MAX, id.0),
-            Marker::Opaque(o) => (u8::MAX - 1, Rc::as_ptr(o) as usize as i64),
+            Marker::Foreign(o) => (u8::MAX - 1, Rc::as_ptr(o) as usize as i64),
             Marker::Edge(e, _) => (u8::MAX - 1, Rc::as_ptr(e) as usize as i64),
             Marker::Permission(p) => (u8::MAX - 1, permission_ptr(p) as usize as i64),
             Marker::Bookmark(n, start) => {
@@ -3829,7 +3829,7 @@ fn marker(i: &Inline, pend: &mut Vec<Marker>) {
             _ => Marker::Permission(r.clone()),
         }),
         Inline::CommentRef { id, run } => pend.push(Marker::Comment(*id, run.clone())),
-        Inline::Opaque(o) => pend.push(Marker::Opaque(o.clone())),
+        Inline::Foreign(o) => pend.push(Marker::Foreign(o.clone())),
         Inline::FieldEdge { edge, run } => pend.push(Marker::Edge(edge.clone(), run.clone())),
         _ => {}
     }
@@ -3838,7 +3838,7 @@ fn marker(i: &Inline, pend: &mut Vec<Marker>) {
 fn same_inline(x: &Inline, y: &Inline) -> bool {
     match (x, y) {
         (Inline::Text(s, r), Inline::Text(t, q)) => s == t && Rc::ptr_eq(r, q),
-        (Inline::Opaque(a), Inline::Opaque(b)) => Rc::ptr_eq(a, b),
+        (Inline::Foreign(a), Inline::Foreign(b)) => Rc::ptr_eq(a, b),
         (Inline::FieldEdge { edge: a, run: r }, Inline::FieldEdge { edge: b, run: q }) => Rc::ptr_eq(a, b) && Rc::ptr_eq(r, q),
         (Inline::NoteRef { kind: k, id: a, custom: c, run: r }, Inline::NoteRef { kind: l, id: b, custom: d, run: q }) => {
             (k, a, c) == (l, b, d) && Rc::ptr_eq(r, q)
@@ -3896,7 +3896,7 @@ fn unit_keys(i: &Inline, out: &mut Vec<(u64, char)>) {
         Inline::Break(BreakKind::ClearAll, _) => out.push((ATOM | BreakKind::ClearAll as u64, '\u{3}')),
         Inline::Break(BreakKind::Column, _) => out.push((ATOM | BreakKind::Column as u64, '\u{e}')),
         Inline::Break(k, _) => out.push((ATOM | *k as u64, '\u{c}')),
-        Inline::Opaque(_)
+        Inline::Foreign(_)
         | Inline::FieldEdge { .. }
         | Inline::Range(_)
         | Inline::CommentRef { .. }
@@ -4434,7 +4434,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
         }
         let fresh_count: usize = cur.iter().map(|c| c.fresh.len()).sum();
         now_ids.retain(|id| !fresh_ids.contains(id));
-        // Markers gone since reading (a deleted comment's range and reference, deleted opaque content), their source
+        // Markers gone since reading (a deleted comment's range and reference, deleted foreign content), their source
         // elements left out of the walk; controls go as `gone`.
         let mut removed = Vec::new();
         if fresh {
@@ -4671,7 +4671,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
             for m in read.iter().filter(|m| !made(m) && s.marker_range(m, srcs).is_none()) {
                 match m {
                     Marker::Bookmark(n, start) => marks_outside.0.push((n.clone(), *start)),
-                    Marker::Opaque(o) => marks_outside.1.push(Rc::as_ptr(o).cast()),
+                    Marker::Foreign(o) => marks_outside.1.push(Rc::as_ptr(o).cast()),
                     Marker::Edge(e, _) => marks_outside.1.push(Rc::as_ptr(e).cast()),
                     Marker::Permission(p) => marks_outside.1.push(permission_ptr(p)),
                     _ => {}
@@ -5143,7 +5143,7 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
             }
             match &m {
                 Marker::Bookmark(n, start) if self.marks_outside.0.iter().any(|(m, s)| m == n && s == start) => continue,
-                Marker::Opaque(o) if self.marks_outside.1.contains(&Rc::as_ptr(o).cast()) => continue,
+                Marker::Foreign(o) if self.marks_outside.1.contains(&Rc::as_ptr(o).cast()) => continue,
                 Marker::Edge(e, _) if self.marks_outside.1.contains(&Rc::as_ptr(e).cast()) => continue,
                 Marker::Permission(p) if self.marks_outside.1.contains(&permission_ptr(p)) => continue,
                 _ => {}
@@ -5189,12 +5189,13 @@ impl<'s, 'a, 'i> Emit<'s, 'a, 'i> {
                     self.out.push_str(&x);
                     self.out.push_str(&close);
                 }
-                Marker::Opaque(o) => {
+                Marker::Foreign(o) if o.format == super::foreign::DOCX => {
                     self.flush();
                     let level = self.stack.iter().rposition(|o| o.run).unwrap_or(self.stack.len());
                     self.open_to(level);
-                    self.out.push_str(o.xml.0.as_deref().unwrap_or(""));
+                    self.out.push_str(&o.payload);
                 }
+                Marker::Foreign(_) => {}
                 Marker::Permission(p) => {
                     self.flush();
                     let level = self.stack.iter().rposition(|o| o.run).unwrap_or(self.stack.len());

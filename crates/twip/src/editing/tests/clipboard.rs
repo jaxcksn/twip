@@ -807,7 +807,7 @@ fn a_whole_paragraph_copies_what_ends_it() {
     let math = r#"<m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><m:r><m:t>x</m:t></m:r></m:oMath>"#;
     let count = |blocks: &[Block]| {
         let inlines = blocks.iter().filter_map(|b| if let Block::Para(p) = b { Some(p) } else { None }).flat_map(|p| &p.inlines);
-        inlines.filter(|i| matches!(i, Inline::Opaque(o) if o.xml.0.as_deref().is_some_and(|x| x.contains("oMath")))).count()
+        inlines.filter(|i| matches!(i, Inline::Foreign(o) if o.equation)).count()
     };
     let mut e = ed(&format!("<w:p>{}</w:p><w:p>{}{math}</w:p><w:p>{}</w:p>", t("z"), t("a"), t("b")));
     e.execute(Command::SelectAll, fonts());

@@ -2,6 +2,7 @@
 
 pub use crate::document::anchor::{FloatWrap, HorizontalAlign, HorizontalRelation, VerticalAlign, VerticalRelation, WrapText};
 pub use crate::document::content::{BreakKind, NoteKind};
+pub use crate::document::foreign::{Foreign, FormatId};
 pub use crate::document::ident::{ControlId, FieldId, HeaderFooterId, ResourceId, next_para_id};
 pub use crate::document::line::Underline;
 pub use crate::document::paragraph::{ListId, ListJc, ListRef, ListSuffix, TextAlignment};
@@ -962,7 +963,7 @@ impl Float {
             .inlines
             .iter()
             .filter(|i| {
-                !matches!(i, Inline::Opaque(..) | Inline::FieldEdge { .. } | Inline::Range(..)) && !matches!(i, Inline::Text(t, _) if t.is_empty())
+                !matches!(i, Inline::Foreign(..) | Inline::FieldEdge { .. } | Inline::Range(..)) && !matches!(i, Inline::Text(t, _) if t.is_empty())
             })
             .collect();
         match content.as_slice() {
@@ -1094,7 +1095,7 @@ pub enum Inline {
     },
     /// Content the engine doesn't model, between runs (an equation, a subdocument): no units, nothing drawn, saved as
     /// read wherever it moves. No units.
-    Opaque(Rc<Opaque>),
+    Foreign(Rc<Foreign>),
 }
 
 /// A legacy form field's data: what saving writes back.
@@ -1105,13 +1106,6 @@ pub struct FormField {
     /// Its settings and value, and as read.
     pub data: super::forms::FormData,
     pub read: super::forms::FormData,
-}
-
-/// An element kept as read ([`Inline::Opaque`]).
-#[derive(Debug, PartialEq)]
-pub struct Opaque {
-    /// The element as read.
-    pub xml: Raw,
 }
 
 /// A field edge marker ([`Inline::FieldEdge`]): one allocation for each edge made, which its copies share.
@@ -2462,7 +2456,7 @@ impl Inline {
             | Inline::FieldEnd { run, .. }
             | Inline::CommentRef { run, .. } => Some(run),
             // A field edge's run is its markers', not text's.
-            Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::FieldEdge { .. } | Inline::Opaque(_) => None,
+            Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::FieldEdge { .. } | Inline::Foreign(_) => None,
         }
     }
 
@@ -2483,13 +2477,13 @@ impl Inline {
     }
 
     /// Caret units the inline occupies: a character per character of text, one per other drawn inline, none for
-    /// bookmarks, range markers, comment references, anchored objects and opaque content.
+    /// bookmarks, range markers, comment references, anchored objects and foreign content.
     pub fn units(&self) -> usize {
         match self {
             Inline::Text(s, _) => s.chars().count(),
             Inline::Range(_) | Inline::CommentRef { .. } | Inline::Float(..) | Inline::ControlStart(_) | Inline::ControlEnd(_) => 0,
             Inline::FieldEdge { edge, .. } => edge.kind.units(),
-            Inline::Opaque(_) => 0,
+            Inline::Foreign(_) => 0,
             _ => 1,
         }
     }

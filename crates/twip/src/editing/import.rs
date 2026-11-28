@@ -12,7 +12,7 @@ use crate::docx::review::{AuthorId, FormatChange, People, RevisionMark, TableCha
 use crate::docx::style_xml::StyleDef;
 use crate::docx::style_xml::StyleEditError;
 use crate::docx::write::props::Cx;
-use crate::docx::{Block, Inline, Opaque, Paragraph, Raw, ResourceId, Resources, Run, RunStyle};
+use crate::docx::{Block, Inline, Paragraph, Raw, ResourceId, Resources, Run, RunStyle};
 use crate::drawing::paint::Fill;
 use crate::drawing::{Shape, ShapeKind};
 use crate::format::{LevelProp, ListChoice, ListDef, ListDefId, ListDefProp, ListProp, ParaProp, ParaSet, Style, StyleProp, StyleSet};
@@ -346,9 +346,9 @@ impl Rebind {
                                 *edge = Rc::new(crate::docx::Edge { kind: edge.kind.clone(), src: Some(src) });
                             }
                         }
-                        Inline::Opaque(o) => {
-                            if let Some(xml) = o.xml.0.as_deref().and_then(|x| self.element(x)) {
-                                *o = Rc::new(Opaque { xml: Raw(Some(xml.into())) });
+                        Inline::Foreign(o) => {
+                            if let Some(f) = crate::docx::foreign::declaring(o, &self.0) {
+                                *o = Rc::new(f);
                             }
                         }
                         Inline::Range(r) if let Some(p) = r.permission.as_deref().filter(|p| needs(&p.xml)) => {

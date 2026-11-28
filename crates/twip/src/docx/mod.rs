@@ -11,6 +11,7 @@ pub mod diagnostics;
 pub mod drawing;
 pub mod fields;
 pub mod font_table;
+pub mod foreign;
 pub mod forms;
 pub mod formula;
 pub(crate) mod frames;

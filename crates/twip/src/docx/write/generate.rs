@@ -359,6 +359,6 @@ fn unsupported(i: &Inline) -> &'static str {
         Inline::ControlStart(_) | Inline::ControlEnd(_) => "a content control",
         Inline::Ruby(..) => "ruby text",
         Inline::DateBlock(..) => "a date",
-        Inline::FieldEdge { .. } | Inline::Opaque(_) => "content kept as read",
+        Inline::FieldEdge { .. } | Inline::Foreign(_) => "content kept as read",
     }
 }

@@ -1632,7 +1632,7 @@ impl Reader {
         if !self.record {
             return;
         }
-        let Some(id) = attr(e, "id").and_then(|v| v.trim().parse::<i64>().ok()) else { return self.opaque(e, out) };
+        let Some(id) = attr(e, "id").and_then(|v| v.trim().parse::<i64>().ok()) else { return self.foreign(e, out) };
         let start = e.tag_name().name() == "permStart";
         let editor = match (attr(e, "edGrp"), attr(e, "ed")) {
             _ if !start => None,
@@ -2507,15 +2507,16 @@ impl Reader {
     }
 
     /// An element between runs the engine doesn't model, kept as read (editable reads).
-    fn opaque(&mut self, e: Node, out: &mut Vec<Inline>) {
+    fn foreign(&mut self, e: Node, out: &mut Vec<Inline>) {
         if self.record {
-            out.push(Inline::Opaque(Rc::new(Opaque { xml: Raw(Some(raw(e))) })));
+            let equation = matches!(e.tag_name().name(), "oMath" | "oMathPara");
+            out.push(Inline::Foreign(Rc::new(super::foreign::read(raw(e), e.descendants(), equation))));
         }
     }
 
     /// A run child the engine doesn't model (`w:movie`, an element it doesn't know), kept as a run of its own with the
     /// run's start tag and properties as read: it is written back, moved and pasted with its text (editable reads).
-    fn run_opaque(&mut self, r: Node, c: Node, out: &mut Vec<Inline>) {
+    fn run_foreign(&mut self, r: Node, c: Node, out: &mut Vec<Inline>) {
         if !self.record {
             return;
         }
@@ -2524,15 +2525,16 @@ impl Reader {
         let name = &open[1..open.find(|ch: char| ch.is_whitespace() || ch == '>' || ch == '/').unwrap_or(1)];
         let rpr = child(r, "rPr").map_or_else(String::new, |p| raw(p).to_string());
         let xml = format!("{open}{rpr}{}</{name}>", raw(c));
-        out.push(Inline::Opaque(Rc::new(Opaque { xml: Raw(Some(xml.into())) })));
+        let nodes = std::iter::once(r).chain(child(r, "rPr").into_iter().flat_map(|p| p.descendants())).chain(c.descendants());
+        out.push(Inline::Foreign(Rc::new(super::foreign::read(xml.into(), nodes, false))));
     }
 
-    /// [`Reader::opaque`], reported as content that isn't drawn.
+    /// [`Reader::foreign`], reported as content that isn't drawn.
     fn unsupported(&mut self, e: Node, out: &mut Vec<Inline>) {
         let name = e.tag_name();
         let prefix = e.lookup_prefix(name.namespace().unwrap_or("")).unwrap_or("");
         self.warn(WarningCode::UnsupportedElement, || format!("{prefix}:{} isn't drawn; it is kept as read", name.name()));
-        self.opaque(e, out);
+        self.foreign(e, out);
     }
 
     fn read_run(&mut self, r: Node, base: &Base, pkg: &mut Package, out: &mut Vec<Inline>) {
@@ -2582,7 +2584,7 @@ impl Reader {
                 continue;
             }
             if c.tag_name().namespace() != Some(W) {
-                self.run_opaque(r, c, out);
+                self.run_foreign(r, c, out);
                 continue;
             }
             let name = c.tag_name().name();
@@ -2775,7 +2777,7 @@ impl Reader {
                 "continuationSeparator" => out.push(Inline::Separator { continuation: true, full: self.in_endnotes, run: run.clone() }),
                 // Word's layout cache and a comment's own mark: never kept.
                 "lastRenderedPageBreak" | "annotationRef" | "instrText" | "delInstrText" => {}
-                _ => self.run_opaque(r, c, out),
+                _ => self.run_foreign(r, c, out),
             }
         }
         if self.record {

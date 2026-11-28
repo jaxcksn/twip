@@ -147,7 +147,7 @@ pub(super) fn with_run(i: &Inline, run: &Run) -> Inline {
         Inline::DateBlock(name, text, _) => Inline::DateBlock(name, text.clone(), run),
         // A field edge's run carries its tracked changes.
         Inline::FieldEdge { edge, .. } => Inline::FieldEdge { edge: Rc::new((**edge).clone()), run },
-        Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::Opaque(_) => i.clone(),
+        Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::Foreign(_) => i.clone(),
     }
 }
 

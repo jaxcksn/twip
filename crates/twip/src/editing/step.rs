@@ -582,7 +582,7 @@ pub fn run_of(i: &Inline) -> Option<&Run> {
         | Inline::FieldSep { run, .. }
         | Inline::FieldEnd { run, .. }
         | Inline::CommentRef { run, .. } => Some(run),
-        Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::FieldEdge { .. } | Inline::Opaque(_) => None,
+        Inline::Range(_) | Inline::ControlStart(_) | Inline::ControlEnd(_) | Inline::FieldEdge { .. } | Inline::Foreign(_) => None,
     }
 }
 

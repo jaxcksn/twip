@@ -984,7 +984,7 @@ impl<'a> Builder<'a> {
             }
             if matches!(
                 inl,
-                Inline::Opaque(_)
+                Inline::Foreign(_)
                     | Inline::FieldEdge { .. }
                     | Inline::Range(_)
                     | Inline::CommentRef { .. }
@@ -1946,7 +1946,7 @@ fn continues_after_break(para: &Paragraph, space: &ShapeSpace) -> bool {
             .inlines
             .iter()
             .find(|i| {
-                !matches!(i, Inline::Opaque(_) | Inline::FieldEdge { .. } | Inline::Range(_)) && !matches!(i, Inline::Text(t, _) if t.is_empty())
+                !matches!(i, Inline::Foreign(_) | Inline::FieldEdge { .. } | Inline::Range(_)) && !matches!(i, Inline::Text(t, _) if t.is_empty())
             })
             .is_some_and(|i| matches!(i, Inline::Break(BreakKind::Page | BreakKind::Column, _)))
 }

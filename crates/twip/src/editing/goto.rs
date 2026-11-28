@@ -364,11 +364,7 @@ impl Editor {
                     (GoToWhat::Object, Inline::Picture(pic, _)) => prog_id(pic.src.0.as_deref().unwrap_or(""))
                         .filter(|id| named(name, id, true))
                         .map(|_| Land::Object(ObjectRef::Inline { para, offset: Unit(u) })),
-                    (GoToWhat::Equation, Inline::Opaque(o))
-                        if o.xml.0.as_deref().and_then(local_name).is_some_and(|n| n == "oMath" || n == "oMathPara") =>
-                    {
-                        Some(Land::Caret)
-                    }
+                    (GoToWhat::Equation, Inline::Foreign(o)) if o.equation => Some(Land::Caret),
                     (GoToWhat::Bookmark, Inline::Range(r))
                         if let Some((n, true)) = r.bookmark()
                             && !n.starts_with('_') =>
